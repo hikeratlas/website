@@ -2,39 +2,33 @@ import type { MetaFunction } from "@remix-run/cloudflare";
 
 export const meta: MetaFunction = () => {
   return [
-    { title: "New Remix App" },
-    { name: "description", content: "Welcome to Remix!" },
+    { title: "Hiker Atlas" },
+    { name: "description", content: "Explore hiking trails and plan your next trip." },
   ];
 };
 
 export default function Index() {
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", lineHeight: "1.8" }}>
-      <h1>Welcome to Remix</h1>
+      <h1>Hiker Atlas</h1>
+      <p>Hi! I'm <a href="https://cldellow.com/">Colin</a>. This is a hobby project, so there's not much here yet. You might want to check out:</p>
       <ul>
         <li>
           <a
-            target="_blank"
-            href="https://remix.run/tutorials/blog"
-            rel="noreferrer"
+            href="/map"
           >
-            15m Quickstart Blog Tutorial
-          </a>
+            the map
+          </a>, showing an extract of the planet
         </li>
+        {/*
         <li>
           <a
-            target="_blank"
-            href="https://remix.run/tutorials/jokes"
-            rel="noreferrer"
+            href="/blog"
           >
-            Deep Dive Jokes App Tutorial
-          </a>
+            the blog
+          </a>, detailing random cartography things I learned while building this
         </li>
-        <li>
-          <a target="_blank" href="https://remix.run/docs" rel="noreferrer">
-            Remix Docs
-          </a>
-        </li>
+          */}
       </ul>
     </div>
   );

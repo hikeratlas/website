@@ -8,6 +8,8 @@ import {
   Scripts,
   ScrollRestoration,
 } from "@remix-run/react";
+// see https://github.com/sergiodxa/remix-utils#externalscripts
+import { ExternalScripts } from "remix-utils/external-scripts";
 
 export const links: LinksFunction = () => [
   ...(cssBundleHref ? [{ rel: "stylesheet", href: cssBundleHref }] : []),
@@ -21,6 +23,7 @@ export default function App() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        <ExternalScripts />
       </head>
       <body>
         <Outlet />
