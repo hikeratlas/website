@@ -14,11 +14,15 @@ _(Return to the [blog homepage](/blog/).)_
 
 If you're like me, you have no prior experience with web mapping. There's _a lot_ of jargon to learn.
 
+**BBBike**: An organization that provides regional extracts of OSM data for popular predefined regions, as well as on-demand extracts of bespoke regions. Uses osmconvert. See [bbbike.org](https://www.bbbike.org/) and [extract.bbbike.org](https://extract.bbbike.org/).
+
 **Chaikin's algorithm**: An algorithm to smooth jagged corners of a line. See [Chaikin's corner cutting algorithm](https://smarx.com/posts/2020/08/chaikin-curves-a-beautifully-simple-algorithm/).
 
 **Douglas-Peucker algorithm**: A popular simplification algorithm. See [Ramer-Douglas-Peucker algorithm](https://en.wikipedia.org/wiki/Ramer%E2%80%93Douglas%E2%80%93Peucker_algorithm) on Wikipedia.
 
 **Feature**: a geometric shape defining something to be mapped. Features are either points, linestrings, polygons or multipolygons.
+
+**GeoFabrik**: an organization that provides regional extracts of OSM data for popular predefined regions. Uses libosmium. See [download.geofabrik.de](https://download.geofabrik.de/).
 
 **Layer**: a collection of related features. A **schema** consists of several layers, for example, `roads`, `land`, `pois`.
 
@@ -67,6 +71,8 @@ If you're like me, you have no prior experience with web mapping. There's _a lot
 **Simplification**: An algorithmic process to discard geometric detail when rendering features at lower zooms, in order to save bandwidth and processing power.
 
 **tilemaker**: A tile factory. See [tilemaker](https://github.com/systemed/tilemaker) on GitHub.
+
+**Tiles**: a hierarchical decomposition of the globe into a 2D projection. At zoom level 0, the entire globe is rendered in one tile (z0/0/0). At zoom 1, in 4 tiles (z1/0/0, z1/0/1, z1/1/0, z1/1/1). At zoom 2, in 16 tiles, and so on.
 
 **TMS**: Tile Map Service, a protocol for requesting tiles from a web service. See [TMS specification](https://wiki.osgeo.org/wiki/Tile_Map_Service_Specification) on osgseo.org.
 

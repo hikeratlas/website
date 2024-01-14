@@ -8,9 +8,6 @@ headers:
   Cache-Control: no-cache
 ---
 
-
-# DRAFT: incomplete
-
 # Web mapping overview
 
 _(Return to the [blog homepage](/blog/).)_
@@ -21,6 +18,22 @@ Supporting those operations means that modern maps are **vector** maps, whose fe
 
 The globe is huge. If you care only about Tijuana, it makes no sense to ship you data about far-flung cities such as Tokyo and Toronto.
 
-This means there needs to be some way to address the different parts of the globe. Thus, we have **tiles**.
+This means there needs to be some way to address the different parts of the globe. Thus, we have **tiles**, which express:
+- the zoom, as a z coordinate, ranging from 0 (very zoomed out -- a single tile fits the entire globe) to 14 or higher (a single tile fits a neighbourhood)
+- the location, as x/y coordinates that map to longitude and latitude
 
-There is a standard container format for vector maps: the MapBox vector tile.
+See [zoom levels](https://wiki.openstreetmap.org/wiki/Zoom_levels) on the OSM wiki for more.
+
+Since a tile is a collection of a features, we need some way to tie the collection of features together at the file-format level. There is a standard container format for vector maps that does this: [the MapBox vector tile](https://github.com/mapbox/vector-tile-spec).
+
+A single tile is not that interesting. Most maps have millions of tiles at different zoom levels. Again, we need some way to tie the collection of tiles together at the file-format level. There are two standard container formats: [MBTiles](https://docs.mapbox.com/help/glossary/mbtiles/) and [PMTiles](https://docs.protomaps.com/pmtiles/). PMTiles is newer, and requires no server process.
+
+Most humans aren't very good at reading binary file formats. Instead, you author a [MapLibre Style](https://maplibre.org/maplibre-style-spec/) file that describes how a renderer ought to display your tiles. Then you use a renderer, like [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) on the web, or [MapLibre Native](https://github.com/maplibre/maplibre-native) on mobile.
+
+But wait, where did you get your tiles from?
+
+[OpenStreetMap](https://www.openstreetmap.org/#map=13/49.0838/-114.1039) provides a crowdsourced, planet-wide database of geographic features. You can work with the entire planet, or a smaller extract from [GeoFabrik](https://download.geofabrik.de/) or [BBBike](https://extract.bbbike.org/). These extracts are provided as [PBF](https://wiki.openstreetmap.org/wiki/PBF_Format) files, and must be converted into a tileset.
+
+To convert a PBF into a tileset, you'll use a tile factory such as [tilemaker](https://github.com/systemed/tilemaker/), [planetiler](https://github.com/onthegomap/planetiler) or [OpenMapTiles](https://github.com/openmaptiles/openmaptiles).
+
+Phew, it's a lot! This isn't meant to be a how-to guide -- just to orient you to the problem domain.
