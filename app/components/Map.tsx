@@ -7,9 +7,10 @@ export default function Map() {
   const mapContainer = useRef(null);
   const map = useRef(null);
   // gsmnp: 9.18/35.6311/-83.371
-  const [lng] = useState(-83.371);
-  const [lat] = useState(35.6311);
-  const [zoom] = useState(9);
+  // rockies: 6.45/51.537/-118.245
+  const [lng] = useState(-118.245);
+  const [lat] = useState(51.537);
+  const [zoom] = useState(6.5);
 
   useEffect(() => {
     if (map.current) return; // stops map from intializing more than once
