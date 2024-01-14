@@ -20,7 +20,6 @@ export default function Index() {
             the map
           </a>, showing an extract of the planet
         </li>
-        {/*
         <li>
           <a
             href="/blog"
@@ -28,7 +27,6 @@ export default function Index() {
             the blog
           </a>, detailing random cartography things I learned while building this
         </li>
-          */}
       </ul>
     </div>
   );

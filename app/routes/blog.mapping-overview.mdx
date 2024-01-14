@@ -1,0 +1,26 @@
+---
+meta:
+  - title: Introduction to web mapping
+  - date: 2024-01-14 12:00:00 -0500
+  - name: description
+    content: A brief introduction to modern web mapping, circa 2024.
+headers:
+  Cache-Control: no-cache
+---
+
+
+# DRAFT: incomplete
+
+# Web mapping overview
+
+_(Return to the [blog homepage](/blog/).)_
+
+Modern digital maps are "slippy maps". Users expect to be able to drag to pan seamlessly, to scroll or pinch-zoom to scale, and perhaps even to rotate it.
+
+Supporting those operations means that modern maps are **vector** maps, whose features are digitally composited and rendered on-demand, not **raster** maps, whose features are presented as static, pre-rendered PNGs.
+
+The globe is huge. If you care only about Tijuana, it makes no sense to ship you data about far-flung cities such as Tokyo and Toronto.
+
+This means there needs to be some way to address the different parts of the globe. Thus, we have **tiles**.
+
+There is a standard container format for vector maps: the MapBox vector tile.

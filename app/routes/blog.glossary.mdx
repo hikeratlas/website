@@ -1,0 +1,80 @@
+---
+meta:
+  - title: Glossary of mapping terms
+  - date: 2024-01-14 12:00:00 -0500
+  - name: description
+    content: A list of mapping terms, defined.
+headers:
+  Cache-Control: no-cache
+---
+
+# Cartography glossary
+
+_(Return to the [blog homepage](/blog/).)_
+
+If you're like me, you have no prior experience with web mapping. There's _a lot_ of jargon to learn.
+
+**Chaikin's algorithm**: An algorithm to smooth jagged corners of a line. See [Chaikin's corner cutting algorithm](https://smarx.com/posts/2020/08/chaikin-curves-a-beautifully-simple-algorithm/).
+
+**Douglas-Peucker algorithm**: A popular simplification algorithm. See [Ramer-Douglas-Peucker algorithm](https://en.wikipedia.org/wiki/Ramer%E2%80%93Douglas%E2%80%93Peucker_algorithm) on Wikipedia.
+
+**Feature**: a geometric shape defining something to be mapped. Features are either points, linestrings, polygons or multipolygons.
+
+**Layer**: a collection of related features. A **schema** consists of several layers, for example, `roads`, `land`, `pois`.
+
+**MapBox**: A commercial software vendor that defined the space. Many of their tools were open source prior to being made closed source. The community has forked many of the tools since.
+
+**MapBox vector tiles**: An open standard that describes how to encode vector features as protobuf streams. See [MapBox's website](https://docs.mapbox.com/data/tilesets/guides/vector-tiles-standards/) for details.
+
+**MapLibre**: the umbrella organization that stewards the community forks of MapBox's libraries, see [maplibre.org](https://maplibre.org/)
+
+**MapLibre GL**: an open-source map renderer. See [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) for web apps and [MapLibre Native](https://github.com/maplibre/maplibre-native) for mobile apps.
+
+**MapLibre Style Spec**: a language for styling how to render vector tiles. The language is encoded in JSON. See [MapLibre Style Spec](https://maplibre.org/maplibre-style-spec/).
+
+**MBTiles**: A container format for storing tiles, named after MapBox. Tiles are stored as rows in a SQLite database, indexed in TMS format. See [MBTiles spec](https://github.com/mapbox/mbtiles-spec) on GitHub.
+
+**Mercator projection**: The de facto standard projection used by web mapping software. See [Mercator projection](https://en.wikipedia.org/wiki/Mercator_projection) on Wikipedia.
+
+**Node**: One of the three OSM primitives. A node is a single point on the globe. See [Node](https://wiki.openstreetmap.org/wiki/Node) on the OSM wiki.
+
+**OpenMapTiles**: an implementation of the OpenMapTiles schema. See [OpenMapTiles](https://github.com/openmaptiles/openmaptiles) on GitHub.
+
+**OpenMapTiles schema**: a schema released by the OpenMapTiles project. Requires attribution. See [OpenMapTiles schema](https://openmaptiles.org/schema/) on openmaptiles.org.
+
+**OpenStreetMap**: a crowd-sourced, open-source database of cartographic features covering the entire globe. See [openstreetmap.org](https://openstreetmap.org/).
+
+**OSM**: short for OpenStreetMap.
+
+**Planetiler**: A tile factory. See [Planetiler](https://github.com/onthegomap/planetiler) on GitHub.
+
+**PMTiles**: A container format for storing files, named after Protomaps. Designed to work on static object stores like S3 and R2, with no web server required. See [PMTiles spec](https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md) on GitHub.
+
+**Projection**: a way to map the 3D globe onto a 2D shape suitable for display on monitors. See also **Mercator projection**.
+
+**Protobuf**: A binary serialization format defined by Google. See [protobuf.dev](https://protobuf.dev/) for more information.
+
+**protozero**: A low-level C++ implementation of protobuf. See [protozero](https://github.com/mapbox/protozero/tree/master) on GitHub.
+
+**Raster tiles**: Tiles represented as image files, for example, PNGs.
+
+**Relation**: One of the three OSM primitives. A relation is made up of some combination of nodes, ways and other relations. It defines complex geometries or abstract concepts. See [Relation](https://wiki.openstreetmap.org/wiki/Relation) on the OSM wiki.
+
+**Schema**: a standard that describes what layers/features are available at different zoom levels in a conforming set of vector tiles. See **OpenMapTiles schema** and **Shortbread schema**.
+
+**Shortbread schema**: an attribution-free schema. See [Shortbread schema](https://shortbread-tiles.org/) on shortbread-tiles.org.
+
+**Simplification**: An algorithmic process to discard geometric detail when rendering features at lower zooms, in order to save bandwidth and processing power.
+
+**tilemaker**: A tile factory. See [tilemaker](https://github.com/systemed/tilemaker) on GitHub.
+
+**TMS**: Tile Map Service, a protocol for requesting tiles from a web service. See [TMS specification](https://wiki.osgeo.org/wiki/Tile_Map_Service_Specification) on osgseo.org.
+
+**Vector tiles**: Tiles represented as a collection of vector features, which can be composited, scaled and rotated on-the-fly, for example **MapBox vector tiles**.
+
+**vtzero**: A low-level C++ library for creating MapBox vector tiles. See [vtzero](https://github.com/mapbox/vtzero/tree/master) on GitHub.
+
+**Way**: One of the three OSM primitives. A way is made up of two or more nodes, and defines a path on the globe. See [Way](https://wiki.openstreetmap.org/wiki/Way) on the OSM wiki.
+
+**Zoom levels**: The granularity of cartographic features, ranging from zoom 0 (low) to zoom 14 (high) or even higher. See [zoom levels](https://wiki.openstreetmap.org/wiki/Zoom_levels) on the OSM wiki.
+
