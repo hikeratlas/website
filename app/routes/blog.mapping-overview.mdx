@@ -24,9 +24,9 @@ This means there needs to be some way to address the different parts of the glob
 
 See [zoom levels](https://wiki.openstreetmap.org/wiki/Zoom_levels) on the OSM wiki for more.
 
-Since a tile is a collection of a features, we need some way to tie the collection of features together at the file-format level. There is a standard container format for vector maps that does this: [the MapBox vector tile](https://github.com/mapbox/vector-tile-spec).
+Since a tile is a collection of features, we need some way to tie the collection of features together at the file-format level. There is a standard container format for vector maps that does this: [the MapBox vector tile](https://github.com/mapbox/vector-tile-spec).
 
-A single tile is not that interesting. Most maps have millions of tiles at different zoom levels. Again, we need some way to tie the collection of tiles together at the file-format level. There are two standard container formats: [MBTiles](https://docs.mapbox.com/help/glossary/mbtiles/) and [PMTiles](https://docs.protomaps.com/pmtiles/). PMTiles is newer, and requires no server process.
+A single tile is not that interesting. Most maps have millions of tiles at different zoom levels. Again, we need some way to tie the collection of tiles together at the file-format level. There are two standard container formats: [MBTiles](https://docs.mapbox.com/help/glossary/mbtiles/) and [PMTiles](https://docs.protomaps.com/pmtiles/). PMTiles is newer, and requires no server process. Instead, such files can be hosted on Amazon S3 or Cloudflare's R2.
 
 Most humans aren't very good at reading binary file formats. Instead, you author a [MapLibre Style](https://maplibre.org/maplibre-style-spec/) file that describes how a renderer ought to display your tiles. Then you use a renderer, like [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) on the web, or [MapLibre Native](https://github.com/maplibre/maplibre-native) on mobile.
 

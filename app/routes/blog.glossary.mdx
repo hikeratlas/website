@@ -50,9 +50,13 @@ If you're like me, you have no prior experience with web mapping. There's _a lot
 
 **OSM**: short for OpenStreetMap.
 
+**PBF**: the _Protocolbuffer Binary Format_, a binary, efficient representation of the OSM database. See [PBF format](https://wiki.openstreetmap.org/wiki/PBF_Format) on the OSM wiki.
+
+**Planet**: the complete OSM database, available as an ~134 GB XML file or a ~73 GB PBF file. See [planet.openstreetmap.org](https://planet.openstreetmap.org/).
+
 **Planetiler**: A tile factory. See [Planetiler](https://github.com/onthegomap/planetiler) on GitHub.
 
-**PMTiles**: A container format for storing files, named after Protomaps. Designed to work on static object stores like S3 and R2, with no web server required. See [PMTiles spec](https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md) on GitHub.
+**PMTiles**: A container format for storing files, named after Protomaps. Designed to work on static object stores like Amazon S3 and Cloudflare R2, with no web server required. See [PMTiles spec](https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md) on GitHub.
 
 **Projection**: a way to map the 3D globe onto a 2D shape suitable for display on monitors. See also **Mercator projection**.
 
@@ -73,6 +77,8 @@ If you're like me, you have no prior experience with web mapping. There's _a lot
 **tilemaker**: A tile factory. See [tilemaker](https://github.com/systemed/tilemaker) on GitHub.
 
 **Tiles**: a hierarchical decomposition of the globe into a 2D projection. At zoom level 0, the entire globe is rendered in one tile (z0/0/0). At zoom 1, in 4 tiles (z1/0/0, z1/0/1, z1/1/0, z1/1/1). At zoom 2, in 16 tiles, and so on.
+
+**Tileset**: a file containing tiles, often an **MBTiles** or **PMTiles** file.
 
 **TMS**: Tile Map Service, a protocol for requesting tiles from a web service. See [TMS specification](https://wiki.osgeo.org/wiki/Tile_Map_Service_Specification) on osgseo.org.
 
