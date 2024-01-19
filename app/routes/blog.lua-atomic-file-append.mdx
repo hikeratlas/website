@@ -1,0 +1,99 @@
+---
+meta:
+  - title: "Lua snippets: atomic file append"
+  - date: 2024-01-18 23:00:00 -0500
+  - name: description
+    content: One file, multiple writers in Lua.
+headers:
+  Cache-Control: no-cache
+---
+
+<div className="frame">
+# Lua snippets: atomic file append (Jan 18, 2024)
+
+_(Return to the [blog homepage](/blog/).)_
+
+I use [tilemaker](https://github.com/systemed/tilemaker) to generate vector tiles with objects of interest to a hiker: national parks, hiking trails, mountains, cities.
+
+Great! That gives us a [map](/map). I'd like to let users search for these objects, and, when a result is chosen, show it on the map. The `.pmtiles` format is great for storing geometric features, but it's not easily searched. In fact, it's easily queried at all: data is replicated and sliced and diced. What to do?
+
+It turns out that tilemaker is a bit like a game engine: the hard bits are written in C++, and users can then customize it by writing little Lua programs. This is great! It means I can just print out JSON objects, one for each map feature, and let something else build a searchable index of them.
+
+## Try #1: stdout
+Let's try the dumbest possible thing that might work: printing to stdout:
+
+```lua
+print(encode(object))
+```
+
+It didn't work. tilemaker prints a progress indicator which ends up intermingling with data.
+
+## Try #2: write to a file
+
+We can up our game and write to a file:
+
+```lua
+local out = io.open('myfile.jsonl', 'a')
+out:write(encode(object))
+io.close(out)
+```
+
+However, tilemaker runs multiple threads. Each thread has its own Lua interpreter, executing your code. Eventually, they will both try to open the file for writing at the same instant, causing jumbled output that is no longer valid JSON:
+
+```
+y"5m2" "s".k,2 2HBkt_5e"2P9ouirl4"_,o1rrnea2 [...]
+```
+
+## Try #3: file locking
+
+What to do? Lua is a very barebones language, so it lacks concurrency primitives like locks. (In fact, it lacks multithreading at all!)
+
+Instead, we'll turn to POSIX file locks, available via the [`luaposix`](https://luarocks.org/modules/gvvaughan/luaposix) module.
+
+`luarocks` has an [example script](https://luaposix.github.io/luaposix/examples/lock.lua.html) that shows how to do locking.
+
+I followed it, but was unable to get it to work.
+
+After finally resorting to reading the fine manual, this was user error: POSIX file locks are per-process, not per-thread. They aren't suitable for limiting access to a single file from threads in the same process. D'oh!
+
+## Try #4: `flock` file locking
+
+Luckily, there's another kind of file lock: BSD-style locks. These are tied to the file alone, not to the `process, file, bytes-range` tuple.
+
+Better still, someone has made a luarocks module for it: [`luaflock`](https://github.com/SolraBizna/luaflock).
+
+```bash
+luarocks install luaflock
+```
+
+Usage is straight-forward:
+
+```lua
+function file_append.write(fname, data)
+  -- see https://github.com/SolraBizna/luaflock
+  local lockf = io.open('/tmp/myscript.lock', 'a+')
+
+  local locked, lock_error = flock(lockf, 'write')
+
+  if not locked or lock_error then
+    error('unable to lock file: ' .. str(lock_error))
+  end
+
+  local out = io.open(fname, 'a')
+  out:write(data)
+  io.close(out)
+
+  -- Closing the lock file releases the lock.
+  io.close(lockf)
+end
+```
+
+And tada, no more corruption.
+
+## Conclusion
+
+It's a pain to get data out of Lua! May my suffering be of use to you: I've published the final code in a module, available on GitHub: [file_append.lua](https://github.com/hikeratlas/basemap/blob/main/slices/file_append.lua).
+
+
+
+</div>

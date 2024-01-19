@@ -19,7 +19,15 @@
 		@apply text-3xl font-bold pb-4
 	}
 
+	.frame h2 {
+		@apply text-2xl font-bold pb-2
+	}
+
 	.frame ul {
 		@apply pb-2 ml-8 list-disc
+	}
+
+	.frame pre {
+		@apply ml-4 pb-2
 	}
 }
