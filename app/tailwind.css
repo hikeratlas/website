@@ -4,7 +4,7 @@
 
 @layer components {
 	.frame {
-		@apply p-2
+		@apply p-2 leading-relaxed max-w-6xl
 	}
 
 	.frame p {
@@ -28,6 +28,7 @@
 	}
 
 	.frame pre {
-		@apply ml-4 pb-2
+		@apply ml-8 mb-2 p-2 bg-zinc-100 inline-block
 	}
+
 }
