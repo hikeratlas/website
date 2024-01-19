@@ -28,6 +28,7 @@ export default function Index() {
           </a>, detailing random cartography things I learned while building this
         </li>
       </ul>
+      <p>This project is open source, see <a href="https://github.com/hikeratlas/">hikeratlas on GitHub</a>.</p>
     </div>
   );
 }
