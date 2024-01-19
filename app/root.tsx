@@ -10,9 +10,11 @@ import {
 } from "@remix-run/react";
 // see https://github.com/sergiodxa/remix-utils#externalscripts
 import { ExternalScripts } from "remix-utils/external-scripts";
+import stylesheet from "~/tailwind.css";
 
 export const links: LinksFunction = () => [
   ...(cssBundleHref ? [{ rel: "stylesheet", href: cssBundleHref }] : []),
+  { rel: "stylesheet", href: stylesheet },
 ];
 
 export default function App() {
