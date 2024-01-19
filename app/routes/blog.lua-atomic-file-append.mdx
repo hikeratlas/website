@@ -15,7 +15,7 @@ _(Return to the [blog homepage](/blog/).)_
 
 I use [tilemaker](https://github.com/systemed/tilemaker) to generate vector tiles with objects of interest to a hiker: national parks, hiking trails, mountains, cities.
 
-Great! That gives us a [map](/map). I'd like to let users search for these objects, and, when a result is chosen, show it on the map. The `.pmtiles` format is great for storing geometric features, but it's not easily searched. In fact, it's easily queried at all: data is replicated and sliced and diced. What to do?
+Great! That gives us a [map](/map). I'd like to let users search for these objects, and, when a result is chosen, show it on the map. The `.pmtiles` format is great for storing geometric features, but it's not efficient for searching. In fact, it's not easily queried at all: data is replicated and sliced and diced beyond recognition. What to do?
 
 It turns out that tilemaker is a bit like a game engine: the hard bits are written in C++, and users can then customize it by writing little Lua programs. This is great! It means I can just print out JSON objects, one for each map feature, and let something else build a searchable index of them.
 
