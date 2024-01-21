@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+
+function finish {
+	rm -f code.zip
+}
+trap finish EXIT
+
+zip code.zip autosuggest.db lambda_function.py
+aws lambda update-function-code --function-name ha-search --zip-file fileb://code.zip
