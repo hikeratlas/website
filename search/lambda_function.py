@@ -9,16 +9,26 @@ def dict_factory(cursor, row):
     for idx, col in enumerate(cursor.description):
         d[col[0]] = row[idx]
     return d
-# Don't use sqlite3.Row -- it has poor discoverability when printing rows.
-#con.row_factory = sqlite3.Row
-con.row_factory = dict_factory
 
 def search(q):
     q = ' '.join(q.strip().split()) + '*'
+    con.row_factory = sqlite3.Row
     cur = con.cursor()
-    cur.execute("select * from items where rowid in (select rowid from fts where name match ? and qrank > 10  order by qrank desc limit 10) order by qrank desc limit 10", (q,))
+    cur.execute("select count(*) from fts_popular where name match ?", (q,))
+    count = cur.fetchone()[0]
+    cur.close()
 
-    return [r for r in cur]
+    table = 'fts_popular'
+    if count < 100:
+        table = 'fts'
+
+    con.row_factory = dict_factory
+    cur = con.cursor()
+    cur.execute("select * from items where rowid in (select rowid from {} where name match ? and qrank > 10  order by qrank desc limit 10) order by qrank desc limit 10".format(table), (q,))
+
+    rv = [r for r in cur]
+    cur.close()
+    return rv
 
 def lambda_handler(event, context):
     q = event['queryStringParameters']['q'] or ''
