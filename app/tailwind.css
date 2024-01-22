@@ -27,8 +27,16 @@
 		@apply pb-2 ml-8 list-disc
 	}
 
+	.frame .autosuggest ul {
+		@apply pb-0 ml-0 list-none
+	}
+
 	.frame pre {
 		@apply ml-8 mb-2 p-2 bg-zinc-100 inline-block
+	}
+
+	.frame blockquote {
+		@apply ml-8 pl-2 pt-2 mb-2 border-emerald-500 border-l-8
 	}
 
 }

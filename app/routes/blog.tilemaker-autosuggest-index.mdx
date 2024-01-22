@@ -1,0 +1,223 @@
+---
+meta:
+  - title: "Build an OpenStreetMap autosuggest search with tilemaker"
+  - date: 2024-01-21 23:00:00 -0500
+  - name: description
+    content: "tilemaker's not just for tiles: build an autosuggest index of geographic features."
+headers:
+  Cache-Control: no-cache
+---
+
+import Search from '~/components/Search';
+
+<div className="frame">
+# tilemaker: build an autosuggest index (Jan 21, 2024)
+
+_(Return to the [blog homepage](/blog/).)_
+
+[tilemaker](https://github.com/systemed/tilemaker) powers the vector tiles on this site. It describes itself thusly:
+
+> tilemaker creates vector tiles (in Mapbox Vector Tile format) from an .osm.pbf planet extract
+
+Pfft, this is a failure of imagination! Sure, it's _designed_ for creating vector tiles. But if you squint, it's a Lua runtime for parallel processing of OpenStreetMap and geospatial data. What else can we do with it?
+
+Could we, perhaps, use it to build this autosuggest feature?
+
+<Search/>
+
+Spoiler: yes we can. Here's the gist of how it works, using waterfalls as a motivating example. The full code is linked at the end.
+
+# Exporting OSM entities as JSON lines
+
+I have some ideas about how I'm going to index the data for fast searching, but to start with, let's focus on making it available in a flexible JSON format.
+
+Honestly, this part is fairly boring! It's mainly plumbing existing things together:
+
+- the [file_append](/blog/lua-atomic-file-append) module from a previous post ensures that our parallel threads can all write to a shared file safely
+- the [json](https://github.com/rxi/json.lua) module enables us to use the bog standard JSON data format
+- the [qrank](https://github.com/hikeratlas/basemap/blob/main/slices/qrank.lua) module gives us a rough-and-ready scoring system
+
+Write a Lua profile that looks like:
+
+```lua
+node_keys = {'waterway=waterfall'}
+
+local file_append = require 'file_append'
+local json = require 'json'
+local qrank = require 'qrank'
+
+function init_function()
+  qrank.init()
+end
+
+function node_function()
+  local name = Find('name')
+  if name == '' then return end
+  file_append.write(
+    'waterfalls.json',
+    json.encode({
+      name = name,
+      qrank = qrank.get(Find('wikidata')),
+      lon = Centroid()[1],
+      lat = Centroid()[2],
+    })
+  )
+end
+```
+
+# Thwarting tile generation
+
+Despite our best efforts, tilemaker still conceives of itself as a tool to generate tiles. We don't want it to waste any time trying to generate them, so we'll tweak our config:
+
+```json
+[...]
+  "maxzoom": 0,
+  "minzoom": 0,
+  "basezoom": 0,
+[...]
+```
+
+This ensures that tilemaker will generate at most 1 tile, the z0/0/0 tile.
+
+# Creating a searchable database
+
+This creates a JSON file like:
+
+```json
+{"qrank":1, "name":"Sunwapta Falls", "lon":-117.64461, "lat":52.53237}
+{"qrank":17236, "name":"Athabasca Falls", "lon":-117.88348, "lat":52.66447}
+```
+
+Much better than a binary PBF, but still not an efficient format for searching, especially once it scales up to hundreds of thousands of items.
+
+We'll ingest it into a SQLite database. SQLite supports full-text search and is broadly supported by operating systems and programming languages.
+
+This snippet of TypeScript is written against the [Bun runtime](https://github.com/oven-sh/bun):
+
+```typescript
+import { Database } from "bun:sqlite";
+import fs from 'node:fs';
+
+async function main() {
+  const db = new Database('autosuggest.db');
+
+  // Create a schema with full-text search
+  db.query(`CREATE VIRTUAL TABLE fts USING fts5(name, qrank);`).run();
+  db.query(`CREATE TABLE items(name TEXT, qrank INTEGER, lat NUMERIC, lon NUMERIC);`).run();
+
+  // Load the JSON objects into an array
+  const rows = (await Bun.file('waterfalls.json').text())
+    .split('\n')
+    .filter(x => x)
+    .map(x => JSON.parse(x));
+
+  // Disable fsync for faster importing
+  db.query('PRAGMA synchronous = OFF').run();
+
+  // Create a prepared statement
+  const stmt = db.query(`INSERT INTO items (qrank, name, lon, lat) VALUES ($qrank, $name, $lon, $lat)`);
+
+  // Populate the fact table
+  for (const row of rows) {
+    const { qrank, name, lon, lat } = row;
+    stmt.run({
+      $qrank: qrank,
+      $name: name,
+      $lon: lon,
+      $lat: lat,
+    });
+  }
+
+  // Populate the full-text search table
+  db.query(`INSERT INTO fts(rowid, name, qrank) SELECT rowid, name, qrank FROM items`).run();
+  db.close();
+}
+
+main();
+```
+
+Now we have an `autosuggest.db` that supports zippy prefix queries:
+
+```bash
+$ sqlite autosuggest.db
+sqlite> SELECT * FROM items
+  WHERE rowid IN (SELECT rowid FROM fts WHERE name MATCH 'w*')
+  ORDER By qrank DESC LIMIT 2;
++-------+-----------------------+--------------+-----------------+
+| qrank |         name          |     lon      |       lat       |
++-------+-----------------------+--------------+-----------------+
+| 19788 | Willamette Falls      | -122.6192731 | 45.351020096377 |
+| 14446 | Wailua Falls          | -159.3785828 | 22.034626690186 |
++-------+-----------------------+--------------+-----------------+
+Run Time: real 0.012 user 0.012459 sys 0.000005
+```
+
+# Publishing to the web
+
+All that remains is to host this database someone on the web. AWS's 
+[Lambda function URLs](https://docs.aws.amazon.com/lambda/latest/dg/lambda-urls.html) are very well-suited for this task.
+
+We can write a small Python script -- no dependencies needed -- that exposes the database:
+
+```python
+import json
+import sqlite3
+
+con = sqlite3.connect('autosuggest.db')
+con.row_factory = sqlite3.Row
+
+def search(q):
+    q = ' '.join(q.strip().split()) + '*'
+    cur = con.cursor()
+    cur.execute("SELECT * FROM items WHERE rowid IN (SELECT rowid FROM fts WHERE name MATCH ?) ORDER BY qrank DESC LIMIT 10", (q,))
+
+    return [r for r in cur]
+
+def lambda_handler(event, context):
+    q = event['queryStringParameters']['q'] or ''
+
+    hits = search(q)
+    return {
+        'statusCode': 200,
+        'body': json.dumps(hits)
+    }
+```
+
+And, tada:
+
+```bash
+$ curl https://lono5me4vqw32h6dmh66o3dkve0hwewm.lambda-url.us-east-1.on.aws/?q=w
+[
+  {
+    "qrank": 19788,
+    "name": "Willamette Falls",
+    "lon": -122.61927,
+    "lat": 45.35102
+  },
+  {
+    "qrank": 14446,
+    "name": "Wailua Falls",
+    "lon": -159.37858,
+    "lat": 22.03462
+  },
+  ...
+]
+```
+
+# Conclusion
+
+That's it! Making a customized search engine for OSM turns out to be fairly straight-forward!
+
+The final product is a bit more involved; you can see the code here:
+
+- [zindex.lua](https://github.com/hikeratlas/basemap/blob/main/export/zindex.lua) - exports JSON data for popular hiking objects
+- [create-autosuggest-db.ts](https://github.com/hikeratlas/basemap/blob/main/bin/create-autosuggest-db.ts) - creates a SQLite db with full-text search
+- [lambda_function.py](https://github.com/hikeratlas/website/blob/main/search/lambda_function.py) - searches the DB to return hits
+
+The final code has a few flourishes versus the snippets on this page:
+
+- handle more types of geographic features
+- annotates each result with additional data, like which state, country and national park they're found in
+- handles short search strings efficiently by tiering the results (e.g., a search for `l` can satisfy the user's request by looking at only the most popular items)
+
+</div>
