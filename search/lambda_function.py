@@ -11,7 +11,7 @@ def dict_factory(cursor, row):
     return d
 
 def search(q):
-    q = ' '.join(q.strip().split()) + '*'
+    q = '"{}"*'.format(' '.join(q.strip().split()))
     con.row_factory = sqlite3.Row
     cur = con.cursor()
     cur.execute("select count(*) from fts_popular where name match ?", (q,))
