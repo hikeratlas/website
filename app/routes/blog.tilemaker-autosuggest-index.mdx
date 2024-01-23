@@ -6,9 +6,21 @@ meta:
     content: "tilemaker's not just for tiles: build an autosuggest index of geographic features."
 headers:
   Cache-Control: no-cache
+
+handle:
+  scripts:
+    - src: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+      async: false
+      defer: false
+
 ---
 
 import Search from '~/components/Search';
+import HighlightBlocks from '~/components/HighlightBlocks';
+
+export const links = () => [
+  { rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" },
+];
 
 <div className="frame">
 # tilemaker: build an autosuggest index (Jan 21, 2024)
@@ -115,7 +127,8 @@ async function main() {
   db.query('PRAGMA synchronous = OFF').run();
 
   // Create a prepared statement
-  const stmt = db.query(`INSERT INTO items (qrank, name, lon, lat) VALUES ($qrank, $name, $lon, $lat)`);
+  const stmt = db.query(`INSERT INTO items (qrank, name, lon, lat)
+                         VALUES ($qrank, $name, $lon, $lat)`);
 
   // Populate the fact table
   for (const row of rows) {
@@ -129,7 +142,8 @@ async function main() {
   }
 
   // Populate the full-text search table
-  db.query(`INSERT INTO fts(rowid, name, qrank) SELECT rowid, name, qrank FROM items`).run();
+  db.query(`INSERT INTO fts(rowid, name, qrank)
+            SELECT rowid, name, qrank FROM items`).run();
   db.close();
 }
 
@@ -169,7 +183,12 @@ con.row_factory = sqlite3.Row
 def search(q):
     q = ' '.join(q.strip().split()) + '*'
     cur = con.cursor()
-    cur.execute("SELECT * FROM items WHERE rowid IN (SELECT rowid FROM fts WHERE name MATCH ?) ORDER BY qrank DESC LIMIT 10", (q,))
+    cur.execute(
+        '''SELECT * FROM items WHERE rowid IN
+           (SELECT rowid FROM fts WHERE name MATCH ?)
+           ORDER BY qrank DESC LIMIT 10''',
+        (q,)
+    )
 
     return [r for r in cur]
 
@@ -221,3 +240,4 @@ The final code has a few flourishes versus the snippets on this page:
 - handles short search strings efficiently by tiering the results (e.g., a search for `l` can satisfy the user's request by looking at only the most popular items)
 
 </div>
+<HighlightBlocks/>
