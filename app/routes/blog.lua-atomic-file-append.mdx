@@ -6,7 +6,20 @@ meta:
     content: One file, multiple writers in Lua.
 headers:
   Cache-Control: no-cache
+
+handle:
+  scripts:
+    - src: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+      async: false
+      defer: false
+
 ---
+
+import HighlightBlocks from '~/components/HighlightBlocks';
+
+export const links = () => [
+  { rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" },
+];
 
 <div className="frame">
 # Lua snippets: atomic file append (Jan 18, 2024)
@@ -97,3 +110,4 @@ It's a pain to get data out of Lua! May my suffering be of use to you: I've publ
 
 
 </div>
+<HighlightBlocks/>
