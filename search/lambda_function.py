@@ -24,7 +24,7 @@ def search(q):
 
     con.row_factory = dict_factory
     cur = con.cursor()
-    cur.execute("select * from items where rowid in (select rowid from {} where name match ? and qrank > 10  order by qrank desc limit 10) order by qrank desc limit 10".format(table), (q,))
+    cur.execute("select * from items where rowid in (select rowid from {} where name match ? order by qrank desc limit 10) order by qrank desc limit 10".format(table), (q,))
 
     rv = [r for r in cur]
     cur.close()

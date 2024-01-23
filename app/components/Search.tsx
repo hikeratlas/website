@@ -35,8 +35,8 @@ export default function Search() {
     })
 
     return (
-      <div className='autosuggest'>
-        <div className="w-72 flex flex-col gap-1">
+      <div className='autosuggest relative'>
+        <div className="w-full flex flex-col gap-1">
           <div className="flex shadow-sm bg-white gap-0.5">
             <input
               placeholder="Search..."
@@ -46,7 +46,7 @@ export default function Search() {
           </div>
         </div>
         <ul
-          className={`absolute w-72 bg-white mt-1 shadow-md max-h-80 overflow-scroll p-0 z-10 ${
+          className={`absolute w-full bg-white mt-1 shadow-md max-h-80 p-0 z-10 ${
             !(isOpen && items.length) && 'hidden'
           }`}
           {...getMenuProps()}
