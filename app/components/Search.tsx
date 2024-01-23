@@ -46,7 +46,7 @@ export default function Search() {
           </div>
         </div>
         <ul
-          className={`absolute w-full bg-white mt-1 shadow-md max-h-80 p-0 z-10 ${
+          className={`absolute w-full bg-white mt-1 shadow-md max-h-80 p-0 overflow-scroll z-10 ${
             !(isOpen && items.length) && 'hidden'
           }`}
           {...getMenuProps()}
