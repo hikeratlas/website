@@ -3,7 +3,11 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
 
-export default function Map() {
+export interface Props {
+  onInitialized: (x: any) => {};
+}
+
+export default function Map(props: Props) {
   const mapContainer = useRef(null);
   const map = useRef(null);
   // gsmnp: 9.18/35.6311/-83.371
@@ -27,8 +31,9 @@ export default function Map() {
     maplibregl.addProtocol("pmtiles", protocol.tile);
 
     map.current = m;
+    (props.onInitialized || (() => {}))(m);
 
-  }, [lng, lat, zoom]);
+  }, [lng, lat, zoom, props]);
 
   return <div ref={mapContainer} className="map" />;
 }

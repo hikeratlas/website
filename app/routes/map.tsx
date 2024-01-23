@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import type { MetaFunction } from "@remix-run/cloudflare";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
+import Search, { Item } from '~/components/Search';
 
 export const handle: ExternalScriptsHandle = {
   scripts: [
@@ -23,14 +25,24 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Index() {
+  const [map, setMap] = useState(null);
+
+  const onInitialized = (m) => setMap(m);
+  const onSelect = (item: Item) => {
+    if (map)
+      map.jumpTo({ center: item });
+  }
+
+
   return <>
-      <div style={{height: '100px'}}>
-        <div style={{ fontFamily: "system-ui, sans-serif", lineHeight: "1.8" }}>
-          <h1>Hiker Atlas</h1>
+      <div className='h-[100px]'>
+        <div className='p-2'>
+          <h1 className='text-2xl'>Hiker Atlas</h1>
+          <Search onSelect={onSelect}/>
         </div>
       </div>
       <div className='map-wrap'>
-        <Map/>
+        <Map onInitialized={onInitialized}/>
       </div>
   </>
 }

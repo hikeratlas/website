@@ -6,7 +6,24 @@ function cx(...xs: unknown[]): string {
   return xs.filter(x => x).join(' ');
 }
 
-export default function Search() {
+export interface Item {
+  country: string | null;
+  kind: string;
+  lat: number;
+  lon: number;
+  name: string;
+  osm_id: string;
+  park: string | null;
+  qrank: number;
+  state: string | null;
+  wikidata: string | null;
+}
+
+interface Props {
+  onSelect?: (item: Item) => void;
+}
+
+export default function Search(props: Props) {
   function ComboBox() {
     const [items, setItems] = React.useState([])
     const {
@@ -25,9 +42,9 @@ export default function Search() {
         );
 
         const json = await response.json();
-        console.log(json);
         setItems(json)
       },
+      onSelectedItemChange: (x) => (props.onSelect || (() => {}))(x.selectedItem),
       items,
       itemToString(item) {
         return item ? item.name : ''
@@ -40,7 +57,7 @@ export default function Search() {
           <div className="flex shadow-sm bg-white gap-0.5">
             <input
               placeholder="Search..."
-              className="w-full p-1.5"
+              className="w-full p-1.5 border"
               {...getInputProps()}
             />
           </div>
