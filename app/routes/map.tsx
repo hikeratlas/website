@@ -29,8 +29,34 @@ export default function Index() {
 
   const onInitialized = (m) => setMap(m);
   const onSelect = (item: Item) => {
-    if (map)
-      map.jumpTo({ center: item });
+    if (!map)
+      return;
+
+    let camera = { center: item, zoom: 13 };
+    if (item.min_lon || item.min_lat) {
+      camera = map.cameraForBounds(
+        [
+          {
+            lat: item.min_lat,
+            lon: item.min_lon,
+          },
+          {
+            lat: item.max_lat,
+            lon: item.max_lon,
+          }
+        ],
+        {
+          padding: {
+            top: 100,
+            bottom: 100,
+            left: 100,
+            right: 100
+          }
+        }
+      ) || camera;
+    }
+
+    map.jumpTo(camera);
   }
 
 

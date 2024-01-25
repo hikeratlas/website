@@ -11,6 +11,10 @@ export interface Item {
   kind: string;
   lat: number;
   lon: number;
+  min_lat?: number | null;
+  min_lon?: number | null;
+  max_lat?: number | null;
+  max_lon?: number | null;
   name: string;
   osm_id: string;
   park: string | null;
