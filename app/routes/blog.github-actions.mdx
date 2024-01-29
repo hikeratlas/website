@@ -1,0 +1,99 @@
+---
+meta:
+  - title: Automating builds with GitHub Actions
+  - date: 2024-01-28 12:00:00 -0500
+  - name: description
+    content: A brief introduction to modern web mapping, circa 2024.
+headers:
+  Cache-Control: no-cache
+---
+
+<div className="frame">
+# Automating builds with GitHub Actions (Jan 28, 2024)
+
+_(Return to the [blog homepage](/blog/).)_
+
+Many years ago, I worked for Microsoft. They had just launched this new cloud thingy called "Azure", and were asking employees to kick the tires.
+
+Naïf that I was, I gave it a go. I almost immediately got it into a broken state where I was being billed for services that I did not want and could not stop.
+
+<div className="flex justify-center items-center">
+  <img src="/wtf-azure.png"/>
+</div>
+
+After much wrangling, they agreed to write off some, but not all of the debt that was incurred. If I recall correctly, I was out of pocket about $200. This left a sour taste in my mouth.
+
+Anyway, fast forward a decade. It's 2018, and Microsoft has acquired a company called GitHub and placed it under Azure.
+
+Time to get my money back.
+
+# Background
+
+GitHub is a collaboration platform built on top of the popular [git](https://en.wikipedia.org/wiki/Git) source control software. For many people, their use of GitHub begins and ends with using it as an easier git.
+
+If they're fancy, maybe they use GitHub's issue tracking software as an easier JIRA.
+
+If they're really fancy, maybe they've got some automated triggers that run on commits and pull requests to run linters and tests.
+
+Those automated triggers are using [GitHub Actions](https://github.com/features/actions). But GitHub Actions aren't limited to just pull requests. . .
+
+# GitHub Actions
+
+It turns out that GitHub Actions, although most often used for PR builds, can also be used for arbitrary workflows. They can be triggered by an event (like pushing a commit to a branch), on a cron schedule, or manually.
+
+[Hiker Atlas](https://www.hikeratlas.com/) has two kinds of builds: source code and tiles. I had been doing the tile builds on my own machine, but just for a small test region. Scaling up to the planet, or even just North America, was irritating: you need to download and upload ~20-100 GB of files, and spend a lot of time just crunching data.
+
+I had resigned myself to having to set up a Hetzner box for builds... but in early 2024, GitHub announced [that they were doubling the size of their free GitHub Actions runners](https://github.blog/2024-01-17-github-hosted-runners-double-the-power-for-open-source/).
+
+Wait, free?
+
+It turns out that if your GitHub project is open source, GitHub will give you [free compute resources](https://docs.github.com/en/actions/learn-github-actions/usage-limits-billing-and-administration). There's an [acceptable use policy](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#actions) that must be followed, but I believe building the tiles meets those terms.
+
+The quota is fairly generous: up to 20 concurrent jobs, each job runs on a 4 core, 16GB RAM, 150 GB disk machine, and can run for up to 6 hours.
+
+This turns out to be enough to build the North America tileset.
+
+# Implementation
+
+## Limits
+
+To fit into the memory and runtime limits imposed by the actions, I had to factor things into multiple jobs
+
+- 1 job per GeoJSON export
+- 1 job per tile layer, so that each layer would use minimal memory
+- 1 job to stitch the N mbtiles files into a single mbtiles file
+- 1 job to convert the mbtiles file into a pmtiles file
+
+## Ubuntu image disk space
+
+The stock Ubuntu image that is used required some fiddling, too:
+
+- for ease of use, it installs a lot of development tools, each taking up precious disk space. I used [remove-unwanted-software](https://github.com/AdityaGarg8/remove-unwanted-software) to reclaim some space
+- it splits the 150 GB across `/` and `/mnt`, so you need to carefully write files to different places to make the most of the space
+
+## Aborted jobs
+
+I occasionally see GitHub terminate a set of jobs. The job runs for 30-60 minutes, generates lots of logs, then _poof_, it's all gone, including the logs.
+
+Maybe I'm just getting unlucky, and my jobs happened to be running on a host machine that got terminated.
+
+Or maybe it's an out-of-memory killing, and the logs are silent.
+
+Or maybe I'm hitting an undocumented hellban-esque countermeasure designed to deter people who [mine cryptocurrencies on free GitHub actions](https://github.blog/2021-04-22-github-actions-update-helping-maintainers-combat-bad-actors/).
+
+Who knows! At any rate, it suggests that it's good for your jobs to be small, independent, and retryable.
+
+# Let's talk dollars
+
+For a free service, GitHub Actions is pretty amazing!
+
+For a paid service, it's pretty terrible, though. The [pricing for GitHub Actions](https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions) is about $1/hour for the 4 core, 16 GB RAM, 150 GB disk machine. By contrast, for about $0.60/hour, Hetzner will sell you a 48 core, 192 GB RAM, 960 GB disk machine. Put differently, GitHub's servers are about 20x pricier than Hetzner for the same amount of compute.
+
+A full build of the North America tile set takes about 15 hours [[1]](#fn1) of GitHub Action time, so about $15.
+
+Thus, I'm now well on my way to recouping the $200 Azure stole from me over a decade ago.
+
+<hr/>
+
+<div id="fn1" className="text-sm">[1]: Much of this time is, unfortunately, idle time waiting on network I/O. If the runners were a little more trustworthy / had a little longer maximum execution time, they would not need to checkpoint their work to R2 as frequently, and so would be faster.</div>
+</div>
