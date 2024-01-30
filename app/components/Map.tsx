@@ -23,6 +23,7 @@ export default function Map(props: Props) {
       container: mapContainer.current,
       style: `https://public.hikeratlas.com/style.json`,
       center: [lng, lat],
+      maxBounds:  [-170, 20, -48, 75],
       showTileBoundaries: true,
       zoom: zoom
     });
