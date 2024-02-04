@@ -220,6 +220,7 @@ Let's adjust our `node_function` further:
 
 ```lua
 function node_function()
+  if Find('place') == 'state' then return end
 	local name = Find('name')
 	if name == '' then return end
 
