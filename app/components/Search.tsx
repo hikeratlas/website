@@ -28,6 +28,7 @@ interface Props {
 }
 
 export default function Search(props: Props) {
+  let seq = 0;
   function ComboBox() {
     const [items, setItems] = React.useState([])
     const {
@@ -41,12 +42,16 @@ export default function Search(props: Props) {
       selectedItem,
     } = useCombobox({
       async onInputValueChange({inputValue}) {
+        seq++;
+        const captured = seq;
         const response = await fetch(
           `https://lono5me4vqwi2h6dmm66oldkie0hwewm.lambda-url.us-east-1.on.aws/?q=${encodeURIComponent(inputValue)}`
         );
 
         const json = await response.json();
-        setItems(json)
+
+        if (seq === captured)
+          setItems(json)
       },
       onSelectedItemChange: (x) => (props.onSelect || (() => {}))(x.selectedItem),
       items,
