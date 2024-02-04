@@ -27,12 +27,20 @@
 		@apply pb-2 ml-8 list-disc
 	}
 
+	.frame ol {
+		@apply pb-2 ml-8 list-decimal
+	}
+
 	.frame .autosuggest ul {
 		@apply pb-0 ml-0 list-none
 	}
 
 	.frame pre {
 		@apply ml-8 mb-2 p-2 bg-zinc-100 inline-block
+	}
+
+	.frame code {
+		@apply p-1 bg-zinc-100
 	}
 
 	.frame blockquote {

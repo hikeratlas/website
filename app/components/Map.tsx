@@ -4,6 +4,14 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
 
 export interface Props {
+  style: string;
+  lng: number;
+  lat: number;
+  zoom: number;
+  minZoom?: number;
+  maxZoom?: number;
+  maxBounds?: [number, number, number, number];
+  showTileBoundaries?: boolean;
   onInitialized: (x: any) => {};
 }
 
@@ -12,21 +20,23 @@ export default function Map(props: Props) {
   const map = useRef(null);
   // gsmnp: 9.18/35.6311/-83.371
   // rockies: 6.45/51.537/-118.245
-  const [lng] = useState(-118.245);
-  const [lat] = useState(51.537);
-  const [zoom] = useState(6.5);
+  const [lng] = useState(props.lng);
+  const [lat] = useState(props.lat);
+  const [zoom] = useState(props.zoom);
 
   useEffect(() => {
     if (map.current) return; // stops map from intializing more than once
 
     let m = new maplibregl.Map({
       container: mapContainer.current,
-      style: `https://public.hikeratlas.com/style.json`,
+      style: props.style,
       center: [lng, lat],
-      maxBounds:  [-170, 20, -48, 75],
-      showTileBoundaries: true,
-      zoom: zoom
+      maxBounds:  props.maxBounds,
+      zoom: zoom,
+      minZoom: props.minZoom,
+      maxZoom: props.maxZoom,
     });
+    m.showTileBoundaries = !!props.showTileBoundaries;
 
     let protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);

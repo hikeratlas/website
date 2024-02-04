@@ -68,7 +68,14 @@ export default function Index() {
         </div>
       </div>
       <div className='map-wrap'>
-        <Map onInitialized={onInitialized}/>
+        <Map
+          style="https://public.hikeratlas.com/style.json"
+          lng={-118.245}
+          lat={51.537}
+          zoom={6.5}
+          maxBounds={[-170, 20, -48, 75]}
+          onInitialized={onInitialized}
+        />
       </div>
   </>
 }
