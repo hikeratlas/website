@@ -1,0 +1,86 @@
+---
+meta:
+  - title: tile-smush, a faster tile-join for MBTiles files
+  - date: 2024-10-05 12:00:00 -0500
+  - name: description
+    content: tile-smush is a fast tool to concatenate MBTiles files.
+headers:
+  Cache-Control: no-cache
+---
+
+<div className="frame">
+# `tile-smush`, a faster `tile-join` for MBTiles files (Oct 5, 2024)
+
+_(Return to the [blog homepage](/blog/).)_
+
+[tile-smush](https://github.com/hikeratlas/tile-smush) is a command-line tool to
+merge multiple `.mbtiles` files into a single file. It takes 80% less time than
+[tile-join](https://github.com/mapbox/tippecanoe), but only works for `.mbtiles`
+files that don't have overlapping layers.
+
+## Use case
+My [workflow for building the HikerAtlas map runs on GitHub Actions](/blog/github-actions).
+GitHub's free runners are somewhat underpowered: 4 cores and 16 GB of RAM.
+
+To avoid being killed by the OOM killer, I build the map in thematic layers. GitHub,
+to its credit, lets you use up to 20 multiple runners simultaneously. So even though
+the total amount of CPU used is more, the wall-clock time is dictated by whichever
+of your layers is slowest:
+
+<div className="flex justify-center items-center">
+  <img src="/tile-smush-layers.png"/>
+</div>
+
+At the end of this step, we have 9 `.mbtiles` files covering all of North America.
+
+We'd like to join them into a single `merged.mbtiles` file.
+
+## Option 1: `go-pmtiles`
+
+This post is about `.mbtiles`, but honestly, I'd be happy to solve it with `.pmtiles`, too.
+
+The defacto standard for manipulating `.pmtiles` files is [`go-pmtiles`](https://github.com/protomaps/PMTiles/).
+
+[Issue #105](https://github.com/protomaps/go-pmtiles/issues/105) in that repo tracks building just this feature, but unfortunately, it's unimplemented as of October 2024.
+
+## Option 2: `tile-join`
+
+MapBox's [`tippecanoe`](https://github.com/mapbox/tippecanoe) project has a utility called `tile-join`. It can merge `.mbtiles` files, albeit a bit slowly.
+
+I grabbed a random Docker image and ran it on a test extract of Nova Scotia. It took 2 minutes,
+which felt slow. While it was running, I noticed a _lot_ of time spent in syscalls.
+
+My spidey senses were tingling, so I checked out the repo, built it and ran it outside of Docker. This time, it took only 30 seconds (!), and had much less syscall contention.
+
+It seemed like the issue is that `tile-join` creates/destroys a thread _for every tile_ in the `.mbtiles` archive. This is inefficient: we spend more time in the kernel overhead of thread lifecycle management than on doing productive tile joining work. That overhead seems to be exacerbated in the Docker container.
+
+Then I saw that [Felt maintained a fork of `tippecanoe`](https://github.com/felt/tippecanoe) and gave it a try. It was even worse -- taking almost 7 minutes!
+
+The performance could probably be improved via a thread pool. I toyed with patching it, but ultimately decided not to. Even if I patched `tile-join` to use threads more efficiently, the tool is a general-purpose tool. It needs to do a lot of work so that it can work well in a wide variety of scenarios.
+
+## Option 3: `tile-smush`
+
+But _I_ don't need a wide variety of scenarios. Just my scenario: `.mbtiles` files that might have overlapping _tiles_, but never overlapping _layers_. That is, tile `0/0/0` might be present in both `land.mbtiles` and `water.mbtiles`, but the layer `water_labels` is only in `water.mbtiles`.
+
+When `tile-join` merges two files, it does with deep knowledge of each tile. Every tile gets [decoded](https://github.com/mapbox/tippecanoe/blob/2daf84a6c10d22fcd4151fa9fcff9bea5407293a/tile-join.cpp#L78): it's unzipped, and then the internal protobuf structures are interrogated to rebuild a representation of the tile in `tile-join`'s internal data structures.
+
+That makes perfect sense for a general purpose tool. Luckily, the nature of my constrained use case suggests a faster approach:
+
+- if the tile is present in only one of the source `.mbtiles` files, take that file's tile as-is: no need to decompress, no need to interrogate the protobuf
+- if the tile is present in multiple files, we have to decompress it, but we can then concatenate the underlying protobuf structures without needing to actually understand them, allocate memory, move data around, etc
+
+As always, I have a hammer called `tilemaker`, so everything looks like a nail.
+
+I forked `tilemaker` into [`tile-smush`](https://github.com/hikeratlas/tile-smush) and ripped out all the PBF, SHP, GeoJSON, etc code.
+
+With the approach above, my Nova Scotia test case completes in ~7 seconds -- a nice speed up!
+
+Even better, my production use case of North America completes in 25 minutes (down from 130 minutes).
+
+## Usage
+
+`tile-smush` is published as a docker image at `ghcr.io/hikeratlas/tile-smush:master`.
+
+A driver script for it is available at [docker-tile-smush](https://github.com/hikeratlas/basemap/blob/main/bin/docker-tile-smush).
+
+</div>
