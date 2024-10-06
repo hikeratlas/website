@@ -1,0 +1,85 @@
+---
+meta:
+  - title: node_keys and way_keys in tilemaker Lua profiles
+  - date: 2024-10-06 12:00:00 -0500
+  - name: description
+    content: Speed up builds by using node_keys and way_keys appropriately.
+headers:
+  Cache-Control: no-cache
+---
+
+<div className="frame">
+# Use `node_keys` and `way_keys` for faster tilemaker builds (Oct 6, 2024)
+
+_(Return to the [blog homepage](/blog/).)_
+
+`tilemaker` lets map designers create custom `.mbtiles` or `.pmtiles` files by
+authoring a Lua script. For every OpenStreetMap node, way and relation, you
+have the chance to interrogate it, include it in your map, or ignore it.
+
+Imagine that you want to print out the names of all the mountains and
+railways in North America. You write a script like this:
+
+```lua
+function node_function()
+  if Find('natural') == 'peak' and Find('name') ~= '' then print(Find('name')) end
+end
+
+function way_function()
+  if Find('railway') ~= '' and Find('name') ~= '' then print(Find('name')) end
+end
+```
+
+You'd think it'd be fast, right? If I run it on [GeoFabrik's north-america.osm.pbf](https://download.geofabrik.de/north-america.html), it
+takes 105 seconds and uses 12 GB of RAM. What gives?!
+
+# The OpenStreetMap element model
+
+All OpenStreetMap elements are one of three things:
+
+- Nodes
+- Ways
+- Relations
+
+A node is a point on the map. Ways are made up of nodes. Relations are made up
+of nodes, ways, or other relations.
+
+These elements are stored in a special file format called `PBF`. They're often
+stored such that all nodes come first, then all ways, then all relations.
+
+This means that `tilemaker` needs to load all nodes, just in case they're
+later used by some way. Ditto for loading all ways: they might be used by
+some relation.
+
+Aha -- so even though we only care about mountains and railways, `tilemaker`
+doesn't know this and is faithfully loading everything just in case.
+
+# `node_keys` and `way_keys`: only load the things you need
+
+We can hint to `tilemaker` what sorts of things we care about by the `node_keys`
+and `way_keys` variables:
+
+```lua
+node_keys = {'natural=peak'}
+way_keys = {'railway'}
+
+function node_function()
+  if Find('natural') == 'peak' and Find('name') ~= '' then print(Find('name')) end
+end
+
+function way_function()
+  if Find('railway') ~= '' and Find('name') ~= '' then print(Find('name')) end
+end
+```
+
+The syntax is straightforward:
+
+- a tag name, such as `railway` includes any element that has the tag, regardless of its value
+- a tag name and value combination, such as `natural=peak` includes any element that has a `natural` tag with `peak` as its value
+
+An element is included if it matches any of the filters. For example, `node_keys = {'natural=peak', 'shop=bicycle'}` would include mountains and bike shops -- not just bike shops located atop mountains.
+
+After making this change and re-running the script, we see that it now takes
+only 48 seconds (-55%) and 2.2 GB of RAM (-82%) -- nice!
+
+</div>
