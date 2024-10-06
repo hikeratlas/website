@@ -29,6 +29,7 @@ export default function Map(props: Props) {
 
     let m = new maplibregl.Map({
       container: mapContainer.current,
+      hash: true,
       style: props.style,
       center: [lng, lat],
       maxBounds:  props.maxBounds,
