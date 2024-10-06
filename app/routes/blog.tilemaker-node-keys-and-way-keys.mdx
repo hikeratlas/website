@@ -6,7 +6,20 @@ meta:
     content: Speed up builds by using node_keys and way_keys appropriately.
 headers:
   Cache-Control: no-cache
+
+handle:
+  scripts:
+    - src: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+      async: false
+      defer: false
 ---
+
+import HighlightBlocks from '~/components/HighlightBlocks';
+
+export const links = () => [
+  { rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" },
+];
+
 
 <div className="frame">
 # Use `node_keys` and `way_keys` for faster tilemaker builds (Oct 6, 2024)
@@ -83,3 +96,5 @@ After making this change and re-running the script, we see that it now takes
 only 48 seconds (-55%) and 2.2 GB of RAM (-82%) -- nice!
 
 </div>
+
+<HighlightBlocks/>
