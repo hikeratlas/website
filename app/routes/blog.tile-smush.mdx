@@ -23,7 +23,7 @@ My [workflow for building the HikerAtlas map runs on GitHub Actions](/blog/githu
 GitHub's free runners are somewhat underpowered: 4 cores and 16 GB of RAM.
 
 To avoid being killed by the OOM killer, I build the map in thematic layers. GitHub,
-to its credit, lets you use up to 20 multiple runners simultaneously. So even though
+to its credit, lets you use up to 20 runners simultaneously. So even though
 the total amount of CPU used is more, the wall-clock time is dictated by whichever
 of your layers is slowest:
 
@@ -62,7 +62,7 @@ The performance could probably be improved via a thread pool. I toyed with patch
 
 But _I_ don't need a wide variety of scenarios. Just my scenario: `.mbtiles` files that might have overlapping _tiles_, but never overlapping _layers_. That is, tile `0/0/0` might be present in both `land.mbtiles` and `water.mbtiles`, but the layer `water_labels` is only in `water.mbtiles`.
 
-When `tile-join` merges two files, it does with deep knowledge of each tile. Every tile gets [decoded](https://github.com/mapbox/tippecanoe/blob/2daf84a6c10d22fcd4151fa9fcff9bea5407293a/tile-join.cpp#L78): it's unzipped, and then the internal protobuf structures are interrogated to rebuild a representation of the tile in `tile-join`'s internal data structures.
+When `tile-join` merges two files, it does so with deep knowledge of each tile. Every tile gets [decoded](https://github.com/mapbox/tippecanoe/blob/2daf84a6c10d22fcd4151fa9fcff9bea5407293a/tile-join.cpp#L78): it's unzipped, and then the internal protobuf structures are interrogated to rebuild a representation of the tile in `tile-join`'s internal data structures.
 
 That makes perfect sense for a general purpose tool. Luckily, the nature of my constrained use case suggests a faster approach:
 
@@ -82,5 +82,13 @@ Even better, my production use case of North America completes in 25 minutes (do
 `tile-smush` is published as a docker image at `ghcr.io/hikeratlas/tile-smush:master`.
 
 A driver script for it is available at [docker-tile-smush](https://github.com/hikeratlas/basemap/blob/main/bin/docker-tile-smush).
+
+Invoke it like:
+
+```
+./tile-smush input1.mbtiles input2.mbtiles [...] inputN.mbtiles
+```
+
+It will emit a `merged.mbtiles`.
 
 </div>
