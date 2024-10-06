@@ -14,7 +14,7 @@ headers:
 _(Return to the [blog homepage](/blog/).)_
 
 [tile-smush](https://github.com/hikeratlas/tile-smush) is a command-line tool to
-merge multiple `.mbtiles` files into a single file. It takes 80% less time than
+merge multiple `.mbtiles` files into a single file. It takes 85% less time than
 [tile-join](https://github.com/mapbox/tippecanoe), but only works for `.mbtiles`
 files that don't have overlapping layers.
 
@@ -73,9 +73,9 @@ As always, I have a hammer called `tilemaker`, so everything looks like a nail.
 
 I forked `tilemaker` into [`tile-smush`](https://github.com/hikeratlas/tile-smush) and ripped out all the PBF, SHP, GeoJSON, etc code.
 
-With the approach above, my Nova Scotia test case completes in ~7 seconds -- a nice speed up!
+With the approach above, my Nova Scotia test case completes in ~6 seconds -- a nice speed up!
 
-Even better, my production use case of North America completes in 25 minutes (down from 130 minutes).
+Even better, my production use case of North America completes in 20 minutes (down from 130 minutes).
 
 ## Usage
 
