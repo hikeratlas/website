@@ -71,6 +71,7 @@ export default function Index() {
       if (!isTextInputFocused() && event.key === '/') {
         event.preventDefault();
         document.querySelector('.autosuggest input').focus();
+        document.querySelector('.autosuggest input').select();
       }
     });
   }, []);
