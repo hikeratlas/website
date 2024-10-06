@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MetaFunction } from "@remix-run/cloudflare";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
@@ -59,6 +59,21 @@ export default function Index() {
     map.jumpTo(camera);
   }
 
+  useEffect(() => {
+    document.addEventListener('keydown', function(event) {
+      const isTextInputFocused = (): boolean => {
+          const activeElement = document.activeElement;
+
+          // Check if the focused element is an input or textarea
+          return activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA';
+      };
+
+      if (!isTextInputFocused() && event.key === '/') {
+        event.preventDefault();
+        document.querySelector('.autosuggest input').focus();
+      }
+    });
+  }, []);
 
   return <>
       <div className='h-[100px]'>
@@ -77,5 +92,6 @@ export default function Index() {
           onInitialized={onInitialized}
         />
       </div>
+
   </>
 }
