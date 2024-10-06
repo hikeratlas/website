@@ -41,6 +41,12 @@ export default function Map(props: Props) {
     let protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
 
+    let scale = new maplibregl.ScaleControl({
+        maxWidth: 160,
+        unit: 'metric'
+    });
+    m.addControl(scale);
+
     map.current = m;
     (props.onInitialized || (() => {}))(m);
 
