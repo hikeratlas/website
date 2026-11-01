@@ -1,6 +1,27 @@
 #!/bin/bash
 set -euo pipefail
 
+# Paths below are relative to this script's directory, so it can be run from
+# anywhere (e.g. `search/publish` from the repo root).
+cd "$(dirname "$(readlink -f "$0")")"
+
+# zip only warns about missing files, so check first: deploying without the DB
+# would break search on the live site. autosuggest.db is a symlink into a
+# sibling basemap checkout (../../basemap/autosuggest.db).
+for f in autosuggest.db lambda_function.py; do
+	if [ ! -s "$f" ]; then
+		echo "error: $PWD/$f is missing or empty; not deploying" >&2
+		exit 1
+	fi
+done
+
+items=$(python3 -c "import sqlite3; print(sqlite3.connect('file:autosuggest.db?mode=ro', uri=True).execute('select count(*) from items').fetchone()[0])")
+if [ "$items" -eq 0 ]; then
+	echo "error: autosuggest.db has no items; not deploying" >&2
+	exit 1
+fi
+echo "Deploying lambda_function.py with autosuggest.db ($items items)"
+
 function finish {
 	rm -f code.zip
 }
