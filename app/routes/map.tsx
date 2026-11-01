@@ -91,7 +91,7 @@ export default function Index() {
             Hiker Atlas
             {build && <span className='ml-2 text-sm text-gray-500'>preview: {build}</span>}
           </h1>
-          <Search onSelect={onSelect}/>
+          <Search onSelect={onSelect} build={build}/>
         </div>
       </div>
       <div className='map-wrap'>
