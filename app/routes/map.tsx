@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { MetaFunction } from "@remix-run/cloudflare";
+import { json } from "@remix-run/cloudflare";
+import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/cloudflare";
+import { useLoaderData } from "@remix-run/react";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
 import Search, { Item } from '~/components/Search';
+import { buildFor, styleUrl, tilesUrl } from '~/build';
 
 export const handle: ExternalScriptsHandle = {
   scripts: [
@@ -24,7 +27,12 @@ export const meta: MetaFunction = () => {
   ];
 };
 
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  return json({ build: buildFor(new URL(request.url)) });
+};
+
 export default function Index() {
+  const { build } = useLoaderData<typeof loader>();
   const [map, setMap] = useState(null);
 
   const onInitialized = (m) => setMap(m);
@@ -79,17 +87,23 @@ export default function Index() {
   return <>
       <div className='h-[100px]'>
         <div className='p-2'>
-          <h1 className='text-2xl'>Hiker Atlas</h1>
+          <h1 className='text-2xl'>
+            Hiker Atlas
+            {build && <span className='ml-2 text-sm text-gray-500'>preview: {build}</span>}
+          </h1>
           <Search onSelect={onSelect}/>
         </div>
       </div>
       <div className='map-wrap'>
+        {/* A build only covers its own area, so don't constrain it to North
+            America; start at its tiles' center instead. */}
         <Map
-          style="https://public.hikeratlas.com/style.json"
+          style={styleUrl(build)}
           lng={-118.245}
           lat={51.537}
           zoom={6.5}
-          maxBounds={[-170, 20, -48, 75]}
+          maxBounds={build ? undefined : [-170, 20, -48, 75]}
+          centerOnPmtiles={build ? tilesUrl(build) : undefined}
           onInitialized={onInitialized}
         />
       </div>
