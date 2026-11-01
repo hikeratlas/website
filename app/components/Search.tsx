@@ -25,6 +25,9 @@ export interface Item {
 
 interface Props {
   onSelect?: (item: Item) => void;
+  // A basemap build namespace (e.g. pr-46/nova-scotia) to search instead of
+  // the main index.
+  build?: string | null;
 }
 
 export default function Search(props: Props) {
@@ -44,8 +47,11 @@ export default function Search(props: Props) {
       async onInputValueChange({inputValue}) {
         seq++;
         const captured = seq;
+        const params = new URLSearchParams({ q: inputValue || '' });
+        if (props.build)
+          params.set('build', props.build);
         const response = await fetch(
-          `https://lono5me4vqwi2h6dmm66oldkie0hwewm.lambda-url.us-east-1.on.aws/?q=${encodeURIComponent(inputValue)}`
+          `https://lono5me4vqwi2h6dmm66oldkie0hwewm.lambda-url.us-east-1.on.aws/?${params}`
         );
 
         const json = await response.json();
