@@ -2,15 +2,48 @@ import React, { useRef, useEffect, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
+import { withZstd, type Decompress } from '~/zstd';
 
 // pmtiles is loaded as a global <script> (see routes/map.tsx); declare the
 // parts we use.
+interface PMTiles {
+  decompress: Decompress;
+  getHeader(): Promise<{ centerLon: number; centerLat: number; centerZoom: number }>;
+}
 declare const pmtiles: {
-  Protocol: new () => { tile: Parameters<typeof maplibregl.addProtocol>[1] };
-  PMTiles: new (url: string) => {
-    getHeader(): Promise<{ centerLon: number; centerLat: number; centerZoom: number }>;
+  Protocol: new () => {
+    tile: Parameters<typeof maplibregl.addProtocol>[1];
+    tiles: Map<string, PMTiles>;
   };
+  PMTiles: new (url: string, cache?: unknown, decompress?: Decompress) => PMTiles;
 };
+
+// pmtiles.js's Protocol makes a PMTiles for each archive URL it sees, with the
+// default (gzip-only) decompress function. Make them with zstd support
+// instead. (pmtiles v2 has no option for this: Protocol looks archives up in
+// `tiles`, and only makes its own if that comes back empty.)
+function zstdProtocol() {
+  // pmtiles.js doesn't export its default decompress function, so borrow it
+  // from an instance. Constructing one doesn't fetch anything.
+  const decompress = withZstd(new pmtiles.PMTiles("").decompress);
+  const protocol = new pmtiles.Protocol();
+  const archives = new globalThis.Map<string, PMTiles>();
+  protocol.tiles = {
+    get(url: string) {
+      let p = archives.get(url);
+      if (!p) {
+        p = new pmtiles.PMTiles(url, undefined, decompress);
+        archives.set(url, p);
+      }
+      return p;
+    },
+    set(url: string, p: PMTiles) {
+      archives.set(url, p);
+      return this;
+    },
+  } as Map<string, PMTiles>;
+  return protocol;
+}
 
 export interface Props {
   style: string;
@@ -57,7 +90,7 @@ export default function Map(props: Props) {
     });
     m.showTileBoundaries = !!props.showTileBoundaries;
 
-    let protocol = new pmtiles.Protocol();
+    const protocol = zstdProtocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
 
     let scale = new maplibregl.ScaleControl({
@@ -67,7 +100,7 @@ export default function Map(props: Props) {
     m.addControl(scale);
 
     if (props.centerOnPmtiles && !hasHashPosition) {
-      new pmtiles.PMTiles(props.centerOnPmtiles).getHeader().then((h) => {
+      protocol.tiles.get(props.centerOnPmtiles)!.getHeader().then((h) => {
         m.jumpTo({ center: [h.centerLon, h.centerLat], zoom: h.centerZoom });
       }).catch((e) => console.error(`Unable to read center from ${props.centerOnPmtiles}`, e));
     }
