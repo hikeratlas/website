@@ -1,0 +1,63 @@
+---
+meta:
+  - title: "GitHub Actions: ARM runners are 1.5x faster for tilemaker"
+  - date: 2026-11-02 18:00:00 -0500
+  - name: description
+    content: Moving the Hiker Atlas build from x64 to ARM GitHub Actions runners made tilemaker about 1.5x faster, and more predictable.
+headers:
+  Cache-Control: no-cache
+---
+
+<div className="frame">
+# GitHub Actions: ARM runners are 1.5x faster for tilemaker (Nov 2, 2026)
+
+_(Return to the [homepage](/).)_
+
+_Disclosure: Claude Code ran the experiments described here, and Claude wrote the post's initial draft._
+
+The Hiker Atlas map is built on [GitHub Actions](/blog/github-actions), using the free runners you get for a public repo. Their stated specs are the same whether you ask for x64 (`ubuntu-latest`) or ARM (`ubuntu-24.04-arm`): 4 vCPUs and 16 GB of RAM.
+
+It turns out those 4 vCPUs aren't the same thing.
+
+## The x64 lottery
+
+I added a step that logs the hardware each job lands on. `ubuntu-latest` isn't one machine, it's a pool. In one run, the 9 layer jobs landed on four different Azure VM types:
+
+- `D4ads_v5`: AMD EPYC 7763
+- `D4ads_v6`: AMD EPYC 9V74
+- `D4ads_v7`: AMD EPYC 9V45
+- `D4ds_v5`: Intel Xeon 8370C
+
+You don't get to pick, and it matters. The same tilemaker job takes about 1.5x longer on an older v5 than on a v7:
+
+<div className="flex justify-center items-center">
+  <img src="/arm-runners-x64-lottery.png"/>
+</div>
+
+This explained something that had been bugging me. The same layer would take wildly different times from one build to the next: water took anywhere from 15 to 39 minutes. The slowest job decides how long the whole build takes, so a build's time mostly came down to which VMs it drew.
+
+All of these have 4 vCPUs, but that's 2 physical cores with 2 hyperthreads each.
+
+## ARM
+
+GitHub's ARM runners also have 4 vCPUs, but they're 4 full Neoverse-N2 cores.
+
+I built all 9 North America layers on both runner types, side by side:
+
+<div className="flex justify-center items-center">
+  <img src="/arm-runners-layers.png"/>
+</div>
+
+ARM was faster on every layer, **1.48x overall**. The `ways` layer, which decides when the layer stage finishes, dropped from 29 minutes to under 20.
+
+Look at `parks`: only 1.12x. Its x64 job happened to draw a v7, the fastest x64 VM. Against the slower v5s, ARM was 1.4–1.6x faster.
+
+The other thing I noticed: all 9 ARM jobs landed on the same VM type, `D4pds_v6`, and so has every ARM job I've checked since. So builds aren't just faster, they're more predictable.
+
+## Caveats
+
+This was one run of each. With the x64 lottery in play, the exact numbers will move around. But it wasn't close, so I switched every job in the pipeline to `ubuntu-24.04-arm`.
+
+If you're running something CPU-heavy on GitHub's free runners, try the ARM ones.
+
+</div>
