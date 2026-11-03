@@ -64,7 +64,7 @@ export function tilesAround(a: LngLat, b: LngLat, maxTiles = 600): [number, numb
   return tiles;
 }
 
-export async function buildGraph(source: TileSource, tiles: [number, number][]): Promise<Graph> {
+export async function buildGraph(source: TileSource, tiles: [number, number][], phase: (name: string) => void = () => {}): Promise<Graph> {
   const g: Graph = { xs: [], ys: [], adj: [], extent: 4096 };
   const ids = new Map<string, number>();
   const edgeNodes: number[] = [];
@@ -81,6 +81,7 @@ export async function buildGraph(source: TileSource, tiles: [number, number][]):
   };
 
   const results = await Promise.all(tiles.map(([x, y]) => source.getZxy(Z, x, y).then((r) => [x, y, r] as const)));
+  phase('fetch tiles');
   for (const [tx, ty, r] of results) {
     if (!r) continue;
     const vt = new VectorTile(new PbfReader(new Uint8Array(r.data)));
@@ -104,7 +105,9 @@ export async function buildGraph(source: TileSource, tiles: [number, number][]):
       }
     }
   }
+  phase('decode');
   joinEdgeNodes(g, edgeNodes);
+  phase('join');
   return g;
 }
 

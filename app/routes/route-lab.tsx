@@ -7,8 +7,9 @@ import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
 import { styleUrl, tilesUrl } from '~/build';
 import { withZstd, type Decompress } from '~/zstd';
-import { buildGraph, nearestNode, shortestPath, tilesAround, worldToLngLat, type LngLat } from '~/route-lab/graph';
+import { Z, buildGraph, lngLatToTile, nearestNode, shortestPath, tilesAround, worldToLngLat, type LngLat } from '~/route-lab/graph';
 import { profile, type Profile } from '~/route-lab/elevation';
+import { CoalescingSource, type Source } from '~/route-lab/source';
 
 export const handle: ExternalScriptsHandle = {
   scripts: [{ src: "https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js", crossOrigin: 'anonymous', async: false, defer: false, preload: true }],
@@ -17,7 +18,8 @@ export const handle: ExternalScriptsHandle = {
 export const meta: MetaFunction = () => [{ title: "Hiker Atlas - Route lab" }];
 
 declare const pmtiles: {
-  PMTiles: new (url: string, cache?: unknown, decompress?: Decompress) => {
+  FetchSource: new (url: string) => Source;
+  PMTiles: new (source: string | Source, cache?: unknown, decompress?: Decompress) => {
     decompress: Decompress;
     getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined>;
   };
@@ -26,7 +28,7 @@ declare const pmtiles: {
 const EXAMPLE: [LngLat, LngLat] = [[-123.120441, 49.957632], [-123.0181555, 49.9534762]]; // Rubble Creek trailhead -> Panorama Ridge overlook
 const EMPTY = { type: 'FeatureCollection', features: [] };
 
-interface Result { metres: number; profile: Profile; tiles: number; nodes: number; ms: number }
+interface Result { metres: number; profile: Profile; tiles: number; nodes: number; ms: number; phases: [string, number][] }
 
 export default function RouteLab() {
   const [map, setMap] = useState<any>(null);
@@ -34,6 +36,7 @@ export default function RouteLab() {
   const [result, setResult] = useState<Result | null>(null);
   const points = useRef<LngLat[]>([]);
   const source = useRef<any>(null);
+  const coalescing = useRef<CoalescingSource | null>(null);
 
   useEffect(() => {
     if (!map) return;
@@ -50,7 +53,7 @@ export default function RouteLab() {
       points.current.push([e.lngLat.lng, e.lngLat.lat]);
       showPoints();
       if (points.current.length === 2) route(points.current[0], points.current[1]);
-      else { setResult(null); setStatus('Now click an end.'); map.getSource('lab-route')?.setData(EMPTY); }
+      else { setResult(null); setStatus('Now click an end.'); map.getSource('lab-route')?.setData(EMPTY); warmUp(points.current[0]); }
     };
     map.on('click', onClick);
     return () => { map.off('click', onClick); };
@@ -61,28 +64,55 @@ export default function RouteLab() {
     features: points.current.map((p) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } })),
   });
 
+  const ensureSource = () => {
+    if (source.current) return;
+    const decompress = withZstd(new pmtiles.PMTiles("").decompress);
+    coalescing.current = new CoalescingSource(new pmtiles.FetchSource(tilesUrl('north-america')));
+    source.current = new pmtiles.PMTiles(coalescing.current, undefined, decompress);
+  };
+
+  // While the user picks an end, fetch the tile under the start: that reads
+  // the archive's header and the directory for the area, which routing needs.
+  const warmUp = (p: LngLat) => {
+    ensureSource();
+    const [x, y] = lngLatToTile(p[0], p[1], Z);
+    source.current.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
+  };
+
   const route = async (a: LngLat, b: LngLat) => {
     const t0 = performance.now();
+    const phases: [string, number][] = [];
+    let last = t0;
+    const phase = (name: string) => { const now = performance.now(); phases.push([name, now - last]); last = now; };
     try {
-      if (!source.current) {
-        const decompress = withZstd(new pmtiles.PMTiles("").decompress);
-        source.current = new pmtiles.PMTiles(tilesUrl('north-america'), undefined, decompress);
-      }
+      ensureSource();
       const tiles = tilesAround(a, b);
+      const requestsBefore = coalescing.current!.requests;
       setStatus(`Loading ${tiles.length} tiles…`);
-      const g = await buildGraph(source.current, tiles);
-      const found = shortestPath(g, nearestNode(g, a), nearestNode(g, b));
+      const g = await buildGraph(source.current, tiles, phase);
+      const s = nearestNode(g, a), t = nearestNode(g, b);
+      phase('snap');
+      const found = shortestPath(g, s, t);
+      phase('route');
       if (!found) { setStatus('No route between those points on trails or roads.'); return; }
       const coords = found.path.map((i) => worldToLngLat(g, i));
       map.getSource('lab-route').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } });
       setStatus('Measuring elevation…');
       const prof = await profile(coords);
-      setResult({ metres: found.metres, profile: prof, tiles: tiles.length, nodes: g.xs.length, ms: performance.now() - t0 });
+      phase('elevation');
+      setResult({ metres: found.metres, profile: prof, tiles: tiles.length, nodes: g.xs.length, ms: performance.now() - t0, phases });
+      (window as any).__routeLabTimings = { total: performance.now() - t0, phases, tiles: tiles.length, nodes: g.xs.length, rangeRequests: coalescing.current!.requests - requestsBefore };
       setStatus('Click to start a new route.');
     } catch (e: any) {
       setStatus(`Error: ${e.message ?? e}`);
     }
   };
+
+  useEffect(() => {
+    if (!map) return;
+    (window as any).__routeLab = (a: LngLat, b: LngLat) => { points.current = [a, b]; showPoints(); return route(a, b); };
+    (window as any).__routeLabMap = map;
+  }, [map]);
 
   const example = () => {
     points.current = [...EXAMPLE];
@@ -115,7 +145,7 @@ function RouteSummary({ r }: { r: Result }) {
       {(r.metres / 1000).toFixed(1)} km · ↑ {Math.round(r.profile.gain)} m · ↓ {Math.round(r.profile.loss)} m · high point {Math.round(hi)} m
     </div>
     <ElevationChart points={pts} lo={lo} hi={hi} />
-    <div className='text-xs text-gray-500'>{r.tiles} tiles, {r.nodes.toLocaleString()} graph nodes, {(r.ms / 1000).toFixed(1)} s</div>
+    <div className='text-xs text-gray-500'>{r.tiles} tiles, {r.nodes.toLocaleString()} graph nodes, {(r.ms / 1000).toFixed(1)} s ({r.phases.map(([n, ms]) => `${n} ${(ms / 1000).toFixed(1)}`).join(', ')})</div>
   </div>;
 }
 
