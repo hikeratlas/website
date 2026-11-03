@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
 import { withZstd, type Decompress } from '~/zstd';
@@ -20,7 +20,7 @@ declare const pmtiles: {
 
 // pmtiles.js's Protocol makes a PMTiles for each archive URL it sees, with the
 // default (gzip-only) decompress function. Make them with zstd support
-// instead. (pmtiles v2 has no option for this: Protocol looks archives up in
+// instead. (pmtiles v4 has no option for this: Protocol looks archives up in
 // `tiles`, and only makes its own if that comes back empty.)
 function zstdProtocol() {
   // pmtiles.js doesn't export its default decompress function, so borrow it
@@ -77,6 +77,11 @@ export default function Map(props: Props) {
     // Check before creating the map: with hash: true, maplibre writes the
     // initial position into the hash as soon as it's constructed.
     const hasHashPosition = window.location.hash.length > 1;
+
+    // maplibre-gl 6 is ESM-only and loads its worker from a URL next to its
+    // own module. Remix bundles maplibre into a chunk under /build/, where the
+    // worker isn't, so point it at the copy the build script puts in public/.
+    maplibregl.setWorkerUrl(`/maplibre-gl-worker.mjs?v=${maplibregl.getVersion()}`);
 
     let m = new maplibregl.Map({
       container: mapContainer.current,

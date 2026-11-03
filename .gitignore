@@ -8,3 +8,4 @@ node_modules
 /public/build
 .dev.vars
 /.wrangler
+/public/maplibre-gl-worker.mjs

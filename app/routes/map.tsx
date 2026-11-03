@@ -10,7 +10,7 @@ import { buildFor, styleUrl, tilesUrl } from '~/build';
 export const handle: ExternalScriptsHandle = {
   scripts: [
     {
-      src: "https://unpkg.com/pmtiles@2.5.0/dist/index.js",
+      src: "https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js",
       //integrity: "sha384-FhXw7b6AlE/jyjlZH5iHa/tTe9EpJ1Y55RjcgPbjeWMskSxZt1v9qkxLJWNJaGni",
       crossOrigin: 'anonymous',
       async: false,
