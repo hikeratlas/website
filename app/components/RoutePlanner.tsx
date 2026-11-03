@@ -1,0 +1,214 @@
+// Route planning on the map: in route mode, click a start and an end to get
+// the route along trails and roads, its distance and climb, and an elevation
+// chart you can hover to see each point on the route. It all runs in the
+// browser, on the basemap's own tiles (see app/routing/).
+import { useEffect, useRef, useState } from 'react';
+import { withZstd, type Decompress } from '~/zstd';
+import { Z, buildGraph, lngLatToTile, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
+import { profile, type Profile } from '~/routing/elevation';
+import { CoalescingSource, type Source } from '~/routing/source';
+
+declare const pmtiles: {
+  FetchSource: new (url: string) => Source;
+  PMTiles: new (source: string | Source, cache?: unknown, decompress?: Decompress) => {
+    decompress: Decompress;
+    getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined>;
+  };
+};
+
+const EMPTY = { type: 'FeatureCollection', features: [] };
+const COLOR = '#c026d3';
+
+interface Result { metres: number; profile: Profile; ms: number }
+
+export default function RoutePlanner({ map, tiles }: { map: any; tiles: string }) {
+  const [active, setActive] = useState(false);
+  const [status, setStatus] = useState('Click the map to set a start.');
+  const [result, setResult] = useState<Result | null>(null);
+  const points = useRef<LngLat[]>([]);
+  const source = useRef<any>(null);
+  const layersAdded = useRef(false);
+
+  const setData = (id: string, data: any) => map?.getSource(id)?.setData(data);
+
+  const addLayers = () => {
+    if (layersAdded.current) return;
+    layersAdded.current = true;
+    map.addSource('route-line', { type: 'geojson', data: EMPTY });
+    map.addSource('route-points', { type: 'geojson', data: EMPTY });
+    map.addSource('route-hover', { type: 'geojson', data: EMPTY });
+    const round = { 'line-join': 'round', 'line-cap': 'round' };
+    map.addLayer({ id: 'route-line-casing', type: 'line', source: 'route-line', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
+    map.addLayer({ id: 'route-line', type: 'line', source: 'route-line', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } });
+    map.addLayer({ id: 'route-points', type: 'circle', source: 'route-points', paint: { 'circle-radius': 7, 'circle-color': COLOR, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+    map.addLayer({ id: 'route-hover', type: 'circle', source: 'route-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
+  };
+
+  const showPoints = () => setData('route-points', {
+    type: 'FeatureCollection',
+    features: points.current.map((p) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } })),
+  });
+
+  const clear = () => {
+    points.current = [];
+    setResult(null);
+    setStatus('Click the map to set a start.');
+    for (const id of ['route-line', 'route-points', 'route-hover']) setData(id, EMPTY);
+  };
+
+  // Mark the point on the route that the elevation chart is hovered at.
+  const showHover = (p: LngLat | null) => setData('route-hover', p
+    ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } }
+    : EMPTY);
+
+  // The tile source, rebuilt if the map's tileset changes (e.g. a preview).
+  const sourceFor = useRef<string | null>(null);
+  const ensureSource = () => {
+    if (source.current && sourceFor.current === tiles) return;
+    const decompress = withZstd(new pmtiles.PMTiles("").decompress);
+    source.current = new pmtiles.PMTiles(new CoalescingSource(new pmtiles.FetchSource(tiles)), undefined, decompress);
+    sourceFor.current = tiles;
+  };
+
+  // While the user picks an end, fetch the tile under the start: that reads
+  // the archive's header and the directory for the area, which routing needs.
+  const warmUp = (p: LngLat) => {
+    ensureSource();
+    const [x, y] = lngLatToTile(p[0], p[1], Z);
+    source.current.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
+  };
+
+  const route = async (a: LngLat, b: LngLat) => {
+    const t0 = performance.now();
+    try {
+      ensureSource();
+      const ts = tilesAround(a, b);
+      setStatus('Finding a route…');
+      const g = await buildGraph(source.current, ts);
+      const found = shortestPath(g, ...snapPair(g, a, b));
+      if (!found) { setStatus('No route between those points on trails or roads.'); return; }
+      const coords = found.path.map((i) => worldToLngLat(g, i));
+      setData('route-line', { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } });
+      setStatus('Measuring elevation…');
+      const prof = await profile(coords);
+      setResult({ metres: found.metres, profile: prof, ms: performance.now() - t0 });
+      setStatus('Click the map to start a new route.');
+    } catch (e: any) {
+      setStatus(e.message ?? String(e));
+    }
+  };
+
+  // In route mode, clicks set the start and end.
+  useEffect(() => {
+    if (!map || !active) return;
+    if (map.isStyleLoaded()) addLayers(); else map.once('load', addLayers);
+    map.getCanvas().style.cursor = 'crosshair';
+    const onClick = (e: any) => {
+      if (points.current.length >= 2) points.current = [];
+      points.current.push([e.lngLat.lng, e.lngLat.lat]);
+      showPoints();
+      if (points.current.length === 2) route(points.current[0], points.current[1]);
+      else {
+        setResult(null);
+        setStatus('Now click an end.');
+        setData('route-line', EMPTY);
+        warmUp(points.current[0]);
+      }
+    };
+    map.on('click', onClick);
+    return () => { map.off('click', onClick); map.getCanvas().style.cursor = ''; };
+  }, [map, active, tiles]);
+
+  // Test hook, in development only: route between two points.
+  useEffect(() => {
+    if (!map || process.env.NODE_ENV === 'production') return;
+    (window as any).__routePlanner = { map, route: (a: LngLat, b: LngLat) => { setActive(true); addLayers(); points.current = [a, b]; showPoints(); return route(a, b); } };
+  }, [map, tiles]);
+
+  if (!map) return null;
+
+  if (!active) {
+    return <button
+      className='absolute left-3 top-3 bg-white rounded shadow px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50'
+      style={{ zIndex: 2 }}
+      onClick={() => { clear(); setActive(true); }}
+      title='Plan a route: click a start and an end on the map'
+    >Route</button>;
+  }
+
+  return <div
+    className='absolute left-3 bottom-8 bg-white/95 rounded shadow p-3 text-sm'
+    style={{ zIndex: 2, width: 'min(600px, calc(100% - 24px))' }}
+  >
+    <div className='flex items-start justify-between gap-2'>
+      <div className='text-gray-600'>{status}</div>
+      <button className='text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close route' title='Close route'
+        onClick={() => { clear(); setActive(false); }}>×</button>
+    </div>
+    {result && <RouteSummary r={result} onHover={showHover} />}
+  </div>;
+}
+
+function RouteSummary({ r, onHover }: { r: Result; onHover: (p: LngLat | null) => void }) {
+  const pts = r.profile.points;
+  const elevs = pts.map(([, e]) => e);
+  const hi = Math.max(...elevs), lo = Math.min(...elevs);
+  return <div className='mt-1'>
+    <div className='font-semibold text-base'>
+      {(r.metres / 1000).toFixed(1)} km · ↑ {Math.round(r.profile.gain)} m · ↓ {Math.round(r.profile.loss)} m · high point {Math.round(hi)} m
+    </div>
+    <ElevationChart points={pts} lo={lo} hi={hi} onHover={(i) => onHover(i === null ? null : r.profile.coords[i])} />
+  </div>;
+}
+
+function ElevationChart({ points, lo, hi, onHover }: { points: [number, number][]; lo: number; hi: number; onHover: (i: number | null) => void }) {
+  // Drawn in a W x H box, scaled to the panel's width.
+  const W = 576, H = 150, L = 44, B = 20, T = 8;
+  const [hover, setHover] = useState<number | null>(null);
+  const total = points[points.length - 1][0];
+  const yMin = Math.floor((lo - 50) / 100) * 100, yMax = Math.ceil((hi + 50) / 100) * 100;
+  const x = (d: number) => L + (d / total) * (W - L - 4);
+  const y = (e: number) => T + (1 - (e - yMin) / (yMax - yMin)) * (H - T - B);
+  const line = points.map(([d, e]) => `${x(d).toFixed(1)},${y(e).toFixed(1)}`).join(' ');
+  const kmStep = total > 20000 ? 5 : total > 8000 ? 2 : 1;
+  const xTicks = Array.from({ length: Math.floor(total / 1000 / kmStep) + 1 }, (_, i) => i * kmStep);
+  const yStep = (yMax - yMin) > 1500 ? 500 : (yMax - yMin) > 600 ? 200 : 100;
+  const yTicks: number[] = [];
+  for (let e = Math.ceil(yMin / yStep) * yStep; e <= yMax; e += yStep) yTicks.push(e);
+
+  // The sample nearest the pointer. Samples are evenly spaced (10 m), so the
+  // index is about proportional to the distance along the route.
+  const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - box.left) / box.width) * W;
+    const d = ((px - L) / (W - L - 4)) * total;
+    if (d < 0 || d > total) { onLeave(); return; }
+    let i = Math.max(0, Math.min(points.length - 1, Math.round((d / total) * (points.length - 1))));
+    while (i > 0 && points[i][0] > d && points[i - 1][0] >= d) i--;
+    while (i < points.length - 1 && Math.abs(points[i + 1][0] - d) < Math.abs(points[i][0] - d)) i++;
+    setHover(i);
+    onHover(i);
+  };
+  const onLeave = () => { setHover(null); onHover(null); };
+  const hp = hover === null ? null : points[hover];
+  const label = hp && `${(hp[0] / 1000).toFixed(1)} km of ${(total / 1000).toFixed(1)} km · ${Math.round(hp[1]).toLocaleString()} m`;
+  const labelW = 170;
+  const labelX = hp && Math.min(Math.max(x(hp[0]) - labelW / 2, L), W - 4 - labelW);
+
+  return <svg viewBox={`0 0 ${W} ${H}`} width='100%' className='mt-1 block' role='img' aria-label='Elevation profile'
+    style={{ touchAction: 'none', cursor: 'crosshair' }} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={onLeave}>
+    {yTicks.map((e) => <g key={e}>
+      <line x1={L} x2={W - 4} y1={y(e)} y2={y(e)} stroke='#e1e0d9' />
+      <text x={L - 6} y={y(e) + 4} textAnchor='end' fontSize='10' fill='#898781'>{e}</text>
+    </g>)}
+    {xTicks.map((k) => <text key={k} x={x(k * 1000)} y={H - 5} textAnchor='middle' fontSize='10' fill='#898781'>{k} km</text>)}
+    <polygon points={`${x(0)},${y(yMin)} ${line} ${x(total)},${y(yMin)}`} fill='#2a78d6' fillOpacity='0.12' />
+    <polyline points={line} fill='none' stroke='#2a78d6' strokeWidth='2' strokeLinejoin='round' />
+    {hp && <g pointerEvents='none'>
+      <line x1={x(hp[0])} x2={x(hp[0])} y1={T} y2={H - B} stroke='#52514e' strokeWidth='1' strokeDasharray='3 3' />
+      <circle cx={x(hp[0])} cy={y(hp[1])} r='4.5' fill='#0b0b0b' stroke='#ffffff' strokeWidth='2' />
+      <rect x={labelX!} y={T} width={labelW} height='18' rx='3' fill='#ffffff' stroke='#e1e0d9' />
+      <text x={labelX! + labelW / 2} y={T + 13} textAnchor='middle' fontSize='11' fill='#0b0b0b'>{label}</text>
+    </g>}
+  </svg>;
+}
