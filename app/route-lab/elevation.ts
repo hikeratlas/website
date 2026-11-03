@@ -53,6 +53,7 @@ function resample(coords: LngLat[], step: number): [number, LngLat][] {
 
 export interface Profile {
   points: [number, number][]; // [metres along, elevation]
+  coords: LngLat[];           // where each point is
   gain: number;
   loss: number;
 }
@@ -67,5 +68,5 @@ export async function profile(coords: LngLat[], step = 10, threshold = 10): Prom
     if (e - ref >= threshold) { gain += e - ref; ref = e; }
     else if (ref - e >= threshold) { loss += ref - e; ref = e; }
   }
-  return { points: samples.map(([d], i) => [d, elevations[i]]), gain, loss };
+  return { points: samples.map(([d], i) => [d, elevations[i]]), coords: samples.map(([, p]) => p), gain, loss };
 }

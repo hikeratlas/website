@@ -46,6 +46,8 @@ export default function RouteLab() {
       map.addLayer({ id: 'lab-route-casing', type: 'line', source: 'lab-route', paint: { 'line-color': '#ffffff', 'line-width': 7 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
       map.addLayer({ id: 'lab-route', type: 'line', source: 'lab-route', paint: { 'line-color': '#c026d3', 'line-width': 4 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
       map.addLayer({ id: 'lab-points', type: 'circle', source: 'lab-points', paint: { 'circle-radius': 7, 'circle-color': '#c026d3', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+      map.addSource('lab-hover', { type: 'geojson', data: EMPTY });
+      map.addLayer({ id: 'lab-hover', type: 'circle', source: 'lab-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
     };
     if (map.isStyleLoaded()) setup(); else map.once('load', setup);
     const onClick = (e: any) => {
@@ -58,6 +60,11 @@ export default function RouteLab() {
     map.on('click', onClick);
     return () => { map.off('click', onClick); };
   }, [map]);
+
+  // Mark the point on the route that the elevation chart is hovered at.
+  const showHover = (p: LngLat | null) => map?.getSource('lab-hover')?.setData(p
+    ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } }
+    : EMPTY);
 
   const showPoints = () => map.getSource('lab-points')?.setData({
     type: 'FeatureCollection',
@@ -130,13 +137,13 @@ export default function RouteLab() {
       <Map style={styleUrl(null)} lng={-123.07} lat={49.955} zoom={12} onInitialized={((m: any) => setMap(m)) as any} />
       <div className='absolute left-3 bottom-8 bg-white/95 rounded shadow p-3 text-sm' style={{ width: 600, zIndex: 2 }}>
         <div className='text-gray-600'>{status}</div>
-        {result && <RouteSummary r={result} />}
+        {result && <RouteSummary r={result} onHover={showHover} />}
       </div>
     </div>
   </>;
 }
 
-function RouteSummary({ r }: { r: Result }) {
+function RouteSummary({ r, onHover }: { r: Result; onHover: (p: LngLat | null) => void }) {
   const pts = r.profile.points;
   const elevs = pts.map(([, e]) => e);
   const hi = Math.max(...elevs), lo = Math.min(...elevs);
@@ -144,13 +151,14 @@ function RouteSummary({ r }: { r: Result }) {
     <div className='font-semibold text-base'>
       {(r.metres / 1000).toFixed(1)} km · ↑ {Math.round(r.profile.gain)} m · ↓ {Math.round(r.profile.loss)} m · high point {Math.round(hi)} m
     </div>
-    <ElevationChart points={pts} lo={lo} hi={hi} />
+    <ElevationChart points={pts} lo={lo} hi={hi} onHover={(i) => onHover(i === null ? null : r.profile.coords[i])} />
     <div className='text-xs text-gray-500'>{r.tiles} tiles, {r.nodes.toLocaleString()} graph nodes, {(r.ms / 1000).toFixed(1)} s ({r.phases.map(([n, ms]) => `${n} ${(ms / 1000).toFixed(1)}`).join(', ')})</div>
   </div>;
 }
 
-function ElevationChart({ points, lo, hi }: { points: [number, number][]; lo: number; hi: number }) {
+function ElevationChart({ points, lo, hi, onHover }: { points: [number, number][]; lo: number; hi: number; onHover: (i: number | null) => void }) {
   const W = 576, H = 150, L = 44, B = 20, T = 8;
+  const [hover, setHover] = useState<number | null>(null);
   const total = points[points.length - 1][0];
   const yMin = Math.floor((lo - 50) / 100) * 100, yMax = Math.ceil((hi + 50) / 100) * 100;
   const x = (d: number) => L + (d / total) * (W - L - 4);
@@ -161,7 +169,26 @@ function ElevationChart({ points, lo, hi }: { points: [number, number][]; lo: nu
   const yStep = (yMax - yMin) > 1500 ? 500 : (yMax - yMin) > 600 ? 200 : 100;
   const yTicks: number[] = [];
   for (let e = Math.ceil(yMin / yStep) * yStep; e <= yMax; e += yStep) yTicks.push(e);
-  return <svg width={W} height={H} className='mt-1' role='img' aria-label='Elevation profile'>
+  // The sample nearest the pointer. Samples are evenly spaced (10 m), so the
+  // index is proportional to the distance along the route.
+  const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const d = ((e.clientX - box.left - L) / (W - L - 4)) * total;
+    if (d < 0 || d > total) { onLeave(); return; }
+    let i = Math.round((d / total) * (points.length - 1));
+    i = Math.max(0, Math.min(points.length - 1, i));
+    while (i > 0 && points[i][0] > d && points[i - 1][0] >= d) i--;
+    while (i < points.length - 1 && Math.abs(points[i + 1][0] - d) < Math.abs(points[i][0] - d)) i++;
+    setHover(i);
+    onHover(i);
+  };
+  const onLeave = () => { setHover(null); onHover(null); };
+  const hp = hover === null ? null : points[hover];
+  const label = hp && `${(hp[0] / 1000).toFixed(1)} km of ${(total / 1000).toFixed(1)} km · ${Math.round(hp[1]).toLocaleString()} m`;
+  const labelW = 170;
+  const labelX = hp && Math.min(Math.max(x(hp[0]) - labelW / 2, L), W - 4 - labelW);
+  return <svg width={W} height={H} className='mt-1' role='img' aria-label='Elevation profile'
+    style={{ touchAction: 'none', cursor: 'crosshair' }} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={onLeave}>
     {yTicks.map((e) => <g key={e}>
       <line x1={L} x2={W - 4} y1={y(e)} y2={y(e)} stroke='#e1e0d9' />
       <text x={L - 6} y={y(e) + 4} textAnchor='end' fontSize='10' fill='#898781'>{e}</text>
@@ -169,5 +196,11 @@ function ElevationChart({ points, lo, hi }: { points: [number, number][]; lo: nu
     {xTicks.map((k) => <text key={k} x={x(k * 1000)} y={H - 5} textAnchor='middle' fontSize='10' fill='#898781'>{k} km</text>)}
     <polygon points={`${x(0)},${y(yMin)} ${line} ${x(total)},${y(yMin)}`} fill='#2a78d6' fillOpacity='0.12' />
     <polyline points={line} fill='none' stroke='#2a78d6' strokeWidth='2' strokeLinejoin='round' />
+    {hp && <g pointerEvents='none'>
+      <line x1={x(hp[0])} x2={x(hp[0])} y1={T} y2={H - B} stroke='#52514e' strokeWidth='1' strokeDasharray='3 3' />
+      <circle cx={x(hp[0])} cy={y(hp[1])} r='4.5' fill='#0b0b0b' stroke='#ffffff' strokeWidth='2' />
+      <rect x={labelX!} y={T} width={labelW} height='18' rx='3' fill='#ffffff' stroke='#e1e0d9' />
+      <text x={labelX! + labelW / 2} y={T + 13} textAnchor='middle' fontSize='11' fill='#0b0b0b'>{label}</text>
+    </g>}
   </svg>;
 }
