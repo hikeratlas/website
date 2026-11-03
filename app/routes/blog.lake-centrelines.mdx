@@ -1,0 +1,101 @@
+---
+meta:
+  - title: "Lake centrelines: labels that follow the lake"
+  - date: 2026-11-03 12:00:00 -0500
+  - name: description
+    content: Labelling lakes along their length, and making the centreline generator fast enough to run on a continent.
+headers:
+  Cache-Control: no-cache
+
+handle:
+  scripts:
+    - src: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+      async: false
+      defer: false
+---
+
+import HighlightBlocks from '~/components/HighlightBlocks';
+
+export const links = () => [
+  { rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" },
+];
+
+
+<div className="frame">
+# Lake centrelines: labels that follow the lake (Nov 3, 2026)
+
+_(Return to the [homepage](/).)_
+
+_Disclosure: this post describes an improvement that Claude Code made, and Claude wrote the post's initial draft._
+
+British Columbia has a lot of long, skinny, bendy lakes. The usual way to label a lake is to put its name at a single point. For a lake like that, the name ends up mostly on land:
+
+<div className="flex justify-center items-center">
+  <img src="/lake-centrelines-comparison.png"/>
+</div>
+
+Printed maps solve this by curving the name along the lake. You can do the same in MapLibre: give it a line through the middle of the lake, and label it with `symbol-placement: line`. Getting that line is the hard part.
+
+## How to find the middle of a lake
+
+The trick is a [Voronoi diagram](https://en.wikipedia.org/wiki/Voronoi_diagram):
+
+<div className="flex justify-center items-center">
+  <img src="/lake-centrelines-steps.png"/>
+</div>
+
+1. Put points every 100 m along the shore.
+2. Compute the Voronoi diagram of those points. Each cell is the area closer to its point than to any other.
+3. Keep the cell edges that are inside the lake. They're equally far from two bits of shore, so they run down the middle. This gives a skeleton of the lake, with a dead end at every little bay and point.
+4. Find the longest paths through the skeleton, from one dead end to another.
+5. Of the 5 longest, take the straightest, and smooth it. That's where the label goes.
+
+## Prior art
+
+None of this is my idea.
+
+- [osm-lakelines](https://github.com/lukasmartinelli/osm-lakelines), by Lukas Martinelli, built lake lines like these for [OpenMapTiles](https://openmaptiles.org/) back in 2016.
+- It used [label_centerlines](https://github.com/ungarj/label_centerlines), from EOX, which implements the steps above.
+- [acalcutt's fork](https://github.com/acalcutt/osm-lakelines) published planet-wide releases.
+
+I started with acalcutt's last release, from April 2022. But lakes mapped since then didn't have a line. And it only covers lakes, so bays and straits get nothing: no label along the [Strait of Georgia](https://www.openstreetmap.org/relation/13321885), for example. So I wanted to regenerate the lines from current OSM data.
+
+## Making it fast
+
+I pointed label_centerlines at British Columbia. After 14 minutes it still hadn't finished, which seemed like a lot for one province.
+
+So I profiled a single lake: Trout Lake, which took 45 seconds on its own. 90% of the time was in shortest-path searches.
+
+To find the longest paths, label_centerlines runs a search between _every pair_ of dead ends in the skeleton. A skeleton has a dead end for every little bay. Trout Lake needed about 4,900 searches, and the count grows with the square of the number of dead ends, so big lakes take forever.
+
+It turns out you only need three searches:
+
+<div className="flex justify-center items-center">
+  <img src="/lake-centrelines-search.png"/>
+</div>
+
+This is a classic trick for finding the longest path in a tree, and the skeleton is a tree, except around islands. Start at any dead end and search. The farthest dead end, a, must be one end of the longest path. Search again from a: the farthest dead end from it, b, is the other end. One more search from b gives some runner-up candidates.
+
+Along with vectorizing some per-edge Python with Shapely 2, that took:
+
+- Trout Lake from **45 s to 0.02 s**
+- all of British Columbia from **"didn't finish in 14 minutes" to 7 s**
+- all of North America to **about 3 minutes**, on one of GitHub's free 4-core runners. Pulling the water out of the PBF with osmium takes another 10 minutes.
+
+North America now has 37,619 lines, up from 19,053 in the 2022 release.
+
+It isn't perfect. Lakes with lots of islands, like Babine Lake, only get a line along part of their length, because the islands break the skeleton into pieces. osm-lakelines has the same problem.
+
+## Try it
+
+The tool is at [hikeratlas/lake-centrelines](https://github.com/hikeratlas/lake-centrelines). Give it an OSM PBF, and it gives you one GeoJSON line per named lake:
+
+```
+./lake-centrelines.sh british-columbia-latest.osm.pbf lakes.geojsonl
+```
+
+The labels are live on [the map](/map). Try the [Strait of Georgia](/map#7/49.3/-123.8).
+
+</div>
+
+<HighlightBlocks/>
