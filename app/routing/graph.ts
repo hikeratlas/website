@@ -140,17 +140,52 @@ function joinEdgeNodes(g: Graph, nodes: number[]) {
   }
 }
 
-// The node nearest a point, among nodes that have any edges.
-export function nearestNode(g: Graph, p: LngLat): number {
+// The node nearest a point, among nodes that have any edges (and, if given,
+// are in component `only`).
+export function nearestNode(g: Graph, p: LngLat, comp?: Int32Array, only?: number): number {
   const [tx, ty] = lngLatToTile(p[0], p[1], Z);
   const wx = tx * g.extent, wy = ty * g.extent;
   let best = -1, bestD = Infinity;
   for (let i = 0; i < g.xs.length; i++) {
     if (!g.adj[i].length) continue;
+    if (comp && comp[i] !== only) continue;
     const d = (g.xs[i] - wx) ** 2 + (g.ys[i] - wy) ** 2;
     if (d < bestD) { bestD = d; best = i; }
   }
   return best;
+}
+
+// Connected components: comp[i] is node i's component, and the largest
+// component's id is returned too.
+export function components(g: Graph): { comp: Int32Array; largest: number } {
+  const comp = new Int32Array(g.xs.length).fill(-1);
+  const sizes: number[] = [];
+  for (let i = 0; i < g.xs.length; i++) {
+    if (comp[i] >= 0) continue;
+    const id = sizes.length;
+    let n = 0;
+    const stack = [i];
+    comp[i] = id;
+    while (stack.length) {
+      const u = stack.pop()!;
+      n++;
+      for (const { to } of g.adj[u]) if (comp[to] < 0) { comp[to] = id; stack.push(to); }
+    }
+    sizes.push(n);
+  }
+  let largest = 0;
+  for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[largest]) largest = i;
+  return { comp, largest };
+}
+
+// The two nodes to route between: the nearest to each point, unless those
+// aren't connected (one is on a stray bit of path, say); then the nearest on
+// the largest connected network.
+export function snapPair(g: Graph, a: LngLat, b: LngLat): [number, number] {
+  const s = nearestNode(g, a), t = nearestNode(g, b);
+  const { comp, largest } = components(g);
+  if (comp[s] === comp[t]) return [s, t];
+  return [nearestNode(g, a, comp, largest), nearestNode(g, b, comp, largest)];
 }
 
 // A* from s to t; the heuristic is the straight-line distance, in metres.

@@ -4,6 +4,7 @@ import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/cloudflare";
 import { useLoaderData } from "@remix-run/react";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
+import RoutePlanner from '~/components/RoutePlanner';
 import Search, { Item } from '~/components/Search';
 import { buildFor, styleUrl, tilesUrl } from '~/build';
 
@@ -106,6 +107,7 @@ export default function Index() {
           centerOnPmtiles={build ? tilesUrl(build) : undefined}
           onInitialized={onInitialized}
         />
+        <RoutePlanner map={map} tiles={tilesUrl(build ?? 'north-america')} />
       </div>
 
   </>
