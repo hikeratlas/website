@@ -5,6 +5,7 @@ import { useLoaderData } from "@remix-run/react";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
+import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { buildFor, styleUrl, tilesUrl } from '~/build';
 
@@ -86,7 +87,8 @@ export default function Index() {
   }, []);
 
   return <>
-      <div className='h-[100px]'>
+      <div className='h-[100px] relative'>
+        <div className='absolute top-3 right-3'><OsmLink map={map}/></div>
         <div className='p-2'>
           <h1 className='text-2xl'>
             Hiker Atlas
