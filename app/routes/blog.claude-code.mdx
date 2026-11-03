@@ -1,0 +1,47 @@
+---
+meta:
+  - title: AI-pocalypse - impact of Claude Code
+  - date: 2026-10-31 12:00:00 -0500
+  - name: description
+    content: What will Claude Code unlock?
+headers:
+  Cache-Control: no-cache
+
+handle:
+  scripts:
+    - src: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+      async: false
+      defer: false
+---
+
+import HighlightBlocks from '~/components/HighlightBlocks';
+
+export const links = () => [
+  { rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" },
+];
+
+
+<div className="frame">
+# The AIpocalypse: impact of Claude Code (Oct 31, 2026)
+
+_(Return to the [blog homepage](/blog/).)_
+
+Over ~3 months in 2023, I contributed some performance improvements to `tilemaker`, [making it ~7x faster](https://community.openstreetmap.org/t/tilemaker-3-0-creating-vector-tiles/108111):
+
+> tilemaker 3.0 is much faster and less memory-intensive than previous versions. 2.0 took 130GB RAM and 37 hours to create vector tiles for the whole planet. 3.0 takes 24GB RAM and 4.5 hours on the same (old!) hardware. On modern hardware, you can generate the whole planet in under 90 minutes.
+
+There were parts of the codebase that were beyond me, like anything to do with geometry validation, correction or simplification. I also just ran out of juice -- sometimes I'd identify an area that could be improved, but just left a comment noting it.
+
+Three years later, the rise of coding agents has changed the landscape.
+
+In the past two weeks or so, Daniel Korn has contributed a series of PRs that make tilemaker [~5.5x faster](https://github.com/systemed/tilemaker/discussions/977) yet again. [One of the PRs](https://github.com/systemed/tilemaker/pull/972) also fixes one of the identified-but-not-fixed issues from my 2023 work.
+
+The PRs are largely authored and verified by Claude Code.
+
+What an amazing feat. As a hobbyist, it's very exciting to see what Claude Code can enable.
+
+This has spurred a renewal of my interest in this project, let's see how durable that is.
+
+</div>
+
+<HighlightBlocks/>
