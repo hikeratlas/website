@@ -79,12 +79,12 @@ export interface Props {
   // reliable: tile-smush records 0 as the max longitude for areas west of
   // Greenwich.)
   centerOnPmtiles?: string;
-  onInitialized: (x: any) => {};
+  onInitialized: (map: maplibregl.Map) => void;
 }
 
 export default function Map(props: Props) {
-  const mapContainer = useRef(null);
-  const map = useRef(null);
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<maplibregl.Map | null>(null);
   // gsmnp: 9.18/35.6311/-83.371
   // rockies: 6.45/51.537/-118.245
   const [lng] = useState(props.lng);
@@ -105,7 +105,7 @@ export default function Map(props: Props) {
     registerContours();
 
     let m = new maplibregl.Map({
-      container: mapContainer.current,
+      container: mapContainer.current!,
       hash: true,
       style: props.style,
       center: [lng, lat],

@@ -1,0 +1,21 @@
+name: Typecheck
+
+# Fails a PR that introduces a TypeScript error. tsc should stay at zero
+# errors so a new one stands out.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck

@@ -33,7 +33,7 @@ interface Props {
 export default function Search(props: Props) {
   let seq = 0;
   function ComboBox() {
-    const [items, setItems] = React.useState([])
+    const [items, setItems] = React.useState<Item[]>([])
     const {
       isOpen,
       getToggleButtonProps,
@@ -43,7 +43,7 @@ export default function Search(props: Props) {
       highlightedIndex,
       getItemProps,
       selectedItem,
-    } = useCombobox({
+    } = useCombobox<Item>({
       async onInputValueChange({inputValue}) {
         seq++;
         const captured = seq;
@@ -54,12 +54,14 @@ export default function Search(props: Props) {
           `https://lono5me4vqwi2h6dmm66oldkie0hwewm.lambda-url.us-east-1.on.aws/?${params}`
         );
 
-        const json = await response.json();
+        const json = await response.json() as Item[];
 
         if (seq === captured)
           setItems(json)
       },
-      onSelectedItemChange: (x) => (props.onSelect || (() => {}))(x.selectedItem),
+      onSelectedItemChange: (x) => {
+        if (x.selectedItem) props.onSelect?.(x.selectedItem);
+      },
       items,
       itemToString(item) {
         return item ? item.name : ''
