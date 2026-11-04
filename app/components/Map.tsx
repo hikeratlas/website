@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
+import mlcontour from 'maplibre-contour';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
 import { withZstd, type Decompress } from '~/zstd';
@@ -45,6 +46,25 @@ function zstdProtocol() {
   return protocol;
 }
 
+// Contour lines are generated in the browser from the same terrarium DEM the
+// style's hillshade uses: no contour tiles to build or host. This registers
+// the dem-contour:// protocol; the basemap style decides intervals and looks
+// via its "contours" source URL. Registered once per page load, before any
+// map asks for tiles.
+let contoursRegistered = false;
+function registerContours() {
+  if (contoursRegistered) return;
+  contoursRegistered = true;
+  new mlcontour.DemSource({
+    url: "https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png",
+    encoding: "terrarium",
+    // Matches the style's terrain source: terrarium's z15 tiles have seams.
+    maxzoom: 14,
+    id: "dem", // protocol dem-contour://
+    worker: true,
+  }).setupMaplibre(maplibregl);
+}
+
 export interface Props {
   style: string;
   lng: number;
@@ -82,6 +102,7 @@ export default function Map(props: Props) {
     // own module. Remix bundles maplibre into a chunk under /build/, where the
     // worker isn't, so point it at the copy the build script puts in public/.
     maplibregl.setWorkerUrl(`/maplibre-gl-worker.mjs?v=${maplibregl.getVersion()}`);
+    registerContours();
 
     let m = new maplibregl.Map({
       container: mapContainer.current,
