@@ -5,6 +5,7 @@ import { useLoaderData } from "@remix-run/react";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
+import CuratedRoutes from '~/components/CuratedRoutes';
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { buildFor, styleUrl, tilesUrl } from '~/build';
@@ -110,6 +111,7 @@ export default function Index() {
           onInitialized={onInitialized}
         />
         <RoutePlanner map={map} tiles={tilesUrl(build ?? 'north-america')} />
+        <CuratedRoutes map={map} build={build ?? 'north-america'} />
       </div>
 
   </>

@@ -161,7 +161,10 @@ function RouteSummary({ r, onHover }: { r: Result; onHover: (p: LngLat | null) =
   </div>;
 }
 
-function ElevationChart({ points, lo, hi, onHover }: { points: [number, number][]; lo: number; hi: number; onHover: (i: number | null) => void }) {
+// Marks are places along the route (e.g. campsites), at metres from its start.
+export interface Mark { at: number; label: string }
+
+export function ElevationChart({ points, lo, hi, onHover, marks = [] }: { points: [number, number][]; lo: number; hi: number; onHover: (i: number | null) => void; marks?: Mark[] }) {
   // Drawn in a W x H box, scaled to the panel's width.
   const W = 576, H = 150, L = 44, B = 20, T = 8;
   const [hover, setHover] = useState<number | null>(null);
@@ -194,6 +197,13 @@ function ElevationChart({ points, lo, hi, onHover }: { points: [number, number][
   const label = hp && `${(hp[0] / 1000).toFixed(1)} km of ${(total / 1000).toFixed(1)} km · ${Math.round(hp[1]).toLocaleString()} m`;
   const labelW = 170;
   const labelX = hp && Math.min(Math.max(x(hp[0]) - labelW / 2, L), W - 4 - labelW);
+  // Label a mark only if it isn't crowding the last labelled one.
+  let lastX = -Infinity;
+  const labelled = marks.map((m) => {
+    const ok = x(m.at) - lastX >= 70;
+    if (ok) lastX = x(m.at);
+    return ok;
+  });
 
   return <svg viewBox={`0 0 ${W} ${H}`} width='100%' className='mt-1 block' role='img' aria-label='Elevation profile'
     style={{ touchAction: 'none', cursor: 'crosshair' }} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={onLeave}>
@@ -204,6 +214,12 @@ function ElevationChart({ points, lo, hi, onHover }: { points: [number, number][
     {xTicks.map((k) => <text key={k} x={x(k * 1000)} y={H - 5} textAnchor='middle' fontSize='10' fill='#898781'>{k} km</text>)}
     <polygon points={`${x(0)},${y(yMin)} ${line} ${x(total)},${y(yMin)}`} fill='#2a78d6' fillOpacity='0.12' />
     <polyline points={line} fill='none' stroke='#2a78d6' strokeWidth='2' strokeLinejoin='round' />
+    {marks.map((m, i) => {
+      return <g key={i} pointerEvents='none'>
+        <line x1={x(m.at)} x2={x(m.at)} y1={T} y2={H - B} stroke='#16a34a' strokeDasharray='2 3' />
+        {labelled[i] && <text x={Math.min(x(m.at) + 3, W - 70)} y={H - B - 4} fontSize='10' fill='#15803d'>⛺ {m.label.length > 14 ? m.label.slice(0, 13) + '…' : m.label}</text>}
+      </g>;
+    })}
     {hp && <g pointerEvents='none'>
       <line x1={x(hp[0])} x2={x(hp[0])} y1={T} y2={H - B} stroke='#52514e' strokeWidth='1' strokeDasharray='3 3' />
       <circle cx={x(hp[0])} cy={y(hp[1])} r='4.5' fill='#0b0b0b' stroke='#ffffff' strokeWidth='2' />
