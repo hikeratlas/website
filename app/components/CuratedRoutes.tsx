@@ -65,13 +65,58 @@ function lookup(doc: any, id: string): Selected | null {
   return null;
 }
 
-export default function CuratedRoutes({ map, build }: { map: any; build: string }) {
+// A route in a list: the routes under a click, in view, or in a park.
+interface Item { park: string; id: string; title: string; meta: string }
+interface List { heading: string; items: Item[] }
+
+const TYPE_LABEL: Record<string, string> = { day: 'Day hike', approach: 'Base camp', 'multi-day': 'Multi-day', 'from-camp': 'From camp' };
+const TYPE_ORDER: Record<string, number> = { day: 0, approach: 1, 'multi-day': 2, 'from-camp': 3 };
+
+function meta(type: string, km: number, gain: number): string {
+  return `${TYPE_LABEL[type] ?? type} · ${km.toFixed(1)} km · ↑ ${Math.round(gain).toLocaleString()} m`;
+}
+
+// Items from the route layer's features (properties as in hikeratlas/routes'
+// routes.geojsonl), one per route, best first within each park.
+function itemsFromFeatures(features: any[], fromCamp = true): Item[] {
+  const seen = new Map<string, any>();
+  for (const f of features) if (!seen.has(f.properties.id)) seen.set(f.properties.id, f.properties);
+  return [...seen.values()]
+    .filter((p) => fromCamp || p.type !== 'from-camp')
+    .sort((a, b) => String(a.park).localeCompare(String(b.park))
+      || (TYPE_ORDER[a.type] ?? 9) - (TYPE_ORDER[b.type] ?? 9)
+      || String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))
+    .map((p) => ({
+      park: String(p.park_id),
+      id: String(p.id),
+      title: p.type === 'approach' ? `Base camp: ${p.title}` : String(p.title),
+      meta: meta(p.type, Number(p.km), Number(p.gain)),
+    }));
+}
+
+// Items for a whole park, from its JSON.
+function itemsFromPark(doc: any): Item[] {
+  const park = String(doc.park.id);
+  return [
+    ...doc.day_hikes.map((h: any, i: number) => ({ park, id: `${park}/day/${i}`, title: `${h.dest} from ${h.from}`, meta: meta('day', h.route.km, h.route.gain) })),
+    ...doc.base_camps.map((b: any, i: number) => ({ park, id: `${park}/base/${i}`, title: `Base camp: ${b.camp} from ${b.from}`, meta: `${b.hikes.length} day hikes from camp · walk in ${b.approach.km.toFixed(1)} km` })),
+    ...doc.point_to_points.map((t: any, i: number) => ({ park, id: `${park}/multi/${i}`, title: `${t.from} to ${t.to}`, meta: meta('multi-day', t.route.km, t.route.gain) })),
+  ];
+}
+
+export default function CuratedRoutes({ map, build, focusPark }: { map: any; build: string; focusPark?: { id: string; name: string; at: number } | null }) {
   const [sel, setSel] = useState<Selected | null>(null);
   const [prof, setProf] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Routes often share trail: a click on several offers a choice.
-  const [choices, setChoices] = useState<{ park: string; id: string; title: string; km: number }[] | null>(null);
+  // A list of routes to pick from (see Item), and whether it's showing or a
+  // route's details are.
+  const [list, setList] = useState<List | null>(null);
+  const [mode, setMode] = useState<'list' | 'detail' | null>(null);
+  // The routes in view, for the "hikes in view" button.
+  const [inView, setInView] = useState<Item[]>([]);
   const added = useRef(false);
+
+  const openList = (l: List) => { setList(l); setMode('list'); setError(null); };
 
   const setData = (id: string, data: any) => map?.getSource(id)?.setData(data);
 
@@ -92,7 +137,7 @@ export default function CuratedRoutes({ map, build }: { map: any; build: string 
 
   const select = async (park: string, id: string) => {
     setError(null);
-    setChoices(null);
+    setMode('detail');
     try {
       const doc = await parkRoutes(build, park);
       const s = lookup(doc, id);
@@ -118,6 +163,9 @@ export default function CuratedRoutes({ map, build }: { map: any; build: string 
   const close = () => {
     setSel(null);
     setProf(null);
+    setList(null);
+    setMode(null);
+    setError(null);
     setData('curated-sel', EMPTY);
     setData('curated-hover', EMPTY);
   };
@@ -133,22 +181,45 @@ export default function CuratedRoutes({ map, build }: { map: any; build: string 
     };
     const onClick = (e: any) => {
       if (planning()) return;
-      const seen = new Set<string>();
-      const found = at(e).map((f: any) => f.properties).filter((p: any) => !seen.has(p.id) && seen.add(p.id))
-        .map((p: any) => ({ park: String(p.park_id), id: String(p.id), title: String(p.title), km: Number(p.km) }));
-      if (found.length === 1) select(found[0].park, found[0].id);
-      else if (found.length > 1) setChoices(found);
+      const found = itemsFromFeatures(at(e));
+      if (found.length === 1) { setList(null); select(found[0].park, found[0].id); }
+      else if (found.length > 1) openList({ heading: `${found.length} routes here`, items: found });
     };
     const onMove = (e: any) => {
       if (planning()) return;
       map.getCanvas().style.cursor = at(e).length ? 'pointer' : '';
     };
+    // The routes in view, once zoomed in far enough to see them (z9).
+    const onIdle = () => {
+      if (!map.getLayer(LAYER) || map.getZoom() < 9) { setInView([]); return; }
+      setInView(itemsFromFeatures(map.queryRenderedFeatures({ layers: [LAYER] }), false));
+    };
     map.on('click', onClick);
     map.on('mousemove', onMove);
-    return () => { map.off('click', onClick); map.off('mousemove', onMove); };
+    map.on('moveend', onIdle);
+    map.once('idle', onIdle);
+    return () => { map.off('click', onClick); map.off('mousemove', onMove); map.off('moveend', onIdle); };
   }, [map, build]);
 
-  if (!map || (!sel && !error && !choices)) return null;
+  // A park picked in search: list its routes, if it has any.
+  useEffect(() => {
+    if (!map || !focusPark) return;
+    parkRoutes(build, focusPark.id)
+      .then((doc) => openList({ heading: `Hikes in ${focusPark.name}`, items: itemsFromPark(doc) }))
+      // Most parks have no curated routes; just close what was open.
+      .catch(() => close());
+  }, [map, build, focusPark]);
+
+  if (!map) return null;
+
+  const button = inView.length > 0 && mode === null && <button
+    className='absolute top-3 bg-white rounded shadow px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50'
+    style={{ zIndex: 2, left: 84 }}
+    onClick={() => openList({ heading: `${inView.length} curated ${inView.length === 1 ? 'hike' : 'hikes'} in view`, items: inView })}
+    title='Hikes picked for this area'
+  >{inView.length} {inView.length === 1 ? 'hike' : 'hikes'} in view</button>;
+
+  if (mode === null && !error) return button || null;
 
   const r = sel?.route;
   return <div
@@ -157,22 +228,21 @@ export default function CuratedRoutes({ map, build }: { map: any; build: string 
   >
     <div className='flex items-start justify-between gap-2'>
       <div>
-        {sel && <div className='font-semibold text-base'>{sel.title}</div>}
-        {sel && <div className='text-gray-600'>{sel.label}</div>}
+        {mode === 'detail' && list && <button className='text-blue-700 hover:underline mb-1' onClick={() => setMode('list')}>← {list.heading}</button>}
+        {mode === 'list' && list && <div className='font-semibold text-base'>{list.heading}</div>}
+        {mode === 'detail' && sel && <div className='font-semibold text-base'>{sel.title}</div>}
+        {mode === 'detail' && sel && <div className='text-gray-600'>{sel.label}</div>}
         {error && <div className='text-red-700'>{error}</div>}
       </div>
-      <button className='text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={() => { close(); setError(null); setChoices(null); }}>×</button>
+      <button className='text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
     </div>
-    {choices && <div className={sel ? 'mb-2' : ''}>
-      <div className='text-gray-600'>{choices.length} routes here:</div>
-      <ul className='ml-1'>
-        {choices.map((c) => <li key={c.id}>
-          <button className='text-blue-700 hover:underline text-left' onClick={() => select(c.park, c.id)}>{c.title}</button>
-          <span className='text-gray-500'> {c.km.toFixed(1)} km</span>
-        </li>)}
-      </ul>
-    </div>}
-    {r && <>
+    {mode === 'list' && list && <ul className='mt-1'>
+      {list.items.map((c) => <li key={c.id} className='py-0.5'>
+        <button className='text-blue-700 hover:underline text-left' onClick={() => select(c.park, c.id)}>{c.title}</button>
+        <div className='text-gray-500 text-xs'>{c.meta}</div>
+      </li>)}
+    </ul>}
+    {mode === 'detail' && r && <>
       <div className='mt-1'>
         {r.km} km · ↑ {Math.round(r.gain).toLocaleString()} m · high point {Math.round(r.max_ele).toLocaleString()} m
       </div>
