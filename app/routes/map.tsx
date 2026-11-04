@@ -5,6 +5,7 @@ import { useLoaderData } from "@remix-run/react";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
+import CuratedRoutes from '~/components/CuratedRoutes';
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { buildFor, styleUrl, tilesUrl } from '~/build';
@@ -36,6 +37,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function Index() {
   const { build } = useLoaderData<typeof loader>();
   const [map, setMap] = useState(null);
+  // A park picked in search, to list its curated hikes.
+  const [focusPark, setFocusPark] = useState<{ id: string; name: string; at: number } | null>(null);
 
   const onInitialized = (m) => setMap(m);
   const onSelect = (item: Item) => {
@@ -67,6 +70,7 @@ export default function Index() {
     }
 
     map.jumpTo(camera);
+    if (item.kind === 'park') setFocusPark({ id: String(item.osm_id), name: item.name, at: Date.now() });
   }
 
   useEffect(() => {
@@ -110,6 +114,7 @@ export default function Index() {
           onInitialized={onInitialized}
         />
         <RoutePlanner map={map} tiles={tilesUrl(build ?? 'north-america')} />
+        <CuratedRoutes map={map} build={build ?? 'north-america'} focusPark={focusPark} />
       </div>
 
   </>
