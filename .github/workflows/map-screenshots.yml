@@ -1,0 +1,39 @@
+name: Map screenshots
+
+# Renders hikeratlas.com/map at a fixed set of parks and zooms and uploads
+# the PNGs as a build artifact, for before/after review of style changes.
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Map page to screenshot"
+        default: "https://www.hikeratlas.com/map"
+  push:
+    branches: [map-screenshots, claude/coding-access-capabilities-b36pcl]
+    paths:
+      - .github/workflows/map-screenshots.yml
+      - .github/scripts/map-screenshots.mjs
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Playwright
+        run: |
+          npm install --no-save --no-package-lock playwright@1
+          npx playwright install --with-deps chromium
+      - name: Take screenshots
+        env:
+          BASE_URL: ${{ inputs.base_url || 'https://www.hikeratlas.com/map' }}
+        run: node .github/scripts/map-screenshots.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: map-screenshots
+          path: screenshots/
+          retention-days: 14
