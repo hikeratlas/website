@@ -17,6 +17,14 @@ const R = 6371008.8;
 
 export type LngLat = [number, number];
 
+// Paths walkers may not use. The basemap keeps foot=no paths (bike-only
+// trails) and drops foot=private and foot=use_sidepath ones, but check all
+// three in case that changes.
+export function isFootForbidden(props: Record<string, unknown>): boolean {
+  const foot = props.foot;
+  return foot === 'no' || foot === 'private' || foot === 'use_sidepath';
+}
+
 interface TileSource {
   getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined>;
 }
@@ -93,6 +101,9 @@ export async function buildGraph(source: TileSource, tiles: [number, number][], 
       for (let f = 0; f < layer.length; f++) {
         const feature = layer.feature(f);
         if (feature.type !== 2) continue; // lines only
+        // Bike-only trails (foot=no) are in the tiles so the map can show
+        // them, but this plans walking routes.
+        if (isFootForbidden(feature.properties)) continue;
         for (const line of feature.loadGeometry()) {
           let prev = -1;
           for (const p of line) {
