@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { Map as MaplibreMap, JumpToOptions } from 'maplibre-gl';
 import { json } from "@remix-run/cloudflare";
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/cloudflare";
 import { useLoaderData } from "@remix-run/react";
@@ -36,27 +37,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function Index() {
   const { build } = useLoaderData<typeof loader>();
-  const [map, setMap] = useState(null);
+  const [map, setMap] = useState<MaplibreMap | null>(null);
   // A park picked in search, to list its curated hikes.
   const [focusPark, setFocusPark] = useState<{ id: string; name: string; at: number } | null>(null);
 
-  const onInitialized = (m) => setMap(m);
+  const onInitialized = (m: MaplibreMap) => setMap(m);
   const onSelect = (item: Item) => {
     if (!map)
       return;
 
-    let camera = { center: item, zoom: 13 };
-    if (item.min_lon || item.min_lat) {
+    let camera: JumpToOptions = { center: item, zoom: 13 };
+    if (item.min_lon != null && item.min_lat != null && item.max_lon != null && item.max_lat != null) {
       camera = map.cameraForBounds(
         [
-          {
-            lat: item.min_lat,
-            lon: item.min_lon,
-          },
-          {
-            lat: item.max_lat,
-            lon: item.max_lon,
-          }
+          [item.min_lon, item.min_lat],
+          [item.max_lon, item.max_lat],
         ],
         {
           padding: {
@@ -84,8 +79,9 @@ export default function Index() {
 
       if (!isTextInputFocused() && event.key === '/') {
         event.preventDefault();
-        document.querySelector('.autosuggest input').focus();
-        document.querySelector('.autosuggest input').select();
+        const input = document.querySelector<HTMLInputElement>('.autosuggest input');
+        input?.focus();
+        input?.select();
       }
     });
   }, []);
