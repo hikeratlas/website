@@ -9,7 +9,7 @@ on:
         description: "Map page to screenshot"
         default: "https://www.hikeratlas.com/map"
   push:
-    branches: [map-screenshots, claude/coding-access-capabilities-b36pcl]
+    branches: [map-screenshots]
     paths:
       - .github/workflows/map-screenshots.yml
       - .github/scripts/map-screenshots.mjs
