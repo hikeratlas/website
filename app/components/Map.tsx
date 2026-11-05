@@ -113,6 +113,9 @@ export default function Map(props: Props) {
       zoom: zoom,
       minZoom: props.minZoom,
       maxZoom: props.maxZoom,
+      // An (i) that expands, rather than two lines of credits across the
+      // bottom of a phone screen.
+      attributionControl: { compact: true },
     });
     m.showTileBoundaries = !!props.showTileBoundaries;
 
@@ -124,6 +127,19 @@ export default function Map(props: Props) {
         unit: 'metric'
     });
     m.addControl(scale);
+
+    // Compact attribution starts expanded and only collapses on the first
+    // drag; start collapsed, as an (i) to tap.
+    m.once('load', () => {
+      m.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+    });
+
+    // "Where am I?": the most useful thing on a phone at a trailhead. Tapping
+    // it again follows you as you move.
+    m.addControl(new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+    }), 'top-right');
 
     if (props.centerOnPmtiles && !hasHashPosition) {
       protocol.tiles.get(props.centerOnPmtiles)!.getHeader().then((h) => {
