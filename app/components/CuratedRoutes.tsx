@@ -364,21 +364,22 @@ function Sheet({ phone, snap, setSnap, children }: { phone: boolean; snap: Snap;
       else if (snap === 'peek') setSnap('half');
       return;
     }
-    // Where it is now, and where it started.
     const nearest = (h: number) => SNAPS.reduce((a, b) => Math.abs(heightOf(b) - h) < Math.abs(heightOf(a) - h) ? b : a);
-    const from = nearest(d.h0);
-    const to = nearest(d.h);
     // Velocity over the last ~100 ms, px/ms; up is positive.
     const [t0, y0] = d.samples.find(([t]) => e.timeStamp - t <= 100) ?? d.samples[0];
     const v = (y0 - e.clientY) / Math.max(1, e.timeStamp - t0);
-    const dir = d.h > d.h0 ? 1 : -1;
+    const flick = Math.abs(v) > 0.3;
     // A flick, or a deliberate swipe (over 24 px) that would otherwise spring
-    // back: one height in its direction. Otherwise the nearest height.
-    if (Math.abs(v) > 0.3 || (to === from && Math.abs(d.h - d.h0) > 24)) {
-      const j = SNAPS.indexOf(from) + (Math.abs(v) > 0.3 ? Math.sign(v) : dir);
-      setSnap(SNAPS[Math.max(0, Math.min(SNAPS.length - 1, j))]);
+    // back: the next height beyond where it was let go, in the swipe's
+    // direction. Otherwise the nearest height.
+    if (flick || (nearest(d.h) === nearest(d.h0) && Math.abs(d.h - d.h0) > 24)) {
+      const up = flick ? v > 0 : d.h > d.h0;
+      const beyond = up
+        ? SNAPS.find((s) => heightOf(s) > d.h + 8) ?? 'full'
+        : [...SNAPS].reverse().find((s) => heightOf(s) < d.h - 8) ?? 'peek';
+      setSnap(beyond);
     } else {
-      setSnap(to);
+      setSnap(nearest(d.h));
     }
   };
   const h = dragH ?? heightOf(snap);
