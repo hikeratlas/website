@@ -8,10 +8,48 @@ h1 {
   margin-block-end: 0;
 }
 
+.map-header {
+  height: 100px;
+}
+
 .map-wrap {
   position: relative;
   width: 100%;
   height: calc(100dvh - 100px); /* calculate height of the screen minus the heading */
+}
+
+/* Phones: no title bar. Search floats over the top of the map, and the map
+   takes the whole screen. The map's buttons (Route, hikes in view, geolocate)
+   move down below the search box. */
+@media (max-width: 640px) {
+  .map-header {
+    height: 0;
+    position: relative;
+    z-index: 5;
+  }
+  .map-header-title,
+  .map-header-osm {
+    display: none;
+  }
+  .map-search {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+  }
+  .map-search input {
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    min-height: 44px;
+    font-size: 16px; /* under 16px, iOS Safari zooms the page on focus */
+  }
+  .map-wrap {
+    height: 100dvh;
+  }
+  .map-wrap .maplibregl-ctrl-top-right,
+  .map-wrap > button.absolute.top-3 {
+    top: 56px;
+  }
 }
 
 .map {
