@@ -230,7 +230,8 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
 
   const r = sel?.route;
   return <Sheet phone={phone} snap={snap} setSnap={setSnap}>
-    <div className='flex items-start justify-between gap-2'>
+    {/* data-drag: on a phone, dragging the header row moves the sheet. */}
+    <div className='flex items-start justify-between gap-2' data-drag style={phone ? { touchAction: 'none' } : undefined}>
       <div>
         {mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
         {mode === 'list' && list && <div className='font-semibold text-base'>{list.heading}</div>}
@@ -310,11 +311,17 @@ function fitAbove(map: any, line: [number, number][], bottom: number) {
   map.fitBounds([[w, s], [e, n]], { padding: { top: 70, bottom: bottom + 20, left: 30, right: 30 }, duration: 600, maxZoom: 15 });
 }
 
-// The panel: a box on the right on desktop; on phones a bottom sheet with a
-// handle you drag, or tap to step through the heights.
+// The panel: a box on the right on desktop; on phones a bottom sheet.
+//
+// Dragging works from the handle, the header row (data-drag) and, while the
+// sheet is peeking, anywhere on it: not just the 24 px handle. A flick (a
+// fast swipe) moves one height in its direction however short it is;
+// otherwise the sheet settles at the nearest height. Taps on buttons and
+// links aren't drags. A tap on the handle steps through the heights, and a
+// tap on a peeking sheet opens it half way.
 function Sheet({ phone, snap, setSnap, children }: { phone: boolean; snap: Snap; setSnap: (s: Snap) => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ y: number; h: number; moved: boolean } | null>(null);
+  const drag = useRef<{ id: number; y0: number; h0: number; h: number; moved: boolean; onHandle: boolean; samples: [number, number][] } | null>(null);
   const [dragH, setDragH] = useState<number | null>(null);
   if (!phone) {
     return <div
@@ -326,41 +333,74 @@ function Sheet({ phone, snap, setSnap, children }: { phone: boolean; snap: Snap;
   const mapH = () => (ref.current?.offsetParent as HTMLElement | null)?.clientHeight ?? 600;
   // Full stops below the floating search box and the map's buttons (110 px).
   const heightOf = (s: Snap) => s === 'peek' ? PEEK_PX : s === 'half' ? Math.round(mapH() * 0.55) : mapH() - FULL_GAP;
-  const onDown = (e: React.PointerEvent) => {
-    (e.target as Element).setPointerCapture(e.pointerId);
-    drag.current = { y: e.clientY, h: ref.current!.getBoundingClientRect().height, moved: false };
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const t = e.target as Element;
+    if (t.closest('button, a, input, summary, svg')) return; // let taps through
+    const zone = t.closest('[data-drag]');
+    if (!zone || !e.currentTarget.contains(zone)) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const h = ref.current!.getBoundingClientRect().height;
+    drag.current = { id: e.pointerId, y0: e.clientY, h0: h, h, moved: false, onHandle: zone.hasAttribute('data-handle'), samples: [[e.timeStamp, e.clientY]] };
   };
   const onMove = (e: React.PointerEvent) => {
     const d = drag.current;
-    if (!d) return;
-    const dy = d.y - e.clientY;
+    if (!d || e.pointerId !== d.id) return;
+    const dy = d.y0 - e.clientY;
     if (Math.abs(dy) > 6) d.moved = true;
-    if (d.moved) setDragH(Math.max(PEEK_PX * 0.6, Math.min(mapH() - FULL_GAP, d.h + dy)));
-  };
-  const onUp = () => {
-    const d = drag.current;
-    drag.current = null;
-    if (!d) return;
-    if (!d.moved) { // a tap: next height up, wrapping to peek
-      setSnap(SNAPS[(SNAPS.indexOf(snap) + 1) % SNAPS.length]);
-    } else if (dragH !== null) { // the nearest height
-      setSnap(SNAPS.reduce((a, b) => Math.abs(heightOf(b) - dragH) < Math.abs(heightOf(a) - dragH) ? b : a));
+    d.samples.push([e.timeStamp, e.clientY]);
+    if (d.samples.length > 6) d.samples.shift();
+    if (d.moved) {
+      d.h = Math.max(PEEK_PX * 0.6, Math.min(mapH() - FULL_GAP, d.h0 + dy));
+      setDragH(d.h);
     }
+  };
+  const onUp = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || e.pointerId !== d.id) return;
+    drag.current = null;
     setDragH(null);
+    if (!d.moved) { // a tap
+      if (d.onHandle) setSnap(SNAPS[(SNAPS.indexOf(snap) + 1) % SNAPS.length]);
+      else if (snap === 'peek') setSnap('half');
+      return;
+    }
+    const nearest = (h: number) => SNAPS.reduce((a, b) => Math.abs(heightOf(b) - h) < Math.abs(heightOf(a) - h) ? b : a);
+    // Velocity over the last ~100 ms, px/ms; up is positive.
+    const [t0, y0] = d.samples.find(([t]) => e.timeStamp - t <= 100) ?? d.samples[0];
+    const v = (y0 - e.clientY) / Math.max(1, e.timeStamp - t0);
+    const flick = Math.abs(v) > 0.3;
+    // A flick, or a deliberate swipe (over 24 px) that would otherwise spring
+    // back: the next height beyond where it was let go, in the swipe's
+    // direction. Otherwise the nearest height.
+    if (flick || (nearest(d.h) === nearest(d.h0) && Math.abs(d.h - d.h0) > 24)) {
+      const up = flick ? v > 0 : d.h > d.h0;
+      const beyond = up
+        ? SNAPS.find((s) => heightOf(s) > d.h + 8) ?? 'full'
+        : [...SNAPS].reverse().find((s) => heightOf(s) < d.h - 8) ?? 'peek';
+      setSnap(beyond);
+    } else {
+      setSnap(nearest(d.h));
+    }
   };
   const h = dragH ?? heightOf(snap);
+  const peek = snap === 'peek' && dragH === null;
   return <div ref={ref}
-    className='absolute left-0 right-0 bottom-0 bg-white rounded-t-xl shadow-[0_-2px_12px_rgba(0,0,0,0.18)] text-sm flex flex-col'
+    className='sheet absolute left-0 right-0 bottom-0 bg-white rounded-t-xl shadow-[0_-2px_12px_rgba(0,0,0,0.18)] text-sm flex flex-col'
     style={{ zIndex: 2, height: h, transition: dragH === null ? 'height 200ms ease-out' : 'none' }}
     data-snap={snap}
+    onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
   >
     <div role='button' aria-label='Resize panel' title='Drag, or tap to resize'
+      data-drag data-handle
       className='flex justify-center items-center shrink-0 cursor-grab'
-      style={{ height: 24, touchAction: 'none' }}
-      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+      style={{ height: 32, touchAction: 'none' }}>
       <div className='w-10 h-1.5 rounded-full bg-gray-300' />
     </div>
-    <div className='px-3 pb-3 overflow-y-auto' style={{ overflowY: snap === 'peek' && dragH === null ? 'hidden' : 'auto' }}>{children}</div>
+    {/* Peeking, the whole sheet drags; otherwise its content scrolls, and
+        overscroll-behavior keeps a scroll at the top from pulling the page
+        (pull-to-refresh). */}
+    <div className='px-3 pb-3' {...(peek ? { 'data-drag': '' } : {})}
+      style={{ overflowY: peek ? 'hidden' : 'auto', overscrollBehavior: 'contain', touchAction: peek ? 'none' : 'pan-y' }}>{children}</div>
   </div>;
 }
 

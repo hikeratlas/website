@@ -22,6 +22,12 @@ h1 {
    takes the whole screen. The map's buttons (Route, hikes in view, geolocate)
    move down below the search box. */
 @media (max-width: 640px) {
+  /* The map page fills the screen; a swipe that reaches the page shouldn't
+     pull it down to refresh. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
   .map-header {
     height: 0;
     position: relative;
