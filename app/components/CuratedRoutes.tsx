@@ -115,8 +115,13 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
   // The routes in view, for the "hikes in view" button.
   const [inView, setInView] = useState<Item[]>([]);
   const added = useRef(false);
+  // On phones the panel is a bottom sheet: peek (title and stats), half, or
+  // full. Opening a list opens it half way; picking a route drops it to peek
+  // so the route shows on the map above it.
+  const phone = useIsPhone();
+  const [snap, setSnap] = useState<Snap>('half');
 
-  const openList = (l: List) => { setList(l); setMode('list'); setError(null); };
+  const openList = (l: List) => { setList(l); setMode('list'); setError(null); setSnap('half'); };
 
   const setData = (id: string, data: any) => map?.getSource(id)?.setData(data);
 
@@ -138,6 +143,7 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
   const select = async (park: string, id: string) => {
     setError(null);
     setMode('detail');
+    setSnap('peek');
     try {
       const doc = await parkRoutes(build, park);
       const s = lookup(doc, id);
@@ -154,6 +160,7 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
           ...s.route.stopovers.map((c) => ({ type: 'Feature', properties: { name: c.name }, geometry: { type: 'Point', coordinates: c.at } })),
         ],
       });
+      if (window.matchMedia(PHONE).matches) fitAbove(map, s.route.line, PEEK_PX);
       setProf(await profile(s.route.line));
     } catch (e: any) {
       setError(e.message ?? String(e));
@@ -222,10 +229,7 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
   if (mode === null && !error) return button || null;
 
   const r = sel?.route;
-  return <div
-    className='absolute right-3 bottom-8 bg-white/95 rounded shadow p-3 text-sm overflow-y-auto'
-    style={{ zIndex: 2, width: 'min(480px, calc(100% - 24px))', maxHeight: 'calc(100% - 48px)' }}
-  >
+  return <Sheet phone={phone} snap={snap} setSnap={setSnap}>
     <div className='flex items-start justify-between gap-2'>
       <div>
         {mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
@@ -277,6 +281,84 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
         <div className='mt-1'>{sel.why.map(([k, v]) => `${k.replace(/_/g, ' ')} ${v > 0 ? '+' : ''}${v}`).join(' · ')}</div>
       </details>}
     </>}
+  </Sheet>;
+}
+
+const PHONE = '(max-width: 640px)';
+const PEEK_PX = 170;
+type Snap = 'peek' | 'half' | 'full';
+const SNAPS: Snap[] = ['peek', 'half', 'full'];
+
+function useIsPhone(): boolean {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE);
+    setPhone(mq.matches);
+    const on = (e: MediaQueryListEvent) => setPhone(e.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return phone;
+}
+
+// Fit a route into the part of the map a bottom sheet of `bottom` px leaves.
+function fitAbove(map: any, line: [number, number][], bottom: number) {
+  if (line.length < 2) return;
+  let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of line) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+  map.fitBounds([[w, s], [e, n]], { padding: { top: 70, bottom: bottom + 20, left: 30, right: 30 }, duration: 600, maxZoom: 15 });
+}
+
+// The panel: a box on the right on desktop; on phones a bottom sheet with a
+// handle you drag, or tap to step through the heights.
+function Sheet({ phone, snap, setSnap, children }: { phone: boolean; snap: Snap; setSnap: (s: Snap) => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ y: number; h: number; moved: boolean } | null>(null);
+  const [dragH, setDragH] = useState<number | null>(null);
+  if (!phone) {
+    return <div
+      className='absolute right-3 bottom-8 bg-white/95 rounded shadow p-3 text-sm overflow-y-auto'
+      style={{ zIndex: 2, width: 'min(480px, calc(100% - 24px))', maxHeight: 'calc(100% - 48px)' }}
+    >{children}</div>;
+  }
+  // Heights in px, from the map's height (the sheet's offset parent).
+  const mapH = () => (ref.current?.offsetParent as HTMLElement | null)?.clientHeight ?? 600;
+  const heightOf = (s: Snap) => s === 'peek' ? PEEK_PX : s === 'half' ? Math.round(mapH() * 0.55) : mapH() - 64;
+  const onDown = (e: React.PointerEvent) => {
+    (e.target as Element).setPointerCapture(e.pointerId);
+    drag.current = { y: e.clientY, h: ref.current!.getBoundingClientRect().height, moved: false };
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const dy = d.y - e.clientY;
+    if (Math.abs(dy) > 6) d.moved = true;
+    if (d.moved) setDragH(Math.max(PEEK_PX * 0.6, Math.min(mapH() - 64, d.h + dy)));
+  };
+  const onUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    if (!d.moved) { // a tap: next height up, wrapping to peek
+      setSnap(SNAPS[(SNAPS.indexOf(snap) + 1) % SNAPS.length]);
+    } else if (dragH !== null) { // the nearest height
+      setSnap(SNAPS.reduce((a, b) => Math.abs(heightOf(b) - dragH) < Math.abs(heightOf(a) - dragH) ? b : a));
+    }
+    setDragH(null);
+  };
+  const h = dragH ?? heightOf(snap);
+  return <div ref={ref}
+    className='absolute left-0 right-0 bottom-0 bg-white rounded-t-xl shadow-[0_-2px_12px_rgba(0,0,0,0.18)] text-sm flex flex-col'
+    style={{ zIndex: 2, height: h, transition: dragH === null ? 'height 200ms ease-out' : 'none' }}
+    data-snap={snap}
+  >
+    <div role='button' aria-label='Resize panel' title='Drag, or tap to resize'
+      className='flex justify-center items-center shrink-0 cursor-grab'
+      style={{ height: 24, touchAction: 'none' }}
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+      <div className='w-10 h-1.5 rounded-full bg-gray-300' />
+    </div>
+    <div className='px-3 pb-3 overflow-y-auto' style={{ overflowY: snap === 'peek' && dragH === null ? 'hidden' : 'auto' }}>{children}</div>
   </div>;
 }
 
