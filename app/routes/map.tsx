@@ -87,14 +87,16 @@ export default function Index() {
   }, []);
 
   return <>
-      <div className='h-[100px] relative'>
-        <div className='absolute top-3 right-3'><OsmLink map={map}/></div>
+      {/* On phones the title bar goes and search floats on the map (see
+          .map-header in map.css), so the map gets the whole screen. */}
+      <div className='map-header relative'>
+        <div className='map-header-osm absolute top-3 right-3'><OsmLink map={map}/></div>
         <div className='p-2'>
-          <h1 className='text-2xl'>
+          <h1 className='map-header-title text-2xl'>
             Hiker Atlas
             {build && <span className='ml-2 text-sm text-gray-500'>preview: {build}</span>}
           </h1>
-          <Search onSelect={onSelect} build={build}/>
+          <div className='map-search'><Search onSelect={onSelect} build={build}/></div>
         </div>
       </div>
       <div className='map-wrap'>

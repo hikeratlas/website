@@ -286,6 +286,7 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
 
 const PHONE = '(max-width: 640px)';
 const PEEK_PX = 170;
+const FULL_GAP = 110;
 type Snap = 'peek' | 'half' | 'full';
 const SNAPS: Snap[] = ['peek', 'half', 'full'];
 
@@ -323,7 +324,8 @@ function Sheet({ phone, snap, setSnap, children }: { phone: boolean; snap: Snap;
   }
   // Heights in px, from the map's height (the sheet's offset parent).
   const mapH = () => (ref.current?.offsetParent as HTMLElement | null)?.clientHeight ?? 600;
-  const heightOf = (s: Snap) => s === 'peek' ? PEEK_PX : s === 'half' ? Math.round(mapH() * 0.55) : mapH() - 64;
+  // Full stops below the floating search box and the map's buttons (110 px).
+  const heightOf = (s: Snap) => s === 'peek' ? PEEK_PX : s === 'half' ? Math.round(mapH() * 0.55) : mapH() - FULL_GAP;
   const onDown = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture(e.pointerId);
     drag.current = { y: e.clientY, h: ref.current!.getBoundingClientRect().height, moved: false };
@@ -333,7 +335,7 @@ function Sheet({ phone, snap, setSnap, children }: { phone: boolean; snap: Snap;
     if (!d) return;
     const dy = d.y - e.clientY;
     if (Math.abs(dy) > 6) d.moved = true;
-    if (d.moved) setDragH(Math.max(PEEK_PX * 0.6, Math.min(mapH() - 64, d.h + dy)));
+    if (d.moved) setDragH(Math.max(PEEK_PX * 0.6, Math.min(mapH() - FULL_GAP, d.h + dy)));
   };
   const onUp = () => {
     const d = drag.current;
