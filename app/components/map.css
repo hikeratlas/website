@@ -12,6 +12,10 @@ h1 {
   height: 100px;
 }
 
+.map-osm-mobile {
+  display: none;
+}
+
 .map-wrap {
   position: relative;
   width: 100%;
@@ -51,6 +55,18 @@ h1 {
   }
   .map-wrap {
     height: 100dvh;
+  }
+  /* The OSM link, bottom left above the scale bar; under the bottom sheet
+     (z-index 2) when that's open. */
+  .map-osm-mobile {
+    display: block;
+    position: absolute;
+    left: 10px;
+    bottom: 40px;
+    z-index: 1;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.9);
   }
   .map-wrap .maplibregl-ctrl-top-right,
   .map-wrap > button.absolute.top-3 {

@@ -100,6 +100,9 @@ export default function Index() {
         </div>
       </div>
       <div className='map-wrap'>
+        {/* Phones: the header's OSM link is hidden with the title bar, so it
+            sits on the map instead (see .map-osm-mobile in map.css). */}
+        <div className='map-osm-mobile'><OsmLink map={map}/></div>
         {/* A build only covers its own area, so don't constrain it to North
             America; start at its tiles' center instead. */}
         <Map
