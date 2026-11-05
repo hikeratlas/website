@@ -129,7 +129,7 @@ export default function RoutePlanner({ map, tiles }: { map: any; tiles: string }
 
   if (!active) {
     return <button
-      className='absolute left-3 top-3 bg-white rounded shadow px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50'
+      className='tap absolute left-3 top-3 bg-white rounded shadow px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50'
       style={{ zIndex: 2 }}
       onClick={() => { clear(); setActive(true); }}
       title='Plan a route: click a start and an end on the map'
@@ -142,7 +142,7 @@ export default function RoutePlanner({ map, tiles }: { map: any; tiles: string }
   >
     <div className='flex items-start justify-between gap-2'>
       <div className='text-gray-600'>{status}</div>
-      <button className='text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close route' title='Close route'
+      <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close route' title='Close route'
         onClick={() => { clear(); setActive(false); }}>×</button>
     </div>
     {result && <RouteSummary r={result} onHover={showHover} />}
@@ -165,15 +165,26 @@ function RouteSummary({ r, onHover }: { r: Result; onHover: (p: LngLat | null) =
 export interface Mark { at: number; label: string }
 
 export function ElevationChart({ points, lo, hi, onHover, marks = [] }: { points: [number, number][]; lo: number; hi: number; onHover: (i: number | null) => void; marks?: Mark[] }) {
-  // Drawn in a W x H box, scaled to the panel's width.
-  const W = 576, H = 150, L = 44, B = 20, T = 8;
+  // Drawn at the SVG's own width in px (measured), so its 10 px text is 10 px
+  // on a phone too; a fixed box scaled to the panel shrank it to ~5 px.
+  const ref = useRef<SVGSVGElement>(null);
+  const [W, setW] = useState(576);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(240, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const H = 150, L = 44, B = 20, T = 8;
   const [hover, setHover] = useState<number | null>(null);
   const total = points[points.length - 1][0];
   const yMin = Math.floor((lo - 50) / 100) * 100, yMax = Math.ceil((hi + 50) / 100) * 100;
   const x = (d: number) => L + (d / total) * (W - L - 4);
   const y = (e: number) => T + (1 - (e - yMin) / (yMax - yMin)) * (H - T - B);
   const line = points.map(([d, e]) => `${x(d).toFixed(1)},${y(e).toFixed(1)}`).join(' ');
-  const kmStep = total > 20000 ? 5 : total > 8000 ? 2 : 1;
+  // About one km label per 60 px.
+  const kmStep = [1, 2, 5, 10, 20, 50].find((s) => (total / 1000 / s) * 60 <= W - L) ?? 100;
   const xTicks = Array.from({ length: Math.floor(total / 1000 / kmStep) + 1 }, (_, i) => i * kmStep);
   const yStep = (yMax - yMin) > 1500 ? 500 : (yMax - yMin) > 600 ? 200 : 100;
   const yTicks: number[] = [];
@@ -205,8 +216,10 @@ export function ElevationChart({ points, lo, hi, onHover, marks = [] }: { points
     return ok;
   });
 
-  return <svg viewBox={`0 0 ${W} ${H}`} width='100%' className='mt-1 block' role='img' aria-label='Elevation profile'
-    style={{ touchAction: 'none', cursor: 'crosshair' }} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={onLeave}>
+  // pan-y: a vertical swipe on the chart scrolls the panel (the browser then
+  // cancels the pointer); a horizontal drag scrubs along the route.
+  return <svg ref={ref} viewBox={`0 0 ${W} ${H}`} width='100%' className='mt-1 block' role='img' aria-label='Elevation profile'
+    style={{ touchAction: 'pan-y', cursor: 'crosshair' }} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={onLeave} onPointerCancel={onLeave}>
     {yTicks.map((e) => <g key={e}>
       <line x1={L} x2={W - 4} y1={y(e)} y2={y(e)} stroke='#e1e0d9' />
       <text x={L - 6} y={y(e) + 4} textAnchor='end' fontSize='10' fill='#898781'>{e}</text>

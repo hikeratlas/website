@@ -113,6 +113,9 @@ export default function Map(props: Props) {
       zoom: zoom,
       minZoom: props.minZoom,
       maxZoom: props.maxZoom,
+      // An (i) that expands, rather than two lines of credits across the
+      // bottom of a phone screen.
+      attributionControl: { compact: true },
     });
     m.showTileBoundaries = !!props.showTileBoundaries;
 
@@ -124,6 +127,36 @@ export default function Map(props: Props) {
         unit: 'metric'
     });
     m.addControl(scale);
+
+    // Compact attribution starts expanded and only collapses on the first
+    // drag; start collapsed. Collapsed, it reads "© OpenStreetMap" (the short
+    // form the OSMF attribution guidelines allow), and tapping that or the (i)
+    // expands the full credits.
+    m.once('load', () => {
+      const attrib = m.getContainer().querySelector('.maplibregl-ctrl-attrib');
+      if (!attrib) return;
+      attrib.classList.remove('maplibregl-compact-show');
+      const short = document.createElement('button');
+      short.type = 'button';
+      short.className = 'attrib-short';
+      short.textContent = '© OpenStreetMap';
+      short.title = 'Show map credits';
+      short.addEventListener('click', () => {
+        attrib.setAttribute('open', '');
+        attrib.classList.add('maplibregl-compact-show');
+      });
+      // Beside the control, not in it: the control is a <details>, and once
+      // closed only its <summary> (the (i)) is drawn. CSS hides the label
+      // while the credits are expanded.
+      attrib.parentElement?.insertBefore(short, attrib.nextSibling);
+    });
+
+    // "Where am I?": the most useful thing on a phone at a trailhead. Tapping
+    // it again follows you as you move.
+    m.addControl(new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+    }), 'top-right');
 
     if (props.centerOnPmtiles && !hasHashPosition) {
       protocol.tiles.get(props.centerOnPmtiles)!.getHeader().then((h) => {

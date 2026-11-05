@@ -213,7 +213,7 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
   if (!map) return null;
 
   const button = inView.length > 0 && mode === null && <button
-    className='absolute top-3 bg-white rounded shadow px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50'
+    className='tap absolute top-3 bg-white rounded shadow px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50'
     style={{ zIndex: 2, left: 84 }}
     onClick={() => openList({ heading: `${inView.length} curated ${inView.length === 1 ? 'hike' : 'hikes'} in view`, items: inView })}
     title='Hikes picked for this area'
@@ -228,17 +228,17 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
   >
     <div className='flex items-start justify-between gap-2'>
       <div>
-        {mode === 'detail' && list && <button className='text-blue-700 hover:underline mb-1' onClick={() => setMode('list')}>← {list.heading}</button>}
+        {mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
         {mode === 'list' && list && <div className='font-semibold text-base'>{list.heading}</div>}
         {mode === 'detail' && sel && <div className='font-semibold text-base'>{sel.title}</div>}
         {mode === 'detail' && sel && <div className='text-gray-600'>{sel.label}</div>}
         {error && <div className='text-red-700'>{error}</div>}
       </div>
-      <button className='text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
+      <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
     </div>
     {mode === 'list' && list && <ul className='mt-1'>
       {list.items.map((c) => <li key={c.id} className='py-0.5'>
-        <button className='text-blue-700 hover:underline text-left' onClick={() => select(c.park, c.id)}>{c.title}</button>
+        <button className='tap-row text-blue-700 hover:underline text-left' onClick={() => select(c.park, c.id)}>{c.title}</button>
         <div className='text-gray-500 text-xs'>{c.meta}</div>
       </li>)}
     </ul>}
