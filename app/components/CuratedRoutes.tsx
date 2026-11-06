@@ -19,11 +19,15 @@ const COLOR = '#c026d3';
 interface BundleIndex {
   bundle: string;
   parks: Record<string, [number, number]>;
+  // From hikeratlas/basemap's bin/hike-paths.py, in builds that have it:
+  // park id -> "<country>/<state>/<park>", and country or state path -> name.
+  paths?: Record<string, string>;
+  regions?: Record<string, string>;
 }
 
 // A build's index of the parks' routes in its bundle.
 const indexes = new Map<string, Promise<BundleIndex>>();
-function bundleIndex(build: string): Promise<BundleIndex> {
+export function bundleIndex(build: string): Promise<BundleIndex> {
   const url = `${TILES_ROOT}/routes/${build}/index.json`;
   if (!indexes.has(url)) {
     indexes.set(
@@ -50,7 +54,7 @@ async function fetchPark(build: string, park: string): Promise<any> {
 }
 
 const parks = new Map<string, Promise<any>>();
-function parkRoutes(build: string, park: string): Promise<any> {
+export function parkRoutes(build: string, park: string): Promise<any> {
   const key = `${build}/${park}`;
   if (!parks.has(key)) parks.set(key, fetchPark(build, park));
   return parks.get(key)!;
@@ -151,7 +155,37 @@ function itemsFromPark(doc: any): Item[] {
 // search (open it): route is its id, as select() takes.
 export interface FocusPark { id: string; name: string; at: number; route?: string }
 
-export default function CuratedRoutes({ map, build, focusPark }: { map: any; build: string; focusPark?: FocusPark | null }) {
+// What the panel shows, for the page's URL (#55, #56): a park's hike list, a
+// hike, some other list (hikes in view, routes under a click: no URL of its
+// own), or nothing.
+export type Showing =
+  | { type: 'park'; park: string; name: string }
+  | { type: 'hike'; park: string; id: string; title: string }
+  | { type: 'other' }
+  | null;
+
+// A list of places to go to rather than routes: the states of a country, the
+// parks of a state (#55's index pages), shown when nothing else is open.
+export interface RegionList { heading: string; items: { name: string; path: string; meta: string }[] }
+
+export interface Crumb { name: string; href: string; path: string }
+
+interface Props {
+  map: any;
+  build: string;
+  focusPark?: FocusPark | null;
+  onShowing?: (s: Showing) => void;
+  // Breadcrumbs for what's showing, and where clicking one goes.
+  crumbs?: Crumb[];
+  region?: RegionList | null;
+  onNavigate?: (path: string) => void;
+  // Closes the panel when it changes (Back to /map).
+  closeAt?: number;
+  // A note above the panel's content ("That hike has changed...").
+  note?: string | null;
+}
+
+export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs, region, onNavigate, closeAt, note }: Props) {
   const [sel, setSel] = useState<Selected | null>(null);
   const [prof, setProf] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -168,7 +202,11 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
   const phone = useIsPhone();
   const [snap, setSnap] = useState<Snap>('half');
 
-  const openList = (l: List) => { setList(l); setMode('list'); setError(null); setSnap('half'); };
+  // The park whose list is open, if the list is a park's (not "in view").
+  const [listPark, setListPark] = useState<{ id: string; name: string } | null>(null);
+  const openList = (l: List, park: { id: string; name: string } | null = null) => {
+    setList(l); setMode('list'); setError(null); setSnap('half'); setListPark(park);
+  };
 
   const setData = (id: string, data: any) => map?.getSource(id)?.setData(data);
 
@@ -215,6 +253,7 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
   };
 
   const close = () => {
+    setListPark(null);
     setSel(null);
     setProf(null);
     setList(null);
@@ -260,14 +299,30 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
   useEffect(() => {
     if (!map || !focusPark) return;
     if (focusPark.route) {
+      // As if from the park's list, so "←" goes back to it.
+      parkRoutes(build, focusPark.id)
+        .then((doc) => { setList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc) }); setListPark({ id: focusPark.id, name: doc.park?.name ?? focusPark.name }); })
+        .catch(() => {});
       select(focusPark.id, focusPark.route);
       return;
     }
     parkRoutes(build, focusPark.id)
-      .then((doc) => openList({ heading: `Hikes in ${focusPark.name}`, items: itemsFromPark(doc) }))
+      .then((doc) => openList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc) }, { id: focusPark.id, name: doc.park?.name ?? focusPark.name }))
       // Most parks have no curated routes; just close what was open.
       .catch(() => close());
   }, [map, build, focusPark]);
+
+  // Tell the page what's showing, for its URL.
+  useEffect(() => {
+    if (!onShowing) return;
+    if (mode === 'detail' && sel) onShowing({ type: 'hike', park: sel.id.split('/')[0], id: sel.id, title: sel.title });
+    else if (mode === 'list' && listPark) onShowing({ type: 'park', park: listPark.id, name: listPark.name });
+    else if (mode === 'list') onShowing({ type: 'other' });
+    else if (mode === null && !error) onShowing(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, sel?.id, listPark?.id]);
+
+  useEffect(() => { if (closeAt) close(); }, [closeAt]);
 
   if (!map) return null;
 
@@ -278,6 +333,28 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
     title='Hikes picked for this area'
   >{inView.length} {inView.length === 1 ? 'hike' : 'hikes'} in view</button>;
 
+  const trail = crumbs && crumbs.length > 0 && <Crumbs crumbs={crumbs} phone={phone} onNavigate={onNavigate} />;
+
+  // A list of states or parks (#55's index pages), when no route is open.
+  if (mode === null && !error && region) {
+    return <Sheet phone={phone} snap={snap} setSnap={setSnap}>
+      <div className='flex items-start justify-between gap-2' data-drag style={phone ? { touchAction: 'none' } : undefined}>
+        <div>
+          {trail}
+          <h2 className='font-semibold text-base'>{region.heading}</h2>
+        </div>
+        <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={() => onNavigate?.('/map')}>×</button>
+      </div>
+      {note && <div className='text-gray-600 mt-1'>{note}</div>}
+      <ul className='mt-1'>
+        {region.items.map((c) => <li key={c.path} className='py-0.5'>
+          <a href={c.path} className='tap-row text-blue-700 hover:underline' onClick={(e) => { if (onNavigate && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onNavigate(c.path); } }}>{c.name}</a>
+          <div className='text-gray-500 text-xs'>{c.meta}</div>
+        </li>)}
+      </ul>
+    </Sheet>;
+  }
+
   if (mode === null && !error) return button || null;
 
   const r = sel?.route;
@@ -285,11 +362,13 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
     {/* data-drag: on a phone, dragging the header row moves the sheet. */}
     <div className='flex items-start justify-between gap-2' data-drag style={phone ? { touchAction: 'none' } : undefined}>
       <div>
-        {mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
+        {trail}
+        {(!trail || !listPark) && mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
         {mode === 'list' && list && <div className='font-semibold text-base'>{list.heading}</div>}
         {mode === 'detail' && sel && <div className='font-semibold text-base'>{sel.title}</div>}
         {mode === 'detail' && sel && <div className='text-gray-600'>{sel.label}</div>}
         {error && <div className='text-red-700'>{error}</div>}
+        {note && <div className='text-gray-600'>{note}</div>}
       </div>
       <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
     </div>
@@ -335,6 +414,33 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
       </details>}
     </>}
   </Sheet>;
+}
+
+// Breadcrumbs (#55): Hikes › Canada › Alberta › Jasper NP; the last is the
+// page itself, not a link. On phones just the parent, as "‹ Jasper NP".
+// They're links, so they work as such (open in a new tab); a plain click
+// navigates within the map.
+function Crumbs({ crumbs, phone, onNavigate }: { crumbs: Crumb[]; phone: boolean; onNavigate?: (path: string) => void }) {
+  const go = (c: Crumb) => (e: React.MouseEvent) => {
+    if (!onNavigate || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    onNavigate(c.path);
+  };
+  if (phone) {
+    const parent = crumbs[crumbs.length - 2];
+    if (!parent) return null;
+    return <a href={parent.href} onClick={go(parent)} className='tap text-blue-700 hover:underline text-sm block mb-0.5'>‹ {parent.name}</a>;
+  }
+  return <nav aria-label='Breadcrumb' className='text-xs text-gray-600 mb-0.5'>
+    <ol className='flex flex-wrap gap-x-1'>
+      {crumbs.map((c, i) => <li key={c.path} className='flex gap-x-1'>
+        {i > 0 && <span aria-hidden='true'>›</span>}
+        {i < crumbs.length - 1
+          ? <a href={c.href} onClick={go(c)} className='text-blue-700 hover:underline'>{c.name}</a>
+          : <span aria-current='page'>{c.name}</span>}
+      </li>)}
+    </ol>
+  </nav>;
 }
 
 const PHONE = '(max-width: 640px)';
