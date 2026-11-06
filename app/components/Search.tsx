@@ -64,12 +64,34 @@ interface Props {
   // A basemap build namespace (e.g. pr-46/nova-scotia) to search instead of
   // the main index.
   build?: string | null;
+  // Where results should be near (the map's centre), or null for anywhere.
+  near?: () => LatLon | null;
+}
+
+interface LatLon { lat: number; lon: number }
+
+function kmBetween(a: LatLon, b: LatLon): number {
+  const r = Math.PI / 180;
+  const h = Math.sin(((b.lat - a.lat) * r) / 2) ** 2
+    + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(((b.lon - a.lon) * r) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(Math.min(1, h)));
+}
+
+// "38 km away" for a result well away from where you're looking, so
+// same-named places can be told apart; nothing for ones nearby.
+export function away(item: Item, near: LatLon | null): string {
+  if (!near) return '';
+  const km = kmBetween(near, item);
+  if (km < 25) return '';
+  return `${km < 100 ? Math.round(km) : Math.round(km / 10) * 10} km away`;
 }
 
 export default function Search(props: Props) {
   let seq = 0;
   function ComboBox() {
     const [items, setItems] = React.useState<Item[]>([])
+    // Where the shown results were searched from.
+    const nearRef = React.useRef<LatLon | null>(null);
     const {
       isOpen,
       getToggleButtonProps,
@@ -86,6 +108,12 @@ export default function Search(props: Props) {
         const params = new URLSearchParams({ q: inputValue || '' });
         if (props.build)
           params.set('build', props.build);
+        const near = props.near?.() ?? null;
+        nearRef.current = near;
+        if (near) {
+          params.set('lat', near.lat.toFixed(3));
+          params.set('lon', near.lon.toFixed(3));
+        }
         const response = await fetch(
           `https://lono5me4vqwi2h6dmm66oldkie0hwewm.lambda-url.us-east-1.on.aws/?${params}`
         );
@@ -135,7 +163,7 @@ export default function Search(props: Props) {
                 <span className="mt-1 shrink-0"><SearchIcon kind={item.kind} /></span>
                 <span className="flex flex-col min-w-0">
                   <span>{item.name}</span>
-                  <span className="text-sm text-gray-700">{describe(item)}</span>
+                  <span className="text-sm text-gray-700">{[describe(item), away(item, nearRef.current)].filter(x => x).join(' · ')}</span>
                 </span>
               </li>
             ))}
