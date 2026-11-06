@@ -4,6 +4,9 @@
 // curated hikes are a dashed line, red as the map's trails and purple as its
 // curated routes.
 
+// Icons span about half a result's two lines, centred beside them.
+const SIZE = 22;
+
 const MAKI: Record<string, { color: string; d: string[] }> = {
   // maki/mountain
   peak: { color: '#57534e', d: ['m7.5 1c-.3 0-.4.2-.6.4l-5.8 9.5c-.1.1-.1.3-.1.4 0 .5.4.7.7.7h11.6c.4 0 .7-.2.7-.7 0-.2 0-.2-.1-.4l-5.7-9.5c-.2-.2-.4-.4-.7-.4zm0 1.5 3.3 5.5h-.8l-1.5-1.5-1 1.5-1-1.5-1.5 1.5h-.9z'] },
@@ -24,7 +27,7 @@ const MAKI: Record<string, { color: string; d: string[] }> = {
 // A dashed path, as trails and curated routes are drawn on the map.
 function Path({ color }: { color: string }) {
   return (
-    <svg viewBox="0 0 15 15" width="15" height="15" aria-hidden="true">
+    <svg viewBox="0 0 15 15" width={SIZE} height={SIZE} aria-hidden="true">
       <path d="M2 12.5c2-1 3-3.5 5.5-3.5s3-3 5.5-6.5" fill="none" stroke={color}
         strokeWidth="2" strokeDasharray="2.5 1.5" strokeLinecap="round" />
     </svg>
@@ -35,7 +38,7 @@ function Path({ color }: { color: string }) {
 // round-crowned park tree didn't suit.
 function Pine() {
   return (
-    <svg viewBox="0 0 15 15" width="15" height="15" aria-hidden="true" fill="#15803d">
+    <svg viewBox="0 0 15 15" width={SIZE} height={SIZE} aria-hidden="true" fill="#15803d">
       <path d="M7.5 1 3 7h2.5L2.5 11h4v3h2v-3h4L9.5 7H12z" />
     </svg>
   );
@@ -44,7 +47,7 @@ function Pine() {
 // Waves, for lakes (Maki's water drop read as drinking water).
 function Waves() {
   return (
-    <svg viewBox="0 0 15 15" width="15" height="15" aria-hidden="true" fill="none" stroke="#0284c7"
+    <svg viewBox="0 0 15 15" width={SIZE} height={SIZE} aria-hidden="true" fill="none" stroke="#0284c7"
       strokeWidth="1.6" strokeLinecap="round">
       <path d="M1.5 5.5c1.5-1.3 3-1.3 4 0s3 1.3 4 0 3-1.3 4 0" />
       <path d="M1.5 9.5c1.5-1.3 3-1.3 4 0s3 1.3 4 0 3-1.3 4 0" />
@@ -58,9 +61,9 @@ export default function SearchIcon({ kind }: { kind: string }) {
   if (kind === 'park') return <Pine />;
   if (kind === 'lake') return <Waves />;
   const icon = MAKI[kind];
-  if (!icon) return <svg viewBox="0 0 15 15" width="15" height="15" aria-hidden="true" />;
+  if (!icon) return <svg viewBox="0 0 15 15" width={SIZE} height={SIZE} aria-hidden="true" />;
   return (
-    <svg viewBox="0 0 15 15" width="15" height="15" aria-hidden="true" fill={icon.color}>
+    <svg viewBox="0 0 15 15" width={SIZE} height={SIZE} aria-hidden="true" fill={icon.color}>
       {icon.d.map((d) => <path key={d} d={d} />)}
     </svg>
   );
