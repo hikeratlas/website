@@ -1,8 +1,11 @@
 // Curated hikes on the map. The basemap's "route" layer (from
 // hikeratlas/routes) highlights them; clicking one opens its details: the
 // distance and climb, an elevation chart with campsites along the way, and
-// what it passes. Each park's routes are in full in
-// <TILES_ROOT>/routes/<build>/<park osm id>.json.
+// what it passes. Each park's routes are in full in a bundle,
+// <TILES_ROOT>/routes/<build>/<bundle>: every park's JSON gzipped, end to end,
+// located by <TILES_ROOT>/routes/<build>/index.json ({bundle, parks: {<park
+// osm id>: [offset, length]}}), so a build uploads 2 files, not one per park.
+// Builds from before the bundle have <TILES_ROOT>/routes/<build>/<park>.json.
 import { useEffect, useRef, useState } from 'react';
 import { TILES_ROOT } from '~/build';
 import { profile, type Profile } from '~/routing/elevation';
@@ -13,11 +16,53 @@ const LAYER = 'routes-route';
 const EMPTY = { type: 'FeatureCollection', features: [] };
 const COLOR = '#c026d3';
 
+interface BundleIndex {
+  bundle: string;
+  parks: Record<string, [number, number]>;
+}
+
+// A build's index, or null for a build from before the bundle (no index).
+const indexes = new Map<string, Promise<BundleIndex | null>>();
+function bundleIndex(build: string): Promise<BundleIndex | null> {
+  const url = `${TILES_ROOT}/routes/${build}/index.json`;
+  if (!indexes.has(url)) {
+    indexes.set(
+      url,
+      fetch(url).then((r) => {
+        if (r.status === 404 || r.status === 403) return null;
+        return r.ok ? r.json() : Promise.reject(new Error(`${r.status} fetching ${url}`));
+      }),
+    );
+  }
+  return indexes.get(url)!;
+}
+
+async function fetchPark(build: string, park: string): Promise<any> {
+  const index = await bundleIndex(build);
+  if (!index) {
+    const url = `${TILES_ROOT}/routes/${build}/${park}.json`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${r.status} fetching ${url}`);
+    return r.json();
+  }
+  const at = index.parks[park];
+  if (!at) throw new Error(`no routes for park ${park} in ${build}`);
+  const [offset, length] = at;
+  const url = `${TILES_ROOT}/routes/${build}/${index.bundle}`;
+  const r = await fetch(url, { headers: { Range: `bytes=${offset}-${offset + length - 1}` } });
+  if (!r.ok) throw new Error(`${r.status} fetching ${url}`);
+  const bytes = await r.arrayBuffer();
+  // A server that ignores Range sends the whole bundle: take the park's part.
+  const part = r.status === 206 ? bytes : bytes.slice(offset, offset + length);
+  const text = await new Response(new Blob([part]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  return JSON.parse(text);
+}
+
 const parks = new Map<string, Promise<any>>();
 function parkRoutes(build: string, park: string): Promise<any> {
-  const url = `${TILES_ROOT}/routes/${build}/${park}.json`;
-  if (!parks.has(url)) parks.set(url, fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status} fetching ${url}`)))));
-  return parks.get(url)!;
+  const key = `${build}/${park}`;
+  if (!parks.has(key)) parks.set(key, fetchPark(build, park));
+  return parks.get(key)!;
 }
 
 interface Route {
