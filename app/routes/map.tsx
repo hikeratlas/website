@@ -6,7 +6,7 @@ import { useLoaderData } from "@remix-run/react";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Map from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
-import CuratedRoutes from '~/components/CuratedRoutes';
+import CuratedRoutes, { type FocusPark } from '~/components/CuratedRoutes';
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { buildFor, styleUrl, tilesUrl } from '~/build';
@@ -39,7 +39,7 @@ export default function Index() {
   const { build } = useLoaderData<typeof loader>();
   const [map, setMap] = useState<MaplibreMap | null>(null);
   // A park picked in search, to list its curated hikes.
-  const [focusPark, setFocusPark] = useState<{ id: string; name: string; at: number } | null>(null);
+  const [focusPark, setFocusPark] = useState<FocusPark | null>(null);
 
   const onInitialized = (m: MaplibreMap) => setMap(m);
   // Where search should prefer results near (#44): the map's centre, unless
@@ -73,6 +73,11 @@ export default function Index() {
 
     map.jumpTo(camera);
     if (item.kind === 'park') setFocusPark({ id: String(item.osm_id), name: item.name, at: Date.now() });
+    // A curated hike (#44): its osm_id is its route id, <park>/day/i etc.
+    if (item.kind === 'hike') {
+      const route = String(item.osm_id);
+      setFocusPark({ id: route.split('/')[0], name: item.park ?? '', at: Date.now(), route });
+    }
   }
 
   useEffect(() => {

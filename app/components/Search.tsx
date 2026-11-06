@@ -28,6 +28,17 @@ export interface Item {
   ele?: number | null;
   km?: number | null;
   area?: number | null;
+  // A curated hike's climb (m) and type (day, base or multi); a park's number
+  // of curated hikes. From hikeratlas/basemap's search-add-hikes.py.
+  gain?: number | null;
+  hike?: string | null;
+  hikes?: number | null;
+}
+
+const HIKE_LABEL: Record<string, string> = { day: 'Day hike', base: 'Base camp', multi: 'Multi-day' };
+
+function kmText(km: number): string {
+  return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -43,15 +54,21 @@ const KIND_LABEL: Record<string, string> = {
 
 // The second line of a result (#44): what it is or how big, then where:
 // "2,830 m · Jasper NP, Alberta", "12.4 km · Jasper NP, Alberta",
-// "Lake · 1.1 km² · Banff NP, Alberta", "Town · Alberta".
+// "Lake · 1.1 km² · Banff NP, Alberta", "Park · 14 hikes · Alberta",
+// "Multi-day · 36 km · ↑ 1,150 m · Sleeping Giant PP, Ontario".
 export function describe(item: Item): string {
   const what: string[] = [];
   if (item.kind === 'peak') {
     if (item.ele) what.push(`${item.ele.toLocaleString('en-US')} m`);
   } else if (item.kind === 'trail') {
-    if (item.km) what.push(`${item.km < 10 ? item.km.toFixed(1) : Math.round(item.km)} km`);
+    if (item.km) what.push(kmText(item.km));
+  } else if (item.kind === 'hike') {
+    what.push(HIKE_LABEL[item.hike ?? ''] ?? 'Hike');
+    if (item.km) what.push(kmText(item.km));
+    if (item.gain) what.push(`↑ ${item.gain.toLocaleString('en-US')} m`);
   } else if (KIND_LABEL[item.kind]) {
     what.push(KIND_LABEL[item.kind]);
+    if (item.kind === 'park' && item.hikes) what.push(`${item.hikes} hike${item.hikes === 1 ? '' : 's'}`);
     if (item.kind === 'lake' && item.area && item.area >= 100_000)
       what.push(`${(item.area / 1e6).toFixed(item.area < 10e6 ? 1 : 0)} km²`);
   }
