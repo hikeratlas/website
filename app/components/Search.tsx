@@ -2,6 +2,8 @@ import React from 'react';
 
 import { useCombobox } from 'downshift';
 
+import SearchIcon from './SearchIcon';
+
 function cx(...xs: unknown[]): string {
   return xs.filter(x => x).join(' ');
 }
@@ -21,6 +23,40 @@ export interface Item {
   qrank: number;
   state: string | null;
   wikidata: string | null;
+  // From hikeratlas/basemap's search DB when the build has them: a peak's
+  // elevation (m), a trail's length (km), a lake's area (m²).
+  ele?: number | null;
+  km?: number | null;
+  area?: number | null;
+}
+
+const KIND_LABEL: Record<string, string> = {
+  lake: 'Lake',
+  waterfall: 'Waterfall',
+  camp_site: 'Campsite',
+  cliff: 'Cliff',
+  park: 'Park',
+  city: 'City',
+  town: 'Town',
+  village: 'Village',
+};
+
+// The second line of a result (#44): what it is or how big, then where:
+// "2,830 m · Jasper NP, Alberta", "12.4 km · Jasper NP, Alberta",
+// "Lake · 1.1 km² · Banff NP, Alberta", "Town · Alberta".
+export function describe(item: Item): string {
+  const what: string[] = [];
+  if (item.kind === 'peak') {
+    if (item.ele) what.push(`${item.ele.toLocaleString('en-US')} m`);
+  } else if (item.kind === 'trail') {
+    if (item.km) what.push(`${item.km < 10 ? item.km.toFixed(1) : Math.round(item.km)} km`);
+  } else if (KIND_LABEL[item.kind]) {
+    what.push(KIND_LABEL[item.kind]);
+    if (item.kind === 'lake' && item.area && item.area >= 100_000)
+      what.push(`${(item.area / 1e6).toFixed(item.area < 10e6 ? 1 : 0)} km²`);
+  }
+  const where = [item.park, item.state].filter(x => x).join(', ');
+  return [...what, where].filter(x => x).join(' · ');
 }
 
 interface Props {
@@ -91,13 +127,16 @@ export default function Search(props: Props) {
                 className={cx(
                   highlightedIndex === index && 'bg-blue-300',
                   selectedItem === item && 'font-bold',
-                  'py-2 px-3 shadow-sm flex flex-col',
+                  'py-2 px-3 shadow-sm flex gap-2.5 items-start',
                 )}
-                key={item.osm_id}
+                key={`${item.kind}/${item.osm_id}`}
                 {...getItemProps({item, index})}
               >
-                <span>{item.name}</span>
-                <span className="text-sm text-gray-700">{[item.park, item.state].filter(x => x).join(', ')}</span>
+                <span className="mt-1 shrink-0"><SearchIcon kind={item.kind} /></span>
+                <span className="flex flex-col min-w-0">
+                  <span>{item.name}</span>
+                  <span className="text-sm text-gray-700">{describe(item)}</span>
+                </span>
               </li>
             ))}
         </ul>
