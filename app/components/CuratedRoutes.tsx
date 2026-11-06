@@ -147,7 +147,11 @@ function itemsFromPark(doc: any): Item[] {
   ];
 }
 
-export default function CuratedRoutes({ map, build, focusPark }: { map: any; build: string; focusPark?: { id: string; name: string; at: number } | null }) {
+// A park picked in search (list its hikes), or with route, a hike picked in
+// search (open it): route is its id, as select() takes.
+export interface FocusPark { id: string; name: string; at: number; route?: string }
+
+export default function CuratedRoutes({ map, build, focusPark }: { map: any; build: string; focusPark?: FocusPark | null }) {
   const [sel, setSel] = useState<Selected | null>(null);
   const [prof, setProf] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -251,9 +255,14 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
     return () => { map.off('click', onClick); map.off('mousemove', onMove); map.off('moveend', onIdle); };
   }, [map, build]);
 
-  // A park picked in search: list its routes, if it has any.
+  // A park picked in search: list its routes, if it has any. A hike picked
+  // in search (#44): open it.
   useEffect(() => {
     if (!map || !focusPark) return;
+    if (focusPark.route) {
+      select(focusPark.id, focusPark.route);
+      return;
+    }
     parkRoutes(build, focusPark.id)
       .then((doc) => openList({ heading: `Hikes in ${focusPark.name}`, items: itemsFromPark(doc) }))
       // Most parks have no curated routes; just close what was open.
