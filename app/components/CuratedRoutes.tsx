@@ -88,24 +88,31 @@ interface Selected {
 
 const KIND: Record<string, string> = { 'out-and-back': 'out and back', loop: 'loop', 'point-to-point': 'point to point (needs a shuttle)' };
 
+// A route that follows an OSM hiking route carries its name (hikeratlas/routes'
+// recall::name_routes): "Colchuck Lake Trail", not "Colchuck Lake from Stuart
+// Lake Trailhead".
+function named(r: any, otherwise: string): string {
+  return typeof r.name === 'string' && r.name ? r.name : otherwise;
+}
+
 // The route an id names: <park>/day/i, <park>/base/i (the walk in to a base
 // camp), <park>/base/i/j (a day hike from it), or <park>/multi/i.
 function lookup(doc: any, id: string): Selected | null {
   const [, type, i, j] = id.split('/');
   if (type === 'day') {
     const h = doc.day_hikes[+i];
-    return h && { id, title: `${h.dest} from ${h.from}`, label: `Day hike · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why };
+    return h && { id, title: named(h, `${h.dest} from ${h.from}`), label: `Day hike · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why };
   }
   if (type === 'base') {
     const b = doc.base_camps[+i];
     if (!b) return null;
     if (j === undefined) return { id, title: `${b.camp}`, label: `Base camp · walk in from ${b.from}`, route: b.approach, base: b, baseIndex: +i };
     const h = b.hikes[+j];
-    return h && { id, title: `${h.dest} from ${b.camp}`, label: `Day hike from base camp · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why, base: b, baseIndex: +i };
+    return h && { id, title: named(h, `${h.dest} from ${b.camp}`), label: `Day hike from base camp · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why, base: b, baseIndex: +i };
   }
   if (type === 'multi') {
     const t = doc.point_to_points[+i];
-    return t && { id, title: `${t.from} to ${t.to}`, label: `Multi-day · ${KIND['point-to-point']}`, route: t.route };
+    return t && { id, title: named(t, `${t.from} to ${t.to}`), label: `Multi-day · ${KIND['point-to-point']}`, route: t.route };
   }
   return null;
 }
@@ -143,9 +150,9 @@ function itemsFromFeatures(features: any[], fromCamp = true): Item[] {
 function itemsFromPark(doc: any): Item[] {
   const park = String(doc.park.id);
   return [
-    ...doc.day_hikes.map((h: any, i: number) => ({ park, id: `${park}/day/${i}`, title: `${h.dest} from ${h.from}`, meta: meta('day', h.route.km, h.route.gain) })),
+    ...doc.day_hikes.map((h: any, i: number) => ({ park, id: `${park}/day/${i}`, title: named(h, `${h.dest} from ${h.from}`), meta: meta('day', h.route.km, h.route.gain) })),
     ...doc.base_camps.map((b: any, i: number) => ({ park, id: `${park}/base/${i}`, title: `Base camp: ${b.camp} from ${b.from}`, meta: `${b.hikes.length} day hikes from camp · walk in ${b.approach.km.toFixed(1)} km` })),
-    ...doc.point_to_points.map((t: any, i: number) => ({ park, id: `${park}/multi/${i}`, title: `${t.from} to ${t.to}`, meta: meta('multi-day', t.route.km, t.route.gain) })),
+    ...doc.point_to_points.map((t: any, i: number) => ({ park, id: `${park}/multi/${i}`, title: named(t, `${t.from} to ${t.to}`), meta: meta('multi-day', t.route.km, t.route.gain) })),
   ];
 }
 
@@ -316,7 +323,7 @@ export default function CuratedRoutes({ map, build, focusPark }: { map: any; bui
         <ul className='ml-1'>
           {sel.base.hikes.map((h: any, j: number) => <li key={j}>
             <button className='text-blue-700 hover:underline text-left' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}/${j}`)}>
-              {h.dest}
+              {named(h, h.dest)}
             </button> <span className='text-gray-500'>{h.route.km} km · ↑ {Math.round(h.route.gain)} m</span>
           </li>)}
           <li><button className='text-blue-700 hover:underline' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}`)}>The walk in</button></li>
