@@ -268,12 +268,12 @@ export default function Search(props: Props) {
                 className={cx(
                   highlightedIndex === index && 'bg-blue-300',
                   selectedItem === item && 'font-bold',
-                  'py-2 px-3 shadow-sm flex gap-2.5 items-start',
+                  'py-2 px-3 shadow-sm flex gap-3 items-center',
                 )}
                 key={`${item.kind}/${item.osm_id}`}
                 {...getItemProps({item, index})}
               >
-                <span className="mt-1 shrink-0"><SearchIcon kind={item.kind} /></span>
+                <span className="shrink-0"><SearchIcon kind={item.kind} /></span>
                 <span className="flex flex-col min-w-0">
                   <span>{recent ? item.name : highlight(item.name, inputValue)}</span>
                   <span className="text-sm text-gray-700">{lines[index]}</span>
