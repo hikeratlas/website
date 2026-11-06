@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import shutil
@@ -151,9 +152,46 @@ def fts_query(q):
     return '"{}"*'.format(' '.join(q.replace('"', ' ').strip().split()))
 
 
-def search(q, db=None):
+# Re-ranking by distance from the map's centre (website#44): a result's
+# QRank is divided by (1 + km / NEAR_KM)^2. A trail with a quarter of
+# another's QRank wins at a quarter of the distance-weighted distance:
+# Garibaldi's Panorama Ridge (QRank ~54) beats Banff's (~2,300, 600 km away)
+# when you're looking at Garibaldi, while Grand Canyon National Park still
+# beats a nearby "Grand Canyon Trail" from Toronto.
+NEAR_KM = 50.0
+# Candidates for re-ranking: this many best by QRank anywhere, and this many
+# best within NEAR_BOX_KM of the centre, so unranked nearby places can win.
+NEAR_TOP = 100
+NEAR_LOCAL = 50
+NEAR_BOX_KM = 200.0
+
+
+def km_between(lat1, lon1, lat2, lon2):
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
+    return 2 * 6371.0088 * math.asin(math.sqrt(min(1.0, h)))
+
+
+def near_score(h, near):
+    km = km_between(near[0], near[1], h['lat'], h['lon'])
+    return (h['qrank'] or 1) / (1 + km / NEAR_KM) ** 2
+
+
+def search(q, db=None, near=None):
+    """Up to 10 items matching q, best first. near, a (lat, lon), re-ranks
+    them by distance from it as well as QRank."""
     db = db or con
-    hits = search_names(fts_query(q), db)
+    if near:
+        hits = search_names(fts_query(q), db, limit=NEAR_TOP)
+        seen = {h['rowid'] for h in hits}
+        for h in search_names(fts_query(q), db, limit=NEAR_LOCAL, box=box_around(near, NEAR_BOX_KM)):
+            if h['rowid'] not in seen:
+                hits.append(h)
+                seen.add(h['rowid'])
+        hits.sort(key=lambda h: near_score(h, near), reverse=True)
+        hits = hits[:10]
+    else:
+        hits = search_names(fts_query(q), db)
     # Too few hits: the query may end with where it is, e.g. "Bear Mountain
     # British Columbia" (website#38), which matches no names. Fill up with
     # that name in that place, after the plain matches ("Lake Ontario" is a
@@ -171,22 +209,36 @@ def search(q, db=None):
     return hits
 
 
-def search_names(q, db, col=None, value=None):
-    """The 10 best items whose names match the FTS query q, optionally only
-    those with col (state or country) = value."""
+def box_around(near, km):
+    lat, lon = near
+    dlat = km / 111.32
+    dlon = km / (111.32 * max(0.01, math.cos(math.radians(lat))))
+    return (lat - dlat, lat + dlat, lon - dlon, lon + dlon)
+
+
+def search_names(q, db, col=None, value=None, limit=10, box=None):
+    """The limit best items whose names match the FTS query q, optionally
+    only those with col (state or country) = value, or in box (min lat, max
+    lat, min lon, max lon)."""
     db.row_factory = None
-    if col:
+    if box:
+        # Every match, not just the popular ones: near the map, the obscure
+        # ones are what you're after.
+        sql = ("select rowid, * from items where rowid in (select rowid from fts where name match ?)"
+               " and lat between ? and ? and lon between ? and ? order by qrank desc limit ?")
+        args = (q, *box, limit)
+    elif col:
         # Every match, not just the popular ones: filtering by place is for
         # finding the obscure Bear Mountain.
         sql = ("select rowid, * from items where rowid in (select rowid from fts where name match ?)"
-               " and {} = ? order by qrank desc limit 10".format(col))
-        args = (q, value)
+               " and {} = ? order by qrank desc limit ?".format(col))
+        args = (q, value, limit)
     else:
         count = db.execute("select count(*) from fts_popular where name match ?", (q,)).fetchone()[0]
         table = 'fts_popular' if count >= 100 else 'fts'
         sql = ("select rowid, * from items where rowid in (select rowid from {} where name match ?"
-               " order by qrank desc limit 10) order by qrank desc limit 10".format(table))
-        args = (q,)
+               " order by qrank desc limit ?) order by qrank desc limit ?".format(table))
+        args = (q, limit, limit)
     db.row_factory = dict_factory
     cur = db.cursor()
     cur.execute(sql, args)
@@ -194,6 +246,18 @@ def search_names(q, db, col=None, value=None):
     cur.close()
     db.row_factory = None
     return rv
+
+def near_param(params):
+    """(lat, lon) from the lat and lon parameters, or None if they're
+    missing or not a place on Earth."""
+    try:
+        lat, lon = float(params.get('lat')), float(params.get('lon'))
+    except (TypeError, ValueError):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180) or math.isnan(lat) or math.isnan(lon):
+        return None
+    return (lat, lon)
+
 
 def lambda_handler(event, context):
     params = event.get('queryStringParameters') or {}
@@ -214,11 +278,17 @@ def lambda_handler(event, context):
             'body': json.dumps([])
         }
 
-    hits = search(q, db)
+    hits = search(q, db, near_param(params))
     return {
         'statusCode': 200,
         'body': json.dumps(hits)
     }
 
 if __name__ == '__main__':
-    print(search(' '.join(sys.argv[1:])))
+    # lambda_function.py QUERY... [@LAT,LON]
+    args = sys.argv[1:]
+    near = None
+    if args and args[-1].startswith('@'):
+        near = tuple(float(x) for x in args.pop()[1:].split(','))
+    for h in search(' '.join(args), near=near):
+        print(h['qrank'], '|', h['name'], '|', h['kind'], '|', h.get('park'), '|', h.get('state'))

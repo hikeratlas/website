@@ -42,6 +42,13 @@ export default function Index() {
   const [focusPark, setFocusPark] = useState<{ id: string; name: string; at: number } | null>(null);
 
   const onInitialized = (m: MaplibreMap) => setMap(m);
+  // Where search should prefer results near (#44): the map's centre, unless
+  // it's zoomed out past a region, where "near" means little.
+  const near = () => {
+    if (!map || map.getZoom() < 5) return null;
+    const c = map.getCenter();
+    return { lat: c.lat, lon: c.lng };
+  };
   const onSelect = (item: Item) => {
     if (!map)
       return;
@@ -96,7 +103,7 @@ export default function Index() {
             Hiker Atlas
             {build && <span className='ml-2 text-sm text-gray-500'>preview: {build}</span>}
           </h1>
-          <div className='map-search'><Search onSelect={onSelect} build={build}/></div>
+          <div className='map-search'><Search onSelect={onSelect} build={build} near={near}/></div>
         </div>
       </div>
       <div className='map-wrap'>
