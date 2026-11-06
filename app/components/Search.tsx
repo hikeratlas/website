@@ -103,10 +103,80 @@ export function away(item: Item, near: LatLon | null): string {
   return `${km < 100 ? Math.round(km) : Math.round(km / 10) * 10} km away`;
 }
 
+// Lowercase, without accents, for matching typed text to names.
+function fold(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+// A name with the parts that match the query in bold (#44): each word's
+// start that one of the query's words begins, as search matches them.
+export function highlight(name: string, query: string): React.ReactNode[] {
+  const tokens = fold(query).split(/[\s,]+/).filter(Boolean).sort((a, b) => b.length - a.length);
+  const out: React.ReactNode[] = [];
+  for (const [i, m] of [...name.matchAll(/[\p{L}\p{N}'’]+|[^\p{L}\p{N}'’]+/gu)].entries()) {
+    const word = m[0];
+    const t = tokens.find((t) => fold(word).startsWith(t));
+    if (!t) { out.push(word); continue; }
+    out.push(<strong key={i} className="font-semibold">{word.slice(0, t.length)}</strong>, word.slice(t.length));
+  }
+  return out;
+}
+
+// Recent picks, shown when search is focused and empty (#44). Only in this
+// browser, and optional: storage can be missing or throw (private windows).
+const RECENT_KEY = 'hikeratlas:recent-searches';
+const RECENT_MAX = 5;
+
+function loadRecent(): Item[] {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(RECENT_KEY) ?? '[]');
+    return Array.isArray(v) ? v.slice(0, RECENT_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecent(item: Item): void {
+  try {
+    const key = (x: Item) => `${x.kind}/${x.osm_id}`;
+    const v = [item, ...loadRecent().filter((x) => key(x) !== key(item))].slice(0, RECENT_MAX);
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(v));
+  } catch {
+    // Not remembered; search still works.
+  }
+}
+
+function latLonText(p: LatLon): string {
+  return `${Math.abs(p.lat).toFixed(1)}° ${p.lat >= 0 ? 'N' : 'S'}, ${Math.abs(p.lon).toFixed(1)}° ${p.lon >= 0 ? 'E' : 'W'}`;
+}
+
+// Each result's second line. Where two would read the same (two "Lake
+// Agnes" lakes, both "Lake · 0.5 km² · Ontario"), add their countries if
+// those differ, else roughly where they are, so they can be told apart.
+function secondLines(items: Item[], near: LatLon | null): string[] {
+  const lines = items.map((item) => [describe(item), away(item, near)].filter(x => x).join(' · '));
+  const groups = new Map<string, number[]>();
+  items.forEach((item, i) => {
+    const k = `${item.name}\n${lines[i]}`;
+    groups.set(k, [...(groups.get(k) ?? []), i]);
+  });
+  for (const idx of groups.values()) {
+    if (idx.length < 2) continue;
+    const countries = new Set(idx.map((i) => items[i].country));
+    for (const i of idx)
+      lines[i] = [lines[i], countries.size === idx.length ? items[i].country : latLonText(items[i])].filter(x => x).join(' · ');
+  }
+  return lines;
+}
+
 export default function Search(props: Props) {
   let seq = 0;
   function ComboBox() {
     const [items, setItems] = React.useState<Item[]>([])
+    // Showing recent picks rather than results.
+    const [recent, setRecent] = React.useState(false);
+    // Whether the box is being focused by a click (see onFocus).
+    const pointerDown = React.useRef(false);
     // Where the shown results were searched from.
     const nearRef = React.useRef<LatLon | null>(null);
     const {
@@ -118,10 +188,17 @@ export default function Search(props: Props) {
       highlightedIndex,
       getItemProps,
       selectedItem,
+      inputValue,
+      openMenu,
     } = useCombobox<Item>({
       async onInputValueChange({inputValue}) {
         seq++;
         const captured = seq;
+        if (!inputValue) {
+          setRecent(true);
+          setItems(loadRecent());
+          return;
+        }
         const params = new URLSearchParams({ q: inputValue || '' });
         if (props.build)
           params.set('build', props.build);
@@ -137,11 +214,15 @@ export default function Search(props: Props) {
 
         const json = await response.json() as Item[];
 
-        if (seq === captured)
-          setItems(json)
+        if (seq === captured) {
+          setRecent(false);
+          setItems(json);
+        }
       },
       onSelectedItemChange: (x) => {
-        if (x.selectedItem) props.onSelect?.(x.selectedItem);
+        if (!x.selectedItem) return;
+        saveRecent(x.selectedItem);
+        props.onSelect?.(x.selectedItem);
       },
       items,
       itemToString(item) {
@@ -156,7 +237,20 @@ export default function Search(props: Props) {
             <input
               placeholder="Search..."
               className="w-full p-1.5 border"
-              {...getInputProps()}
+              {...getInputProps({
+                // Recent picks for an empty box. A click opens the menu itself
+                // (Downshift toggles it), so only keyboard focus opens it here.
+                onFocus: () => {
+                  if (inputValue) return;
+                  const r = loadRecent();
+                  if (!r.length) return;
+                  setRecent(true);
+                  setItems(r);
+                  if (!pointerDown.current) openMenu();
+                },
+                onPointerDown: () => { pointerDown.current = true; },
+                onBlur: () => { pointerDown.current = false; },
+              })}
             />
           </div>
         </div>
@@ -166,8 +260,10 @@ export default function Search(props: Props) {
           }`}
           {...getMenuProps()}
         >
+          {isOpen && recent && items.length > 0 &&
+            <li className="px-3 pt-2 pb-1 text-xs uppercase tracking-wide text-gray-500">Recent</li>}
           {isOpen &&
-            items.map((item, index) => (
+            (() => { const lines = secondLines(items, recent ? null : nearRef.current); return items.map((item, index) => (
               <li
                 className={cx(
                   highlightedIndex === index && 'bg-blue-300',
@@ -179,11 +275,11 @@ export default function Search(props: Props) {
               >
                 <span className="mt-1 shrink-0"><SearchIcon kind={item.kind} /></span>
                 <span className="flex flex-col min-w-0">
-                  <span>{item.name}</span>
-                  <span className="text-sm text-gray-700">{[describe(item), away(item, nearRef.current)].filter(x => x).join(' · ')}</span>
+                  <span>{recent ? item.name : highlight(item.name, inputValue)}</span>
+                  <span className="text-sm text-gray-700">{lines[index]}</span>
                 </span>
               </li>
-            ))}
+            )); })()}
         </ul>
       </div>
     )
