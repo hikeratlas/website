@@ -25,6 +25,13 @@ export function isFootForbidden(props: Record<string, unknown>): boolean {
   return foot === 'no' || foot === 'private' || foot === 'use_sidepath';
 }
 
+// Closed trails: the basemap flags paths with access=no (and no foot
+// permission) or a mapper's "Trail Closed" name as closed=true. They're
+// drawn, greyed out, but routes shouldn't use them.
+export function isClosed(props: Record<string, unknown>): boolean {
+  return props.closed === true;
+}
+
 interface TileSource {
   getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined>;
 }
@@ -102,8 +109,8 @@ export async function buildGraph(source: TileSource, tiles: [number, number][], 
         const feature = layer.feature(f);
         if (feature.type !== 2) continue; // lines only
         // Bike-only trails (foot=no) are in the tiles so the map can show
-        // them, but this plans walking routes.
-        if (isFootForbidden(feature.properties)) continue;
+        // them, but this plans walking routes. Closed trails likewise.
+        if (isFootForbidden(feature.properties) || isClosed(feature.properties)) continue;
         for (const line of feature.loadGeometry()) {
           let prev = -1;
           for (const p of line) {
