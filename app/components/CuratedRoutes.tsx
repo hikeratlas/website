@@ -21,17 +21,14 @@ interface BundleIndex {
   parks: Record<string, [number, number]>;
 }
 
-// A build's index, or null for a build from before the bundle (no index).
-const indexes = new Map<string, Promise<BundleIndex | null>>();
-function bundleIndex(build: string): Promise<BundleIndex | null> {
+// A build's index of the parks' routes in its bundle.
+const indexes = new Map<string, Promise<BundleIndex>>();
+function bundleIndex(build: string): Promise<BundleIndex> {
   const url = `${TILES_ROOT}/routes/${build}/index.json`;
   if (!indexes.has(url)) {
     indexes.set(
       url,
-      fetch(url).then((r) => {
-        if (r.status === 404 || r.status === 403) return null;
-        return r.ok ? r.json() : Promise.reject(new Error(`${r.status} fetching ${url}`));
-      }),
+      fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status} fetching ${url}`)))),
     );
   }
   return indexes.get(url)!;
@@ -39,12 +36,6 @@ function bundleIndex(build: string): Promise<BundleIndex | null> {
 
 async function fetchPark(build: string, park: string): Promise<any> {
   const index = await bundleIndex(build);
-  if (!index) {
-    const url = `${TILES_ROOT}/routes/${build}/${park}.json`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`${r.status} fetching ${url}`);
-    return r.json();
-  }
   const at = index.parks[park];
   if (!at) throw new Error(`no routes for park ${park} in ${build}`);
   const [offset, length] = at;
