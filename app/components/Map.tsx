@@ -3,6 +3,9 @@ import * as maplibregl from 'maplibre-gl';
 import { ImageryControl } from '~/components/imagery';
 import mlcontour from 'maplibre-contour';
 import { withDemFallback } from '~/components/demFallback';
+import {
+  demTransformRequest, nlDemProtocol, NL_DEM_ATTRIBUTION, NL_DEM_URL, NL_MAXZOOM, NL_MINZOOM, PMTILES_JS,
+} from '~/components/nlDem';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
 import { withZstd, type Decompress } from '~/zstd';
@@ -58,8 +61,9 @@ function registerContours() {
   if (contoursRegistered) return;
   contoursRegistered = true;
   // Mapterhorn 404s below its coverage (z12 in Banff); fill those from the
-  // parent tile rather than leaving holes in the contours.
-  withDemFallback(mlcontour);
+  // parent tile rather than leaving holes in the contours. Over Newfoundland,
+  // use nl-dem's 5 m tiles instead (see nlDem.ts).
+  withDemFallback(mlcontour, { archive: NL_DEM_URL, pmtilesJs: PMTILES_JS, minzoom: NL_MINZOOM, maxzoom: NL_MAXZOOM });
   new mlcontour.DemSource({
     url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
     encoding: "terrarium",
@@ -109,11 +113,15 @@ export default function Map(props: Props) {
     // worker isn't, so point it at the copy the build script puts in public/.
     maplibregl.setWorkerUrl(`/maplibre-gl-worker.mjs?v=${maplibregl.getVersion()}`);
     registerContours();
+    // The hillshade's Mapterhorn tiles go through nldem://, which serves
+    // nl-dem's over Newfoundland (see nlDem.ts).
+    maplibregl.addProtocol("nldem", nlDemProtocol);
 
     let m = new maplibregl.Map({
       container: mapContainer.current!,
       hash: true,
       style: props.style,
+      transformRequest: demTransformRequest,
       center: [lng, lat],
       maxBounds:  props.maxBounds,
       zoom: zoom,
@@ -121,7 +129,7 @@ export default function Map(props: Props) {
       maxZoom: props.maxZoom,
       // An (i) that expands, rather than two lines of credits across the
       // bottom of a phone screen.
-      attributionControl: { compact: true },
+      attributionControl: { compact: true, customAttribution: NL_DEM_ATTRIBUTION },
     });
     m.showTileBoundaries = !!props.showTileBoundaries;
 
