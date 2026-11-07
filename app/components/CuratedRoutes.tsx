@@ -64,6 +64,14 @@ export function parkRoutes(build: string, park: string): Promise<any> {
   return parks.get(key)!;
 }
 
+// Forget a build's index and park routes, so the next call fetches the
+// current ones. A tab kept open across a routes build holds the old index,
+// while search already returns the new build's hikes (basemap#185).
+export function refreshBundle(build: string) {
+  indexes.delete(`${TILES_ROOT}/routes/${build}/index.json`);
+  for (const k of [...parks.keys()]) if (k.startsWith(`${build}/`)) parks.delete(k);
+}
+
 interface Route {
   km: number;
   gain: number;
