@@ -1,37 +1,98 @@
-// An elevation profile from the Terrarium DEM tiles the map's hillshade
-// already uses (elevation = R * 256 + G + B / 256 - 32768 metres).
+// An elevation profile from the same DEM as the map's hillshade and contours
+// (basemap#187): hikeratlas/nl-dem's 5 m tiles over Newfoundland, else
+// Mapterhorn's (lidar where it exists). Both are 512 px Terrarium tiles
+// (elevation = R * 256 + G + B / 256 - 32768 metres). Where a tile doesn't
+// exist (Mapterhorn past its coverage, nl-dem past z13), a point is sampled
+// from the nearest ancestor that does.
 import { haversine, lngLatToTile, type LngLat } from './graph';
+import { nlTile, NL_MAXZOOM, NL_MINZOOM } from '~/components/nlDem';
 
-const URL = 'https://elevation-tiles-prod.s3.amazonaws.com/terrarium';
-const DEM_Z = 14;
-const tiles = new Map<string, Promise<Float32Array>>();
+const MAPTERHORN = 'https://tiles.mapterhorn.com';
+const DEM_Z = 14; // ~5 m pixels at 512 px: finer than the 10 m sampling step
+const SIZE = 512;
 
-function demTile(x: number, y: number): Promise<Float32Array> {
+interface Grid { z: number; x: number; y: number; h: Float32Array }
+
+async function decode(data: Blob): Promise<Float32Array> {
+  const bitmap = await createImageBitmap(data);
+  const canvas = new OffscreenCanvas(SIZE, SIZE);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(bitmap, 0, 0, SIZE, SIZE);
+  bitmap.close();
+  const px = ctx.getImageData(0, 0, SIZE, SIZE).data;
+  const out = new Float32Array(SIZE * SIZE);
+  for (let i = 0; i < out.length; i++) out[i] = px[4 * i] * 256 + px[4 * i + 1] + px[4 * i + 2] / 256 - 32768;
+  return out;
+}
+
+// Decoded tiles, by source and z/x/y; null where the source has none.
+const decoded = new Map<string, Promise<Float32Array | null>>();
+function cached(key: string, load: () => Promise<Float32Array | null>): Promise<Float32Array | null> {
+  let got = decoded.get(key);
+  if (!got) {
+    got = load();
+    got.catch(() => decoded.delete(key));
+    decoded.set(key, got);
+  }
+  return got;
+}
+
+function fromNl(z: number, x: number, y: number) {
+  return cached(`nl/${z}/${x}/${y}`, async () => {
+    try {
+      const t = await nlTile(z, x, y);
+      return t ? decode(new Blob([t.data], { type: 'image/webp' })) : null;
+    } catch (e) {
+      console.warn('nl-dem lookup failed; using Mapterhorn', e);
+      return null;
+    }
+  });
+}
+
+function fromMapterhorn(z: number, x: number, y: number) {
+  return cached(`mt/${z}/${x}/${y}`, async () => {
+    const r = await fetch(`${MAPTERHORN}/${z}/${x}/${y}.webp`);
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(`Mapterhorn ${r.status} for ${z}/${x}/${y}`);
+    return decode(await r.blob());
+  });
+}
+
+// The grid for a DEM_Z tile: nl-dem's (its z13 ancestor) where it has one,
+// as Mapterhorn's z14+ there is blurrier; else Mapterhorn's own tile, or its
+// nearest ancestor past Mapterhorn's coverage.
+const grids = new Map<string, Promise<Grid>>();
+function demGrid(x: number, y: number): Promise<Grid> {
   const key = `${x}/${y}`;
-  if (!tiles.has(key)) {
-    tiles.set(key, (async () => {
-      const blob = await (await fetch(`${URL}/${DEM_Z}/${x}/${y}.png`)).blob();
-      const bitmap = await createImageBitmap(blob);
-      const canvas = new OffscreenCanvas(256, 256);
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(bitmap, 0, 0);
-      const px = ctx.getImageData(0, 0, 256, 256).data;
-      const out = new Float32Array(256 * 256);
-      for (let i = 0; i < out.length; i++) out[i] = px[4 * i] * 256 + px[4 * i + 1] + px[4 * i + 2] / 256 - 32768;
-      return out;
+  if (!grids.has(key)) {
+    grids.set(key, (async () => {
+      const nz = Math.min(DEM_Z, NL_MAXZOOM);
+      if (nz >= NL_MINZOOM) {
+        const s = DEM_Z - nz;
+        const h = await fromNl(nz, x >> s, y >> s);
+        if (h) return { z: nz, x: x >> s, y: y >> s, h };
+      }
+      for (let z = DEM_Z; z >= 0; z--) {
+        const s = DEM_Z - z;
+        const h = await fromMapterhorn(z, x >> s, y >> s);
+        if (h) return { z, x: x >> s, y: y >> s, h };
+      }
+      throw new Error(`no DEM tile for ${DEM_Z}/${x}/${y}`);
     })());
   }
-  return tiles.get(key)!;
+  return grids.get(key)!;
 }
 
 async function elevationAt(p: LngLat): Promise<number> {
   const [tx, ty] = lngLatToTile(p[0], p[1], DEM_Z);
-  const fx = tx * 256 - 0.5, fy = ty * 256 - 0.5;
+  const g = await demGrid(Math.floor(tx), Math.floor(ty));
+  const scale = 2 ** (DEM_Z - g.z);
+  // Pixel coordinates within the grid's tile, between pixel centres.
+  const fx = (tx / scale - g.x) * SIZE - 0.5, fy = (ty / scale - g.y) * SIZE - 0.5;
   const x0 = Math.floor(fx), y0 = Math.floor(fy);
-  const px = async (X: number, Y: number) => (await demTile(Math.floor(X / 256), Math.floor(Y / 256)))[(Y & 255) * 256 + (X & 255)];
-  const [a, b, c, d] = await Promise.all([px(x0, y0), px(x0 + 1, y0), px(x0, y0 + 1), px(x0 + 1, y0 + 1)]);
+  const at = (X: number, Y: number) => g.h[Math.min(SIZE - 1, Math.max(0, Y)) * SIZE + Math.min(SIZE - 1, Math.max(0, X))];
   const u = fx - x0, v = fy - y0;
-  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+  return (at(x0, y0) * (1 - u) + at(x0 + 1, y0) * u) * (1 - v) + (at(x0, y0 + 1) * (1 - u) + at(x0 + 1, y0 + 1) * u) * v;
 }
 
 // Points every `step` metres along a line, with their distance from its start.
