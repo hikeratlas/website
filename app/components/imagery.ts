@@ -28,9 +28,10 @@
 //
 // While it's on, the map's fills (land cover, water, parks) and hillshade are
 // hidden: the imagery stands in for them. Lines and labels (trails, roads,
-// park edges, contours, names) stay on top.
+// park edges, contours, names) stay on top, restyled for a dark, busy
+// background (imageryPaint, basemap#176).
 import * as maplibregl from 'maplibre-gl';
-import type { IControl, Map as MaplibreMap, RasterSourceSpecification } from 'maplibre-gl';
+import type { IControl, LayerSpecification, Map as MaplibreMap, RasterSourceSpecification } from 'maplibre-gl';
 
 const KEY = 'hikeratlas.imagery';
 const HIDDEN = ['fill', 'fill-extrusion', 'hillshade'];
@@ -226,11 +227,82 @@ const SOURCES: [string, RasterSourceSpecification][] = [
 ];
 const LAYERS = SOURCES.map(([id]) => id);
 
+// The basemap's lines and labels are styled for a light map: white forest
+// roads, dark red trails, dark labels on pale halos, green park bands, blue
+// streams. Over imagery the roads glare, the trails vanish into dark forest
+// and the rest is clutter (basemap#176). Over imagery:
+// - labels: white (light blue for water) on a dark halo;
+// - trails: light, so they show on dark forest; bike trails light orange;
+// - roads: translucent, without casings; OSM route bands fainter;
+// - streams faint; park edges a thin light green, without the band;
+// - contours and boundaries: white or light grey instead of brown.
+// Matched by source layer, so new layers of a kind follow along.
+type PaintKey = Parameters<MaplibreMap['setPaintProperty']>[1];
+type PaintValue = Parameters<MaplibreMap['setPaintProperty']>[2];
+type Paint = Partial<Record<PaintKey, PaintValue>>;
+function imageryPaint(l: LayerSpecification): Paint | undefined {
+  const sl = 'source-layer' in l ? l['source-layer'] : undefined;
+  const id = l.id;
+  if (l.type === 'symbol') {
+    const water = !!sl && (sl.startsWith('water') || sl === 'lake_centerline');
+    return {
+      'text-color': water ? '#bae6fd' : '#ffffff',
+      'text-halo-color': 'rgba(0, 0, 0, 0.7)',
+      'text-halo-width': 1.5,
+      'text-halo-blur': 0.5,
+    };
+  }
+  if (l.type !== 'line') return undefined;
+  switch (sl) {
+    case 'road':
+      return id.includes('casing') ? { 'line-opacity': 0 } : { 'line-opacity': 0.5 };
+    case 'path':
+      if (id.includes('bridge')) return undefined;
+      if (id.includes('closed')) return { 'line-color': '#e4e4e7' };
+      if (id.includes('crossings')) return { 'line-color': '#7dd3fc' };
+      if (/mtb|bike|cycle/.test(id)) return { 'line-color': '#fdba74', 'line-blur': 0 };
+      return { 'line-color': '#fb7185', 'line-blur': 0 };
+    case 'route':
+      return { 'line-opacity': 0.15 };
+    case 'water_line':
+      return { 'line-opacity': 0.35 };
+    case 'park_outline':
+      return id.includes('band') ? { 'line-opacity': 0 } : { 'line-color': '#bbf7d0', 'line-opacity': 0.7 };
+    case 'contours-15':
+      return { 'line-color': '#ffffff' };
+    case 'boundary':
+      return { 'line-color': '#e4e4e7' };
+  }
+  return undefined;
+}
+
+// The style's own paint values, to put back when the imagery goes off.
+const original = new Map<string, Paint>();
+
+function restyle(map: MaplibreMap, on: boolean) {
+  for (const l of map.getStyle().layers) {
+    if (on) {
+      const paint = imageryPaint(l);
+      if (!paint) continue;
+      const saved: Paint = original.get(l.id) ?? {};
+      for (const [k, v] of Object.entries(paint) as [PaintKey, PaintValue][]) {
+        if (!(k in saved)) saved[k] = map.getPaintProperty(l.id, k);
+        map.setPaintProperty(l.id, k, v);
+      }
+      original.set(l.id, saved);
+    } else {
+      for (const [k, v] of Object.entries(original.get(l.id) ?? {}) as [PaintKey, PaintValue][]) map.setPaintProperty(l.id, k, v);
+    }
+  }
+  if (!on) original.clear();
+}
+
 function show(map: MaplibreMap, on: boolean) {
   const style = map.getStyle();
   for (const l of style.layers) {
     if (HIDDEN.includes(l.type)) map.setLayoutProperty(l.id, 'visibility', on ? 'none' : 'visible');
   }
+  restyle(map, on);
   if (!on) {
     for (const id of LAYERS) if (map.getLayer(id)) map.removeLayer(id);
     return;
