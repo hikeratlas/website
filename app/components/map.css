@@ -115,3 +115,16 @@ h1 {
 .maplibregl-map .maplibregl-ctrl-attrib:not(.maplibregl-compact) ~ .attrib-short {
   display: none;
 }
+
+/* The aerial imagery toggle (components/imagery.ts): MapLibre's button size,
+   with its icon centred, and highlighted while the imagery is on. */
+.imagery-toggle {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  color: #374151;
+}
+.imagery-toggle[aria-pressed='true'] {
+  color: #1d4ed8;
+  background-color: #dbeafe !important;
+}
