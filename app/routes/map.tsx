@@ -4,11 +4,12 @@ import { useLoaderData } from "@remix-run/react";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import MapPage from '~/components/MapPage';
 import { buildFor } from '~/build';
+import { PMTILES_JS } from '~/components/nlDem';
 
 export const handle: ExternalScriptsHandle = {
   scripts: [
     {
-      src: "https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js",
+      src: PMTILES_JS,
       //integrity: "sha384-FhXw7b6AlE/jyjlZH5iHa/tTe9EpJ1Y55RjcgPbjeWMskSxZt1v9qkxLJWNJaGni",
       crossOrigin: 'anonymous',
       async: false,

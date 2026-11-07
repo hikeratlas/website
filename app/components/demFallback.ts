@@ -10,9 +10,15 @@
 // stitches with full-resolution neighbours. Heights are interpolated in metres,
 // not on the encoded RGB, and re-encoded as a Terrarium PNG.
 //
+// With `nl` given, it first tries hikeratlas/nl-dem's archive of
+// Newfoundland's 5 m DEM (see nlDem.ts): at nl.minzoom-nl.maxzoom its tile if
+// it has one, and deeper, its maxzoom tile's quadrants, upsampled the same way.
+//
 // The function is stringified into the worker, so it must not refer to
 // anything outside itself.
-export function demFallbackWorker() {
+export interface NlDemConfig { archive: string; pmtilesJs: string; minzoom: number; maxzoom: number }
+
+export function demFallbackWorker(nl?: NlDemConfig) {
   const realFetch = self.fetch.bind(self);
   const TILE = /^https:\/\/tiles\.mapterhorn\.com\/(\d+)\/(\d+)\/(\d+)\.webp$/;
   type Heights = { size: number; h: Float32Array };
@@ -88,9 +94,63 @@ export function demFallbackWorker() {
     return canvas.convertToBlob({ type: 'image/png' });
   }
 
+  // nl-dem, through pmtiles.js loaded into this worker.
+  type Archive = { getZxy(z: number, x: number, y: number, signal?: AbortSignal): Promise<{ data: ArrayBuffer } | undefined> };
+  let archive: Archive | undefined;
+  if (nl) {
+    try {
+      (self as unknown as { importScripts(u: string): void }).importScripts(nl.pmtilesJs);
+      const P = (self as unknown as { pmtiles: { PMTiles: new (u: string) => Archive } }).pmtiles;
+      archive = new P.PMTiles(nl.archive);
+    } catch (e) {
+      console.warn('nl-dem unavailable in the contour worker', e);
+    }
+  }
+  const nlDecoded = new Map<string, Promise<Heights | null>>();
+  // nl-dem's heights for a tile deeper than its maxzoom, from that ancestor.
+  function nlHeights(z: number, x: number, y: number, signal?: AbortSignal | null): Promise<Heights | null> {
+    const key = `${z}/${x}/${y}`;
+    let got = nlDecoded.get(key);
+    if (!got) {
+      got = (async () => {
+        if (z > nl!.maxzoom) {
+          const parent = await nlHeights(z - 1, x >> 1, y >> 1, signal);
+          return parent && quadrant(parent, x & 1, y & 1);
+        }
+        const t = await archive!.getZxy(z, x, y, signal ?? undefined);
+        return t ? decode(new Blob([t.data], { type: 'image/webp' })) : null;
+      })();
+      got.catch(() => nlDecoded.delete(key));
+      nlDecoded.set(key, got);
+      while (nlDecoded.size > 16) nlDecoded.delete(nlDecoded.keys().next().value!);
+    }
+    return got;
+  }
+  async function fromNl(z: number, x: number, y: number, signal?: AbortSignal | null): Promise<Response | null> {
+    if (!archive || !nl || z < nl.minzoom) return null;
+    try {
+      if (z <= nl.maxzoom) {
+        const t = await archive.getZxy(z, x, y, signal ?? undefined);
+        return t ? new Response(t.data, { status: 200, headers: { 'Content-Type': 'image/webp' } }) : null;
+      }
+      const s = z - nl.maxzoom;
+      if (!(await archive.getZxy(nl.maxzoom, x >> s, y >> s, signal ?? undefined))) return null;
+      const h = await nlHeights(z, x, y, signal);
+      return h && new Response(await encode(h), { status: 200, headers: { 'Content-Type': 'image/png' } });
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      console.warn('nl-dem lookup failed; using Mapterhorn', e);
+      return null;
+    }
+  }
+
   self.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const m = TILE.exec(url);
+    if (m) {
+      const fromArchive = await fromNl(+m[1], +m[2], +m[3], init?.signal);
+      if (fromArchive) return fromArchive;
+    }
     const r = await realFetch(input, init);
     if (!m || r.status !== 404) return r;
     const [z, x, y] = [+m[1], +m[2], +m[3]];
@@ -106,9 +166,9 @@ export function demFallbackWorker() {
 
 // Point maplibre-contour at a worker that installs demFallbackWorker() and then
 // loads maplibre-contour's own worker bundle.
-export function withDemFallback(mlcontour: { workerUrl: string }) {
+export function withDemFallback(mlcontour: { workerUrl: string }, nl?: NlDemConfig) {
   if (typeof window === 'undefined' || !mlcontour.workerUrl) return;
   const inner = mlcontour.workerUrl;
-  const src = `(${demFallbackWorker.toString()})();\nimportScripts(${JSON.stringify(inner)});\n`;
+  const src = `(${demFallbackWorker.toString()})(${nl ? JSON.stringify(nl) : ''});\nimportScripts(${JSON.stringify(inner)});\n`;
   mlcontour.workerUrl = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
 }
