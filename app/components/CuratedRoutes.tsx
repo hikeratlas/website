@@ -71,6 +71,9 @@ interface Route {
   passes: [string, string[]][];
   stopovers: { name: string; km: number; at: LngLat }[];
   via: string[];
+  // Hardest SAC grade along it (hikeratlas/routes): 4 is a scramble (#45).
+  // 0 or missing: ungraded, or a build from before grades.
+  max_sac?: number;
   line: LngLat[];
 }
 
@@ -122,8 +125,8 @@ interface List { heading: string; items: Item[] }
 const TYPE_LABEL: Record<string, string> = { day: 'Day hike', approach: 'Base camp', 'multi-day': 'Multi-day', 'from-camp': 'From camp' };
 const TYPE_ORDER: Record<string, number> = { day: 0, approach: 1, 'multi-day': 2, 'from-camp': 3 };
 
-function meta(type: string, km: number, gain: number): string {
-  return `${TYPE_LABEL[type] ?? type} · ${km.toFixed(1)} km · ↑ ${Math.round(gain).toLocaleString()} m`;
+function meta(type: string, km: number, gain: number, sac?: number): string {
+  return `${TYPE_LABEL[type] ?? type} · ${km.toFixed(1)} km · ↑ ${Math.round(gain).toLocaleString()} m${(sac ?? 0) >= 4 ? ' · scramble' : ''}`;
 }
 
 // Items from the route layer's features (properties as in hikeratlas/routes'
@@ -148,9 +151,9 @@ function itemsFromFeatures(features: any[], fromCamp = true): Item[] {
 function itemsFromPark(doc: any): Item[] {
   const park = String(doc.park.id);
   return [
-    ...doc.day_hikes.map((h: any, i: number) => ({ park, id: `${park}/day/${i}`, title: named(h, `${h.dest} from ${h.from}`), meta: meta('day', h.route.km, h.route.gain) })),
+    ...doc.day_hikes.map((h: any, i: number) => ({ park, id: `${park}/day/${i}`, title: named(h, `${h.dest} from ${h.from}`), meta: meta('day', h.route.km, h.route.gain, h.route.max_sac) })),
     ...doc.base_camps.map((b: any, i: number) => ({ park, id: `${park}/base/${i}`, title: `Base camp: ${b.camp} from ${b.from}`, meta: `${b.hikes.length} day hikes from camp · walk in ${b.approach.km.toFixed(1)} km` })),
-    ...doc.point_to_points.map((t: any, i: number) => ({ park, id: `${park}/multi/${i}`, title: named(t, `${t.from} to ${t.to}`), meta: meta('multi-day', t.route.km, t.route.gain) })),
+    ...doc.point_to_points.map((t: any, i: number) => ({ park, id: `${park}/multi/${i}`, title: named(t, `${t.from} to ${t.to}`), meta: meta('multi-day', t.route.km, t.route.gain, t.route.max_sac) })),
   ];
 }
 
@@ -402,6 +405,9 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
       <div className='mt-1'>
         {r.km} km · ↑ {Math.round(r.gain).toLocaleString()} m · high point {Math.round(r.max_ele).toLocaleString()} m
       </div>
+      {(r.max_sac ?? 0) >= 4 && <div className='mt-1 rounded bg-amber-50 border border-amber-200 px-2 py-1 text-amber-900 text-xs'>
+        Includes scrambling (SAC T4, alpine hiking): expect to use your hands on rock, exposed sections, and possibly snow. Some sections may need route-finding.
+      </div>}
       {prof
         ? <ElevationChart
             points={prof.points}
@@ -423,7 +429,7 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
           {sel.base.hikes.map((h: any, j: number) => <li key={j}>
             <button className='text-blue-700 hover:underline text-left' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}/${j}`)}>
               {named(h, h.dest)}
-            </button> <span className='text-gray-500'>{h.route.km} km · ↑ {Math.round(h.route.gain)} m</span>
+            </button> <span className='text-gray-500'>{h.route.km} km · ↑ {Math.round(h.route.gain)} m{(h.route.max_sac ?? 0) >= 4 ? ' · scramble' : ''}</span>
           </li>)}
           <li><button className='text-blue-700 hover:underline' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}`)}>The walk in</button></li>
         </ul>
