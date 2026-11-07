@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
+import { ImageryControl } from '~/components/imagery';
 import mlcontour from 'maplibre-contour';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
@@ -157,6 +158,9 @@ export default function Map(props: Props) {
       positionOptions: { enableHighAccuracy: true },
       trackUserLocation: true,
     }), 'top-right');
+
+    // Aerial imagery on and off (hikeratlas/basemap#172; see imagery.ts).
+    m.addControl(new ImageryControl(), 'top-right');
 
     if (props.centerOnPmtiles && !hasHashPosition) {
       protocol.tiles.get(props.centerOnPmtiles)!.getHeader().then((h) => {
