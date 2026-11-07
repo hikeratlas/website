@@ -19,6 +19,10 @@ export type Bbox = [number, number, number, number];
 
 export interface Crumb { name: string; path: string }
 
+// A stop (hikeratlas/routes#70): a short walk to a sight from where the car
+// is; the parts the website reads.
+export interface Stop { dest: string; from: string; route: { km: number; gain: number; one_way_km?: number } }
+
 // A multi-day trip of a smaller park inside a park, which the park lists
 // too (hikeratlas/routes' see_also): id is the trip's in its own park.
 export interface SeeAlso {
@@ -67,6 +71,11 @@ export function hikeEntries(doc: any): HikeEntry[] {
     const title = named(h, `${h.dest} from ${h.from}`);
     const short = !h.name && unique(h.dest) ? h.dest : title;
     out.push({ id: `${park}/day/${i}`, title, slug: claim(slugify(short) || 'hike'), km: h.route.km, gain: h.route.gain, type: 'Day hike' });
+  });
+  // Stops (hikeratlas/routes#70): slugged by the sight, after the day hikes,
+  // so a day hike to the same place keeps the plain slug.
+  ((doc.stops ?? []) as Stop[]).forEach((h, i) => {
+    out.push({ id: `${park}/stop/${i}`, title: h.dest, slug: claim(slugify(h.dest) || 'stop'), km: h.route.km, gain: h.route.gain, type: 'Stop' });
   });
   camps.forEach((b, i) => {
     const camp = claim(slugify(b.camp) || 'camp');

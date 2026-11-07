@@ -35,7 +35,7 @@ export interface Item {
   hikes?: number | null;
 }
 
-const HIKE_LABEL: Record<string, string> = { day: 'Day hike', base: 'Base camp', multi: 'Multi-day' };
+const HIKE_LABEL: Record<string, string> = { day: 'Day hike', base: 'Base camp', multi: 'Multi-day', stop: 'Stop' };
 
 function kmText(km: number): string {
   return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
