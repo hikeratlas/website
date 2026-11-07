@@ -199,6 +199,17 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     return () => window.removeEventListener('popstate', onPop);
   });
 
+  // A park's name clicked on the map (#59): as if picked in search, its
+  // hikes, and the map fitted to it (its box from regions.json).
+  const onPark = useCallback((id: string, name: string) => {
+    setRegion(null);
+    setFocusPark({ id, name, at: Date.now() });
+    loadRegions(routesBuild).then((regions) => {
+      const area = regions?.countries.flatMap((c) => c.states.flatMap((s) => s.areas)).find((a) => a.id === id || a.ids?.includes(id));
+      if (area?.bbox && map) map.fitBounds([[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]], { padding: 60, maxZoom: 13 });
+    });
+  }, [map, routesBuild]);
+
   // Where search should prefer results near (#44): the map's centre, unless
   // it's zoomed out past a region, where "near" means little.
   const near = () => {
@@ -296,6 +307,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
           onNavigate={(p) => navigate(p)}
           closeAt={closeAt}
           note={note}
+          onPark={onPark}
         />
       </div>
 
