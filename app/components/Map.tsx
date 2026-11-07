@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import { ImageryControl } from '~/components/imagery';
 import mlcontour from 'maplibre-contour';
+import { withDemFallback } from '~/components/demFallback';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
 import { withZstd, type Decompress } from '~/zstd';
@@ -47,7 +48,7 @@ function zstdProtocol() {
   return protocol;
 }
 
-// Contour lines are generated in the browser from the same terrarium DEM the
+// Contour lines are generated in the browser from the same Mapterhorn DEM the
 // style's hillshade uses: no contour tiles to build or host. This registers
 // the dem-contour:// protocol; the basemap style decides intervals and looks
 // via its "contours" source URL. Registered once per page load, before any
@@ -56,10 +57,14 @@ let contoursRegistered = false;
 function registerContours() {
   if (contoursRegistered) return;
   contoursRegistered = true;
+  // Mapterhorn 404s below its coverage (z12 in Banff); fill those from the
+  // parent tile rather than leaving holes in the contours.
+  withDemFallback(mlcontour);
   new mlcontour.DemSource({
-    url: "https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png",
+    url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
     encoding: "terrarium",
-    // Matches the style's terrain source: terrarium's z15 tiles have seams.
+    // 512 px tiles: z14 is ~5 m/px, finer than the 10 m contour interval
+    // needs, and the same tiles the hillshade loads at map zoom 15.
     maxzoom: 14,
     id: "dem", // protocol dem-contour://
     worker: true,
