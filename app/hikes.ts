@@ -19,6 +19,13 @@ export type Bbox = [number, number, number, number];
 
 export interface Crumb { name: string; path: string }
 
+// A multi-day trip of a smaller park inside a park, which the park lists
+// too (hikeratlas/routes' see_also): id is the trip's in its own park.
+export interface SeeAlso {
+  id: string; park: string; park_name: string;
+  name: string | null; from: string; to: string; kind: string; km: number; gain: number;
+}
+
 // Lowercase ASCII words joined by hyphens, as bin/hike-paths.py makes them.
 export function slugify(s: string): string {
   return s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
