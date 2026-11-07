@@ -142,6 +142,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const routeBox = (id: string) => {
     const [, type, i, j] = id.split('/');
     const r = type === 'day' ? doc.day_hikes[+i]?.route
+      : type === 'stop' ? doc.stops?.[+i]?.route
       : type === 'multi' ? doc.point_to_points[+i]?.route
       : j === undefined ? doc.base_camps[+i]?.approach : doc.base_camps[+i]?.hikes[+j]?.route;
     return r ? boxOf([r.line]) : null;
@@ -188,7 +189,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     if (camp) hikeTrail.push({ name: camp.title, path: `${parkPath}/${camp.slug}` });
   }
   hikeTrail.push({ name: e.title, path: `${parkPath}/${e.slug}` });
-  const kind = e.type === 'Multi-day' ? 'multi-day hike' : e.type === 'Base camp' ? 'walk to a base camp' : 'day hike';
+  const kind = e.type === 'Multi-day' ? 'multi-day hike' : e.type === 'Base camp' ? 'walk to a base camp' : e.type === 'Stop' ? 'short walk' : 'day hike';
   const stats = `${e.km.toFixed(e.km < 10 ? 1 : 0)} km · ↑ ${Math.round(e.gain).toLocaleString('en-US')} m`;
   return page({
     status: 200,

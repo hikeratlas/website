@@ -8,7 +8,7 @@
 // Builds from before the bundle have <TILES_ROOT>/routes/<build>/<park>.json.
 import { useEffect, useRef, useState } from 'react';
 import { TILES_ROOT } from '~/build';
-import type { SeeAlso } from '~/hikes';
+import type { SeeAlso, Stop } from '~/hikes';
 import { profile, type Profile } from '~/routing/elevation';
 import type { LngLat } from '~/routing/graph';
 import { ElevationChart, type Mark } from './RoutePlanner';
@@ -97,13 +97,18 @@ function named(r: any, otherwise: string): string {
   return typeof r.name === 'string' && r.name ? r.name : otherwise;
 }
 
-// The route an id names: <park>/day/i, <park>/base/i (the walk in to a base
-// camp), <park>/base/i/j (a day hike from it), or <park>/multi/i.
+// The route an id names: <park>/day/i, <park>/stop/i (a short walk to a
+// sight from where the car is, hikeratlas/routes#70), <park>/base/i (the walk
+// in to a base camp), <park>/base/i/j (a day hike from it), or <park>/multi/i.
 function lookup(doc: any, id: string): Selected | null {
   const [, type, i, j] = id.split('/');
   if (type === 'day') {
     const h = doc.day_hikes[+i];
     return h && { id, title: named(h, `${h.dest} from ${h.from}`), label: `Day hike · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why };
+  }
+  if (type === 'stop') {
+    const h = doc.stops?.[+i];
+    return h && { id, title: h.dest, label: `Stop · ${walk(h)}`, route: h.route, why: h.why };
   }
   if (type === 'base') {
     const b = doc.base_camps[+i];
@@ -119,12 +124,22 @@ function lookup(doc: any, id: string): Selected | null {
   return null;
 }
 
-// A route in a list: the routes under a click, in view, or in a park.
-interface Item { park: string; id: string; title: string; meta: string }
+// How far a stop is from the car: a pull-out has no walk.
+function walk(h: Stop): string {
+  const km = h.route.one_way_km ?? h.route.km / 2;
+  // An unnamed road's end is "Road's end" in hikeratlas/routes.
+  const end = h.from === "Road's end";
+  if (km < 0.05) return end ? 'by the road' : `by the road at ${h.from}`;
+  return `${km.toFixed(1)} km walk from ${end ? "the road's end" : h.from}`;
+}
+
+// A route in a list: the routes under a click, in view, or in a park. Items
+// with a section (a park's stops) are listed under its heading.
+interface Item { park: string; id: string; title: string; meta: string; section?: string }
 interface List { heading: string; items: Item[] }
 
-const TYPE_LABEL: Record<string, string> = { day: 'Day hike', approach: 'Base camp', 'multi-day': 'Multi-day', 'from-camp': 'From camp' };
-const TYPE_ORDER: Record<string, number> = { day: 0, approach: 1, 'multi-day': 2, 'from-camp': 3 };
+const TYPE_LABEL: Record<string, string> = { day: 'Day hike', approach: 'Base camp', 'multi-day': 'Multi-day', 'from-camp': 'From camp', stop: 'Stop' };
+const TYPE_ORDER: Record<string, number> = { day: 0, approach: 1, 'multi-day': 2, 'from-camp': 3, stop: 4 };
 
 function meta(type: string, km: number, gain: number, sac?: number): string {
   return `${TYPE_LABEL[type] ?? type} · ${km.toFixed(1)} km · ↑ ${Math.round(gain).toLocaleString()} m${(sac ?? 0) >= 4 ? ' · scramble' : ''}`;
@@ -158,6 +173,9 @@ function itemsFromPark(doc: any): Item[] {
     // Multi-day trips of a smaller park inside this one (hikeratlas/routes:
     // Guadalupe Mountains NP lists its Wilderness's), opened in that park.
     ...((doc.see_also ?? []) as SeeAlso[]).map((e) => ({ park: String(e.park), id: e.id, title: named(e, `${e.from} to ${e.to}`), meta: `${meta('multi-day', e.km, e.gain)} · in ${e.park_name}` })),
+    // Stops: short walks to a sight from where the car is, in their own
+    // section (hikeratlas/routes#70).
+    ...((doc.stops ?? []) as Stop[]).map((h, i) => ({ park, id: `${park}/stop/${i}`, title: h.dest, meta: walk(h).replace(/^./, (c) => c.toUpperCase()), section: 'Stops' })),
   ];
 }
 
@@ -400,7 +418,8 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
       <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
     </div>
     {mode === 'list' && list && <ul className='mt-1'>
-      {list.items.map((c) => <li key={c.id} className='py-0.5'>
+      {list.items.map((c, k) => <li key={c.id} className='py-0.5'>
+        {c.section && c.section !== list.items[k - 1]?.section && <h3 className='font-semibold text-gray-700 mt-2 mb-0.5'>{c.section}</h3>}
         <button className='tap-row text-blue-700 hover:underline text-left' onClick={() => select(c.park, c.id)}>{c.title}</button>
         <div className='text-gray-500 text-xs'>{c.meta}</div>
       </li>)}
