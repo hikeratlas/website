@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { Map as MaplibreMap, JumpToOptions } from 'maplibre-gl';
 import Map from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
-import CuratedRoutes, { bundleIndex, parkRoutes, type Crumb, type FocusPark, type RegionList, type Showing } from '~/components/CuratedRoutes';
+import CuratedRoutes, { bundleIndex, parkRoutes, refreshBundle, type Crumb, type FocusPark, type RegionList, type Showing } from '~/components/CuratedRoutes';
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
@@ -117,30 +117,53 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     if (s.type === 'other') { setCrumbs([]); return; }
     setRegion(null);
     try {
-      const idx: any = await bundleIndex(routesBuild);
-      const path = idx.paths?.[s.park];
-      if (!path) { setCrumbs([]); return; } // a build from before hike paths
-      const doc = await parkRoutes(routesBuild, s.park);
+      // A tab kept open across a routes build holds the old index, while
+      // search returns the new build's hikes: if the park or hike isn't
+      // there, fetch the current index once and look again (basemap#185).
+      let idx: Awaited<ReturnType<typeof bundleIndex>> & { paths?: Record<string, string> } = { bundle: '', parks: {} };
+      let doc: Awaited<ReturnType<typeof parkRoutes>>;
+      let path: string | undefined;
+      let entries: ReturnType<typeof hikeEntries> = [];
+      let e: ReturnType<typeof hikeEntries>[number] | undefined;
+      for (const fresh of [false, true]) {
+        if (fresh) refreshBundle(routesBuild);
+        idx = await bundleIndex(routesBuild);
+        path = idx.paths?.[s.park];
+        if (!path) continue;
+        doc = await parkRoutes(routesBuild, s.park);
+        if (s.type === 'park') break;
+        entries = hikeEntries(doc);
+        e = entries.find((x) => x.id === s.id);
+        if (e) break;
+      }
+      if (!path) { // a build from before hike paths
+        console.warn(`No /hikes path for park ${s.park}; the URL stays as it is.`);
+        setCrumbs([]);
+        return;
+      }
       const base = parkCrumbs(idx, path, doc.park?.name ?? '');
       if (s.type === 'park') {
         setCrumbs(toCrumbs(base));
         setUrl(hikesPath(path.split('/')), replace);
         return;
       }
-      const entries = hikeEntries(doc);
-      const e = entries.find((x) => x.id === s.id);
-      if (!e) return;
-      const parts = [...path.split('/'), ...e.slug.split('/')];
+      if (!e) {
+        console.warn(`Hike ${s.id} isn't in park ${s.park}'s routes; the URL stays as it is.`);
+        return;
+      }
+      const hit = e;
+      const parts = [...path.split('/'), ...hit.slug.split('/')];
       const trail = [...base];
-      if (e.slug.includes('/')) {
-        const camp = entries.find((x) => x.slug === e.slug.split('/')[0]);
+      if (hit.slug.includes('/')) {
+        const camp = entries.find((x) => x.slug === hit.slug.split('/')[0]);
         if (camp) trail.push({ name: camp.title, path: hikesPath([...path.split('/'), camp.slug]) });
       }
-      trail.push({ name: e.title, path: hikesPath(parts) });
+      trail.push({ name: hit.title, path: hikesPath(parts) });
       setCrumbs(toCrumbs(trail));
       setUrl(hikesPath(parts), replace);
-    } catch {
+    } catch (err) {
       // No URL for it; the map still works.
+      console.warn('Could not work out a URL for what the panel shows', err);
     }
   };
 
