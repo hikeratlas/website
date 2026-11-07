@@ -13,6 +13,9 @@ import type { LngLat } from '~/routing/graph';
 import { ElevationChart, type Mark } from './RoutePlanner';
 
 const LAYER = 'routes-route';
+// The basemap's park names (styles/parks.json's label-park, prefixed by
+// mapt): clicking one with curated hikes lists them (#59).
+const PARK_LABEL = 'parks-label-park';
 const EMPTY = { type: 'FeatureCollection', features: [] };
 const COLOR = '#c026d3';
 
@@ -183,9 +186,11 @@ interface Props {
   closeAt?: number;
   // A note above the panel's content ("That hike has changed...").
   note?: string | null;
+  // A park's name clicked on the map, for a park with curated hikes (#59).
+  onPark?: (id: string, name: string) => void;
 }
 
-export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs, region, onNavigate, closeAt, note }: Props) {
+export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs, region, onNavigate, closeAt, note, onPark }: Props) {
   const [sel, setSel] = useState<Selected | null>(null);
   const [prof, setProf] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -272,15 +277,30 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
       const { x, y } = e.point;
       return map.queryRenderedFeatures([[x - 4, y - 4], [x + 4, y + 4]], { layers: [LAYER] });
     };
+    // Parks with curated hikes, from the routes index, once it's loaded:
+    // only their names are clickable.
+    let hiked = new Set<string>();
+    bundleIndex(build).then((idx) => { hiked = new Set(Object.keys(idx.parks ?? {})); }).catch(() => {});
+    const parkAt = (e: { point: { x: number; y: number } }) => {
+      if (!onPark || !map.getLayer(PARK_LABEL)) return null;
+      const { x, y } = e.point;
+      const f = map.queryRenderedFeatures([[x - 2, y - 2], [x + 2, y + 2]], { layers: [PARK_LABEL] })
+        .find((f: { properties?: Record<string, unknown> }) => hiked.has(String(f.properties?.osm_id)));
+      return f ? { id: String(f.properties.osm_id), name: String(f.properties.name ?? f.properties.short_name ?? '') } : null;
+    };
     const onClick = (e: any) => {
       if (planning()) return;
       const found = itemsFromFeatures(at(e));
       if (found.length === 1) { setList(null); select(found[0].park, found[0].id); }
       else if (found.length > 1) openList({ heading: `${found.length} routes here`, items: found });
+      else {
+        const p = parkAt(e);
+        if (p) onPark?.(p.id, p.name);
+      }
     };
     const onMove = (e: any) => {
       if (planning()) return;
-      map.getCanvas().style.cursor = at(e).length ? 'pointer' : '';
+      map.getCanvas().style.cursor = at(e).length || parkAt(e) ? 'pointer' : '';
     };
     // The routes in view, once zoomed in far enough to see them (z9).
     const onIdle = () => {
@@ -292,7 +312,7 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     map.on('moveend', onIdle);
     map.once('idle', onIdle);
     return () => { map.off('click', onClick); map.off('mousemove', onMove); map.off('moveend', onIdle); };
-  }, [map, build]);
+  }, [map, build, onPark]);
 
   // A park picked in search: list its routes, if it has any. A hike picked
   // in search (#44): open it.
