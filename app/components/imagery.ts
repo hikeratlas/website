@@ -1,39 +1,88 @@
 // Aerial imagery as a map layer you can switch on (hikeratlas/basemap#172),
-// from hosted services, so nothing to mirror:
+// from hosted services, so nothing to mirror. Bottom to top:
 //
-// - USGS The National Map orthoimagery (NAIP-based, US only): free, no key,
-//   and "no use restrictions" on its map services.
-// - EOX Sentinel-2 cloudless 2016 underneath, as a coarse (10 m) fallback
-//   elsewhere, e.g. Canada. Only the 2016 edition is CC BY 4.0; later years
-//   are non-commercial.
+// - EOX Sentinel-2 cloudless 2016: everywhere, coarse (10 m). Only the 2016
+//   edition is CC BY 4.0; later years are non-commercial.
+// - Quebec's "Imagerie orthorectifiée du Québec" (CC BY 4.0).
+// - Ontario's imagery web map service (Open Government Licence – Ontario).
+// - Saskatchewan's SGIC orthophotos ("for background image services on
+//   public websites").
+// - USGS The National Map orthoimagery: the US (no use restrictions).
+//
+// BC and Alberta have no open imagery service (BC's is "access only");
+// there, and in the other provinces, EOX is what shows.
 //
 // While it's on, the map's fills (land cover, water, parks) and hillshade are
 // hidden: the imagery stands in for them. Lines and labels (trails, roads,
 // park edges, contours, names) stay on top.
 import * as maplibregl from 'maplibre-gl';
-import type { IControl, Map as MaplibreMap } from 'maplibre-gl';
+import type { IControl, Map as MaplibreMap, RasterSourceSpecification } from 'maplibre-gl';
 
 const KEY = 'hikeratlas.imagery';
-const LAYERS = ['imagery-s2', 'imagery-usgs'];
 const HIDDEN = ['fill', 'fill-extrusion', 'hillshade'];
 
-// USGS's tile service answers pure white for tiles outside the US (Canada,
-// say), and for the parts of border tiles outside it, which would cover the
-// EOX imagery underneath. usgs:// fetches its tiles and makes pure white
-// transparent.
-const USGS = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/';
+// Some services answer outside their coverage with tiles that would cover
+// the sources underneath, so imagery:// fetches those and clears that part:
+// - USGS: pure white outside the US (and on the outside part of border
+//   tiles): made transparent.
+// - Quebec: a very coarse fill outside Quebec, which would cover New
+//   Brunswick, Labrador and Ontario: clipped to Quebec's outline
+//   (public/imagery/qc-mask.json: OSM's boundary, relation 61549 from
+//   Nominatim, simplified to about 1 km; 14 KB gzipped, loaded only when
+//   the imagery is on and Quebec is in view).
+const UPSTREAM: Record<string, { url: string; clear: 'white' | 'mask'; mask?: string }> = {
+  usgs: { url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}', clear: 'white' },
+  qc: { url: 'https://servicesmatriciels.mern.gouv.qc.ca/erdas-iws/ogc/wmts/Imagerie_Continue/Imagerie_GQ/default/GoogleMapsCompatibleExt2:epsg:3857/{z}/{y}/{x}.jpg', clear: 'mask', mask: '/imagery/qc-mask.json' },
+};
+
+// A province's outline: rings of [lon, lat], loaded once.
+const masks = new Map<string, Promise<[number, number][][]>>();
+function mask(url: string) {
+  if (!masks.has(url)) masks.set(url, fetch(url).then((r) => r.json()));
+  return masks.get(url)!;
+}
+
+let empty: ArrayBuffer | undefined;
+async function emptyTile(): Promise<ArrayBuffer> {
+  if (!empty) empty = await (await new OffscreenCanvas(1, 1).convertToBlob({ type: 'image/png' })).arrayBuffer();
+  return empty;
+}
+
 let registered = false;
-function registerUsgs() {
+function registerProtocol() {
   if (registered) return;
   registered = true;
-  maplibregl.addProtocol('usgs', async (params, abort) => {
-    const r = await fetch(USGS + params.url.slice('usgs://'.length), { signal: abort.signal });
+  // imagery://<service>/<z>/<y>/<x>
+  maplibregl.addProtocol('imagery', async (params, abort) => {
+    const [service, z, y, x] = params.url.slice('imagery://'.length).split('/');
+    const up = UPSTREAM[service];
+    const r = await fetch(up.url.replace('{z}', z).replace('{y}', y).replace('{x}', x), { signal: abort.signal });
+    if (r.status === 404) return { data: await emptyTile() };
     if (!r.ok) throw new Error(`${r.status} fetching ${params.url}`);
     const img = await createImageBitmap(await r.blob());
-    const c = new OffscreenCanvas(img.width, img.height);
+    const size = img.width;
+    const c = new OffscreenCanvas(size, size);
     const ctx = c.getContext('2d')!;
+    if (up.clear === 'mask') {
+      // Keep only what's inside the province's outline.
+      const rings = await mask(up.mask!);
+      const n = 2 ** +z;
+      const path = new Path2D();
+      for (const ring of rings) {
+        ring.forEach(([lon, lat], k) => {
+          const px = ((lon + 180) / 360 * n - +x) * size;
+          const py = ((1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * n - +y) * size;
+          if (k === 0) path.moveTo(px, py); else path.lineTo(px, py);
+        });
+        path.closePath();
+      }
+      ctx.fill(path);
+      ctx.globalCompositeOperation = 'source-in';
+      ctx.drawImage(img, 0, 0);
+      return { data: await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer() };
+    }
     ctx.drawImage(img, 0, 0);
-    const px = ctx.getImageData(0, 0, c.width, c.height);
+    const px = ctx.getImageData(0, 0, size, size);
     const d = px.data;
     for (let i = 0; i < d.length; i += 4) {
       if (d[i] >= 254 && d[i + 1] >= 254 && d[i + 2] >= 254) d[i + 3] = 0;
@@ -43,24 +92,52 @@ function registerUsgs() {
   });
 }
 
-const SOURCES = {
-  'imagery-s2': {
-    type: 'raster' as const,
+type Box = [number, number, number, number];
+const SOURCES: [string, RasterSourceSpecification][] = [
+  ['imagery-s2', {
+    type: 'raster',
     tiles: ['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg'],
     tileSize: 256,
     maxzoom: 14,
     attribution: '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2016)',
-  },
-  'imagery-usgs': {
-    type: 'raster' as const,
-    tiles: ['usgs://{z}/{y}/{x}'],
+  }],
+  ['imagery-qc', {
+    type: 'raster',
+    tiles: ['imagery://qc/{z}/{y}/{x}'],
+    tileSize: 256,
+    maxzoom: 18,
+    bounds: [-79.8, 44.9, -57.0, 62.7] as Box,
+    attribution: 'Imagerie : Gouvernement du Québec (CC BY 4.0)',
+  }],
+  ['imagery-on', {
+    type: 'raster',
+    // 404 outside Ontario: nothing drawn.
+    tiles: ['https://ws.lioservices.lrc.gov.on.ca/arcgis2/rest/services/LIO_Imagery/Ontario_Imagery_Web_Map_Service/MapServer/tile/{z}/{y}/{x}'],
+    tileSize: 256,
+    maxzoom: 18,
+    bounds: [-95.2, 41.6, -74.3, 56.9] as Box,
+    attribution: 'Imagery: contains information licensed under the Open Government Licence – Ontario',
+  }],
+  ['imagery-sk', {
+    type: 'raster',
+    // Rendered per tile (no cache); transparent outside Saskatchewan.
+    tiles: ['https://gis.saskatchewan.ca/imagery/rest/services/SGIC_Public_Orthophotos/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=jpgpng&f=image'],
+    tileSize: 256,
+    maxzoom: 18,
+    bounds: [-110.1, 48.9, -101.3, 60.1] as Box,
+    attribution: 'Imagery: Saskatchewan Geospatial Imagery Collaborative (SGIC)',
+  }],
+  ['imagery-usgs', {
+    type: 'raster',
+    tiles: ['imagery://usgs/{z}/{y}/{x}'],
     tileSize: 256,
     maxzoom: 16,
     // The US and its territories, roughly: no requests for tiles far outside.
-    bounds: [-180, 13, -64, 72] as [number, number, number, number],
+    bounds: [-180, 13, -64, 72] as Box,
     attribution: 'Imagery: USDA, USGS The National Map',
-  },
-};
+  }],
+];
+const LAYERS = SOURCES.map(([id]) => id);
 
 function show(map: MaplibreMap, on: boolean) {
   const style = map.getStyle();
@@ -71,10 +148,10 @@ function show(map: MaplibreMap, on: boolean) {
     for (const id of LAYERS) if (map.getLayer(id)) map.removeLayer(id);
     return;
   }
-  // Just above the background.
+  // Just above the background, in order.
   const above = style.layers.find((l) => l.type !== 'background' && !LAYERS.includes(l.id))?.id;
-  for (const id of LAYERS) {
-    if (!map.getSource(id)) map.addSource(id, SOURCES[id as keyof typeof SOURCES]);
+  for (const [id, spec] of SOURCES) {
+    if (!map.getSource(id)) map.addSource(id, spec);
     if (!map.getLayer(id)) map.addLayer({ id, type: 'raster', source: id }, above);
   }
 }
@@ -96,11 +173,11 @@ export class ImageryControl implements IControl {
   // A new style (a preview build) drops added layers: put them back.
   private reapply = () => {
     const m = this.map;
-    if (m && this.on && m.isStyleLoaded() && !m.getLayer(LAYERS[1])) show(m, true);
+    if (m && this.on && m.isStyleLoaded() && !m.getLayer(LAYERS[LAYERS.length - 1])) show(m, true);
   };
 
   onAdd(map: MaplibreMap): HTMLElement {
-    registerUsgs();
+    registerProtocol();
     this.map = map;
     const box = document.createElement('div');
     box.className = 'maplibregl-ctrl maplibregl-ctrl-group';
