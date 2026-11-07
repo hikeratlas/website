@@ -1,8 +1,10 @@
 // Aerial imagery as a map layer you can switch on (hikeratlas/basemap#172),
 // from hosted services, so nothing to mirror. Bottom to top:
 //
-// - EOX Sentinel-2 cloudless 2016: everywhere, coarse (10 m). Only the 2016
-//   edition is CC BY 4.0; later years are non-commercial.
+// - EOX Sentinel-2 cloudless 2025: everywhere, coarse (10 m). CC BY-NC-SA
+//   4.0, free for non-commercial use with attribution: Hiker Atlas is
+//   non-commercial and open source. 2025 shows e.g. Jasper's 2024 burn. If
+//   that ever changes, the 2016 edition (s2cloudless_3857) is CC BY 4.0.
 // - Quebec's "Imagerie orthorectifiée du Québec" (CC BY 4.0).
 // - Ontario's imagery web map service (Open Government Licence – Ontario).
 // - Saskatchewan's SGIC orthophotos ("for background image services on
@@ -51,7 +53,7 @@ interface Service {
 
 const SERVICES: Record<string, Service> = {
   s2: {
-    url: 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg',
+    url: 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2025_3857/default/g/{z}/{y}/{x}.jpg',
     // 25 km inside the US's outline (which includes its territorial sea),
     // so USGS fills everything EOX skips.
     skipInside: '/imagery/us-inside.json',
@@ -216,7 +218,7 @@ const source = (service: string, maxzoom: number, attribution: string, bounds?: 
 });
 
 const SOURCES: [string, RasterSourceSpecification][] = [
-  ['imagery-s2', source('s2', 14, '<a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless</a> by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2016)')],
+  ['imagery-s2', source('s2', 14, '<a href="https://cloudless.eox.at" target="_blank" rel="noopener">EOxCloudless</a> by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2025), <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>')],
   ['imagery-qc', source('qc', 18, 'Imagerie : Gouvernement du Québec (CC BY 4.0)', [-79.8, 44.9, -57.0, 62.7])],
   ['imagery-on', source('on', 18, 'Imagery: contains information licensed under the Open Government Licence – Ontario', [-95.3, 41.6, -74.2, 57.0])],
   ['imagery-sk', source('sk', 18, 'Imagery: Saskatchewan Geospatial Imagery Collaborative (SGIC)', [-110.1, 48.9, -101.3, 60.1])],
