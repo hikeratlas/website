@@ -10,7 +10,7 @@ import MapPage, { type Initial } from '~/components/MapPage';
 import { buildFor } from '~/build';
 import {
   type Bbox, findHike, hikeCount, hikeEntries, hikesPath, indexUrl, parkDoc, parsePath,
-  regionList, regionsUrl, resolve, suggest, type Regions,
+  regionList, regionsUrl, resolve, suggest, type Regions, type SeeAlso,
 } from '~/hikes';
 
 export { handle } from './map';
@@ -125,6 +125,20 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const parkItems = entries.filter((e) => !e.slug.includes('/')).map((e) => ({
     name: e.title, path: `${parkPath}/${e.slug}`, meta: `${e.type} · ${e.km.toFixed(1)} km · ↑ ${Math.round(e.gain).toLocaleString('en-US')} m`,
   }));
+  // Multi-day trips of a smaller park inside this one (hikeratlas/routes'
+  // see_also: Guadalupe Mountains NP lists its Wilderness's), linked to
+  // their pages in that park.
+  const also = await Promise.all(((doc?.see_also ?? []) as SeeAlso[]).map(async (a) => {
+    const p: string | undefined = index?.paths?.[a.park];
+    const other = p ? await parkDoc(routesBuild, index, String(a.park)).catch(() => null) : null;
+    const e = other ? hikeEntries(other).find((x) => x.id === a.id) : undefined;
+    if (!p || !e) return null;
+    return {
+      name: e.title, path: hikesPath([...p.split('/'), ...e.slug.split('/')]),
+      meta: `${e.type} · ${e.km.toFixed(1)} km · ↑ ${Math.round(e.gain).toLocaleString('en-US')} m · in ${a.park_name}`,
+    };
+  }));
+  parkItems.push(...also.filter((x): x is NonNullable<typeof x> => x !== null));
   const routeBox = (id: string) => {
     const [, type, i, j] = id.split('/');
     const r = type === 'day' ? doc.day_hikes[+i]?.route

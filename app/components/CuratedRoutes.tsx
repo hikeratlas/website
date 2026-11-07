@@ -8,6 +8,7 @@
 // Builds from before the bundle have <TILES_ROOT>/routes/<build>/<park>.json.
 import { useEffect, useRef, useState } from 'react';
 import { TILES_ROOT } from '~/build';
+import type { SeeAlso } from '~/hikes';
 import { profile, type Profile } from '~/routing/elevation';
 import type { LngLat } from '~/routing/graph';
 import { ElevationChart, type Mark } from './RoutePlanner';
@@ -154,6 +155,9 @@ function itemsFromPark(doc: any): Item[] {
     ...doc.day_hikes.map((h: any, i: number) => ({ park, id: `${park}/day/${i}`, title: named(h, `${h.dest} from ${h.from}`), meta: meta('day', h.route.km, h.route.gain, h.route.max_sac) })),
     ...doc.base_camps.map((b: any, i: number) => ({ park, id: `${park}/base/${i}`, title: `Base camp: ${b.camp} from ${b.from}`, meta: `${b.hikes.length} day hikes from camp · walk in ${b.approach.km.toFixed(1)} km` })),
     ...doc.point_to_points.map((t: any, i: number) => ({ park, id: `${park}/multi/${i}`, title: named(t, `${t.from} to ${t.to}`), meta: meta('multi-day', t.route.km, t.route.gain, t.route.max_sac) })),
+    // Multi-day trips of a smaller park inside this one (hikeratlas/routes:
+    // Guadalupe Mountains NP lists its Wilderness's), opened in that park.
+    ...((doc.see_also ?? []) as SeeAlso[]).map((e) => ({ park: String(e.park), id: e.id, title: named(e, `${e.from} to ${e.to}`), meta: `${meta('multi-day', e.km, e.gain)} · in ${e.park_name}` })),
   ];
 }
 
