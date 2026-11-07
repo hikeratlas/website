@@ -43,7 +43,7 @@ let archive: Archive | undefined;
 // ancestor and MapLibre's own request for that ancestor fetch it once.
 const lookups = new Map<string, Promise<{ data: ArrayBuffer } | undefined>>();
 
-function nlTile(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined> {
+export function nlTile(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined> {
   archive ??= new pmtiles.PMTiles(NL_DEM_URL);
   const key = `${z}/${x}/${y}`;
   let got = lookups.get(key);
