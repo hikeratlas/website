@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!--
+    The "mountain" icon from Lucide (https://lucide.dev), on a plain tile.
+    Lucide is ISC licensed: Copyright (c) for portions of Lucide are held by
+    Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c)
+    for Lucide are held by Lucide Contributors 2022. Permission to use, copy,
+    modify, and/or distribute this software for any purpose with or without
+    fee is hereby granted, provided that the above copyright notice and this
+    permission notice appear in all copies.
+  -->
+  <rect width="24" height="24" rx="5" fill="#2f855a"/>
+  <g transform="translate(3 3.4) scale(0.75)" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m8 3 4 8 5-5 5 15H2L8 3z"/>
+  </g>
+</svg>

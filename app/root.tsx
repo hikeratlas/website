@@ -15,6 +15,11 @@ import stylesheet from "~/tailwind.css";
 export const links: LinksFunction = () => [
   ...(cssBundleHref ? [{ rel: "stylesheet", href: cssBundleHref }] : []),
   { rel: "stylesheet", href: stylesheet },
+  // Lucide's "mountain" icon on a green tile (see public/favicon.svg); the
+  // .ico is for browsers without SVG favicons.
+  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+  { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
+  { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
 ];
 
 export default function App() {
