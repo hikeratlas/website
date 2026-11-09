@@ -9,3 +9,9 @@ node_modules
 .dev.vars
 /.wrangler
 /public/maplibre-gl-worker.mjs
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
