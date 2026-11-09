@@ -144,7 +144,30 @@ function walk(h: Stop): string {
 // A route in a list: the routes under a click, in view, or in a park. Items
 // with a section (a park's stops) are listed under its heading.
 interface Item { park: string; id: string; title: string; meta: string; section?: string }
-interface List { heading: string; items: Item[] }
+interface List { heading: string; items: Item[]; about?: ParkAbout }
+
+// A park's operator and official website (#72): from its routes record
+// (hikeratlas/routes' park), or, for a park without hikes, its map label.
+export interface ParkAbout { operator?: string; website?: string }
+
+const aboutOf = (p: { operator?: unknown; website?: unknown } | null | undefined): ParkAbout | undefined => {
+  const operator = typeof p?.operator === 'string' && p.operator ? p.operator : undefined;
+  const website = typeof p?.website === 'string' && /^https?:\/\//i.test(p.website) ? p.website : undefined;
+  return operator || website ? { operator, website } : undefined;
+};
+
+const hostOf = (url: string) => {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+};
+
+function About({ about }: { about: ParkAbout }) {
+  return <div className='text-gray-600 text-sm'>
+    {about.operator}
+    {about.operator && about.website && ' · '}
+    {about.website && <a href={about.website} target='_blank' rel='noopener noreferrer' className='text-blue-700 hover:underline'
+      title='Official website'>{hostOf(about.website)} ↗</a>}
+  </div>;
+}
 
 const TYPE_LABEL: Record<string, string> = { day: 'Day hike', approach: 'Base camp', 'multi-day': 'Multi-day', 'from-camp': 'From camp', stop: 'Stop' };
 const TYPE_ORDER: Record<string, number> = { day: 0, approach: 1, 'multi-day': 2, 'from-camp': 3, stop: 4 };
@@ -317,9 +340,14 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     const parkAt = (e: { point: { x: number; y: number } }) => {
       if (!onPark || !map.getLayer(PARK_LABEL)) return null;
       const { x, y } = e.point;
+      // Parks with hikes open their list; others, only if their label says
+      // who runs them or where their website is (#72).
       const f = map.queryRenderedFeatures([[x - 2, y - 2], [x + 2, y + 2]], { layers: [PARK_LABEL] })
-        .find((f: { properties?: Record<string, unknown> }) => hiked.has(String(f.properties?.osm_id)));
-      return f ? { id: String(f.properties.osm_id), name: String(f.properties.name ?? f.properties.short_name ?? '') } : null;
+        .find((f: { properties?: Record<string, unknown> }) => hiked.has(String(f.properties?.osm_id)) || aboutOf(f.properties));
+      return f ? {
+        id: String(f.properties.osm_id), name: String(f.properties.name ?? f.properties.short_name ?? ''),
+        hiked: hiked.has(String(f.properties.osm_id)), about: aboutOf(f.properties),
+      } : null;
     };
     const onClick = (e: any) => {
       if (planning()) return;
@@ -328,7 +356,9 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
       else if (found.length > 1) openList({ heading: `${found.length} routes here`, items: found });
       else {
         const p = parkAt(e);
-        if (p) onPark?.(p.id, p.name);
+        if (p?.hiked) onPark?.(p.id, p.name);
+        // No hikes: just the park, who runs it and its website.
+        else if (p) openList({ heading: p.name, items: [], about: p.about });
       }
     };
     const onMove = (e: any) => {
@@ -354,13 +384,13 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     if (focusPark.route) {
       // As if from the park's list, so "←" goes back to it.
       parkRoutes(build, focusPark.id)
-        .then((doc) => { setList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc) }); setListPark({ id: focusPark.id, name: doc.park?.name ?? focusPark.name }); })
+        .then((doc) => { setList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc), about: aboutOf(doc.park) }); setListPark({ id: focusPark.id, name: doc.park?.name ?? focusPark.name }); })
         .catch(() => {});
       select(focusPark.id, focusPark.route);
       return;
     }
     parkRoutes(build, focusPark.id)
-      .then((doc) => openList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc) }, { id: focusPark.id, name: doc.park?.name ?? focusPark.name }))
+      .then((doc) => openList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc), about: aboutOf(doc.park) }, { id: focusPark.id, name: doc.park?.name ?? focusPark.name }))
       // Most parks have no curated routes; just close what was open.
       .catch(() => close());
   }, [map, build, focusPark]);
@@ -418,6 +448,7 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
         {trail}
         {(!trail || !listPark) && mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
         {mode === 'list' && list && <div className='font-semibold text-base'>{list.heading}</div>}
+        {mode === 'list' && list?.about && <About about={list.about} />}
         {mode === 'detail' && sel && <div className='font-semibold text-base'>{sel.title}</div>}
         {mode === 'detail' && sel && <div className='text-gray-600'>{sel.label}</div>}
         {error && <div className='text-red-700'>{error}</div>}
@@ -425,6 +456,7 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
       </div>
       <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
     </div>
+    {mode === 'list' && list && list.items.length === 0 && <div className='mt-1 text-gray-500'>No curated hikes here yet.</div>}
     {mode === 'list' && list && <ul className='mt-1'>
       {list.items.map((c, k) => <li key={c.id} className='py-0.5'>
         {c.section && c.section !== list.items[k - 1]?.section && <h3 className='font-semibold text-gray-700 mt-2 mb-0.5'>{c.section}</h3>}
