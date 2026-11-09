@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import { ImageryControl } from '~/components/imagery';
 import mlcontour from 'maplibre-contour';
@@ -117,7 +117,7 @@ export default function Map(props: Props) {
     // nl-dem's over Newfoundland (see nlDem.ts).
     maplibregl.addProtocol("nldem", nlDemProtocol);
 
-    let m = new maplibregl.Map({
+    const m = new maplibregl.Map({
       container: mapContainer.current!,
       hash: true,
       style: props.style,
@@ -136,7 +136,7 @@ export default function Map(props: Props) {
     const protocol = zstdProtocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
 
-    let scale = new maplibregl.ScaleControl({
+    const scale = new maplibregl.ScaleControl({
         maxWidth: 160,
         unit: 'metric'
     });

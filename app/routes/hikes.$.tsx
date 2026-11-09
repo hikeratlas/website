@@ -9,7 +9,7 @@ import { useLoaderData } from "@remix-run/react";
 import MapPage, { type Initial } from '~/components/MapPage';
 import { buildFor } from '~/build';
 import {
-  type Bbox, findHike, hikeCount, hikeEntries, hikesPath, indexUrl, parkDoc, parsePath,
+  type Bbox, type BundleIndex, findHike, hikeCount, hikeEntries, hikesPath, indexUrl, parkDoc, parsePath,
   regionList, regionsUrl, resolve, suggest, type Regions, type SeeAlso,
 } from '~/hikes';
 
@@ -32,7 +32,7 @@ interface Page {
   initial: Initial;
 }
 
-async function getJson(url: string): Promise<any | null> {
+async function getJson<T>(url: string): Promise<T | null> {
   try {
     const r = await fetch(url, { cf: { cacheTtl: 300 } } as RequestInit);
     return r.ok ? await r.json() : null;
@@ -59,7 +59,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const page = (p: Omit<Page, 'build' | 'search' | 'canonical'>) =>
     json<Page>({ ...p, build, search: url.search, canonical: `${SITE}${hikesPath(parts)}` }, { status: p.status });
 
-  const regions: Regions | null = await getJson(regionsUrl(routesBuild));
+  const regions = await getJson<Regions>(regionsUrl(routesBuild));
   if (!regions) {
     return page({
       status: 404, title: 'Hikes | Hiker Atlas', description: 'Curated hikes in parks across North America.', heading: 'Hikes',
@@ -119,7 +119,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const area = r.area;
   const parkPath = hikesPath([r.country!.slug, r.state!.slug, area.slug]);
   const parkTrail = [...trail, { name: area.name, path: parkPath }];
-  const index = await getJson(indexUrl(routesBuild));
+  const index = await getJson<BundleIndex>(indexUrl(routesBuild));
   const doc = index ? await parkDoc(routesBuild, index, area.id).catch(() => null) : null;
   const entries = doc ? hikeEntries(doc) : [];
   const parkItems = entries.filter((e) => !e.slug.includes('/')).map((e) => ({
@@ -141,10 +141,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   parkItems.push(...also.filter((x): x is NonNullable<typeof x> => x !== null));
   const routeBox = (id: string) => {
     const [, type, i, j] = id.split('/');
-    const r = type === 'day' ? doc.day_hikes[+i]?.route
-      : type === 'stop' ? doc.stops?.[+i]?.route
-      : type === 'multi' ? doc.point_to_points[+i]?.route
-      : j === undefined ? doc.base_camps[+i]?.approach : doc.base_camps[+i]?.hikes[+j]?.route;
+    // Only for a hike found in the park's entries, so there's a doc.
+    const d = doc!;
+    const r = type === 'day' ? d.day_hikes[+i]?.route
+      : type === 'stop' ? d.stops?.[+i]?.route
+      : type === 'multi' ? d.point_to_points[+i]?.route
+      : j === undefined ? d.base_camps[+i]?.approach : d.base_camps[+i]?.hikes[+j]?.route;
     return r ? boxOf([r.line]) : null;
   };
   const parkBox = area.bbox;

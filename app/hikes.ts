@@ -19,15 +19,93 @@ export type Bbox = [number, number, number, number];
 
 export interface Crumb { name: string; path: string }
 
+// A park's routes document, from hikeratlas/routes (curate.rs' to_json and
+// main.rs): the parts the website reads.
+
+// A route's line and what's along it (curate.rs' eval_json).
+export interface Route {
+  km: number;
+  // Missing in builds from before it.
+  one_way_km?: number;
+  gain: number;
+  loss: number;
+  max_ele: number;
+  // Hardest SAC grade along it (hikeratlas/routes): 4 is a scramble (#45).
+  // 0 or missing: ungraded, or a build from before grades.
+  max_sac?: number;
+  // [landcover, share of the route]
+  landcover: [string, number][];
+  // [kind, names]: the passes, peaks, lakes... it goes by.
+  passes: [string, string[]][];
+  // Campsites along it, at km from its start.
+  stopovers: { name: string; km: number; at: [number, number] }[];
+  via: string[];
+  line: [number, number][];
+}
+
+// A day hike, a day hike from a base camp, or a stop (curate.rs' cand_json).
+// A route that follows an OSM hiking route carries its name (recall.rs).
+export interface Hike {
+  from: string;
+  dest: string;
+  kind: string;
+  name?: string | null;
+  // The score's parts: [name, points].
+  why?: [string, number][];
+  route: Route;
+}
+
 // A stop (hikeratlas/routes#70): a short walk to a sight from where the car
-// is; the parts the website reads.
-export interface Stop { dest: string; from: string; route: { km: number; gain: number; one_way_km?: number } }
+// is.
+export type Stop = Hike;
+
+export interface BaseCamp {
+  camp: string;
+  from: string;
+  // The walk in.
+  approach: Route;
+  hikes: Hike[];
+}
+
+// A multi-day trip, end to end.
+export interface PointToPoint {
+  from: string;
+  to: string;
+  kind: string;
+  name?: string | null;
+  route: Route;
+}
+
+// The park (hikeratlas/routes' park): website and operator only when it has
+// them (#72).
+export interface Park { id: string; name: string; website?: string; operator?: string }
 
 // A multi-day trip of a smaller park inside a park, which the park lists
 // too (hikeratlas/routes' see_also): id is the trip's in its own park.
 export interface SeeAlso {
   id: string; park: string; park_name: string;
   name: string | null; from: string; to: string; kind: string; km: number; gain: number;
+}
+
+export interface ParkDoc {
+  park?: Park;
+  day_hikes: Hike[];
+  // Missing in builds from before stops.
+  stops?: Stop[];
+  base_camps: BaseCamp[];
+  point_to_points: PointToPoint[];
+  see_also?: SeeAlso[];
+}
+
+// A build's index of the parks' routes in its bundle (index.json).
+export interface BundleIndex {
+  bundle: string;
+  // park osm id -> [offset, length] of its gzipped JSON in the bundle.
+  parks: Record<string, [number, number]>;
+  // From hikeratlas/basemap's bin/hike-paths.py, in builds that have it:
+  // park id -> "<country>/<state>/<park>", and country or state path -> name.
+  paths?: Record<string, string>;
+  regions?: Record<string, string>;
 }
 
 // Lowercase ASCII words joined by hyphens, as bin/hike-paths.py makes them.
@@ -40,7 +118,7 @@ export function slugify(s: string): string {
 // from a base camp.
 export interface HikeEntry { id: string; title: string; slug: string; km: number; gain: number; type: string }
 
-function named(r: any, otherwise: string): string {
+function named(r: { name?: string | null }, otherwise: string): string {
   return typeof r.name === 'string' && r.name ? r.name : otherwise;
 }
 
@@ -48,11 +126,11 @@ function named(r: any, otherwise: string): string {
 // "<dest> from <start>" is slugged by its destination alone where no other
 // hike in the park goes there or has that name ("cavell-meadows", not
 // "cavell-meadows-from-mount-edith-cavell"). Repeats get -2, -3, ... in order.
-export function hikeEntries(doc: any): HikeEntry[] {
+export function hikeEntries(doc: ParkDoc): HikeEntry[] {
   const park = String(doc.park?.id ?? '');
-  const days: any[] = doc.day_hikes ?? [];
-  const camps: any[] = doc.base_camps ?? [];
-  const multis: any[] = doc.point_to_points ?? [];
+  const days: Hike[] = doc.day_hikes ?? [];
+  const camps: BaseCamp[] = doc.base_camps ?? [];
+  const multis: PointToPoint[] = doc.point_to_points ?? [];
   const seen = new Map<string, number>();
   const count = (s: string) => seen.set(s.toLowerCase(), (seen.get(s.toLowerCase()) ?? 0) + 1);
   for (const h of days) { count(h.dest); if (h.name) count(h.name); }
@@ -82,7 +160,7 @@ export function hikeEntries(doc: any): HikeEntry[] {
     out.push({ id: `${park}/base/${i}`, title: b.camp, slug: camp, km: b.approach.km, gain: b.approach.gain, type: 'Base camp' });
     const inCamp = new Map<string, number>();
     const local = (base: string) => { const n = (inCamp.get(base) ?? 0) + 1; inCamp.set(base, n); return n === 1 ? base : `${base}-${n}`; };
-    (b.hikes ?? []).forEach((h: any, j: number) => {
+    (b.hikes ?? []).forEach((h, j) => {
       out.push({
         id: `${park}/base/${i}/${j}`, title: named(h, `${h.dest} from ${b.camp}`),
         slug: `${camp}/${local(slugify(named(h, h.dest)) || 'hike')}`, km: h.route.km, gain: h.route.gain, type: 'Day hike from camp',
@@ -189,7 +267,7 @@ export function shortName(s: string): string {
 
 // One park's routes document, from the routes bundle (a byte range of it,
 // gzipped), on the server or in the browser.
-export async function parkDoc(build: string, index: any, park: string): Promise<any | null> {
+export async function parkDoc(build: string, index: BundleIndex | null, park: string): Promise<ParkDoc | null> {
   const at = index?.parks?.[park];
   if (!at) return null;
   const [offset, length] = at;

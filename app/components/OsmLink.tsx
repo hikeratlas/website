@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Map as MaplibreMap } from 'maplibre-gl';
 
 // A link to the same place on openstreetmap.org, kept up to date as the map
 // moves. OSM's tiles are 256px and ours are 512px, so the same view is one
@@ -8,7 +9,7 @@ export function osmUrl(lng: number, lat: number, zoom: number): string {
   return `https://www.openstreetmap.org/#map=${z}/${lat.toFixed(5)}/${lng.toFixed(5)}`;
 }
 
-export default function OsmLink({ map }: { map: any }) {
+export default function OsmLink({ map }: { map: MaplibreMap | null }) {
   const [href, setHref] = useState<string | null>(null);
 
   useEffect(() => {
