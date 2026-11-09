@@ -6,11 +6,13 @@
 // each tile; the two copies can land a unit or two apart, so vertices on a
 // tile edge that close together are one (as in graph.ts). If the ways chain
 // end to end into one line (no branches, one piece), it's returned in order
-// as `single`, which can be profiled end to end; a branched or broken trail
-// (a loop with spurs, separate stretches) only has `lines`.
+// as `single`, which can be profiled end to end. A branched trail in one piece
+// (a lollipop: a stem into a loop, like Killarney's Granite Ridge Trail) has
+// `longest` instead: its longest stretch, between its two farthest-apart
+// points along it. A trail in separate pieces only has `lines`.
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
-import { Z, lngLatToTile, type LngLat } from './graph';
+import { Z, haversine, lngLatToTile, type LngLat } from './graph';
 
 interface TileSource {
   getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined>;
@@ -19,6 +21,7 @@ interface TileSource {
 export interface TrailGeometry {
   lines: LngLat[][];
   single: LngLat[] | null;
+  longest: LngLat[] | null;
 }
 
 // More tiles than this (~15-20 km across) and the trail isn't read: a long
@@ -82,8 +85,42 @@ export async function trailGeometry(source: TileSource, name: string, box: [numb
       }
     }
   }
-  if (lines.length === 0) return { lines, single: null };
-  return { lines, single: chain(adj, at) };
+  if (lines.length === 0) return { lines, single: null, longest: null };
+  const single = chain(adj, at);
+  return { lines, single, longest: single ? null : longestStretch(adj, at) };
+}
+
+// In a trail of one piece, the path between its two farthest-apart points:
+// the farthest point from anywhere, then the farthest from that (along the
+// trail). Null if the trail is in more than one piece.
+function longestStretch(adj: Map<string, Set<string>>, at: Map<string, LngLat>): LngLat[] | null {
+  const far = (from: string) => {
+    const dist = new Map<string, number>([[from, 0]]);
+    const prev = new Map<string, string>();
+    const done = new Set<string>();
+    // Dijkstra with a plain scan: trails have hundreds of vertices, not more.
+    for (;;) {
+      let u: string | null = null;
+      for (const [k, d] of dist) if (!done.has(k) && (u === null || d < dist.get(u)!)) u = k;
+      if (u === null) break;
+      done.add(u);
+      for (const v of adj.get(u)!) {
+        const d = dist.get(u)! + haversine(at.get(u)!, at.get(v)!);
+        if (d < (dist.get(v) ?? Infinity)) { dist.set(v, d); prev.set(v, u); }
+      }
+    }
+    let end = from;
+    for (const [k, d] of dist) if (d > dist.get(end)!) end = k;
+    return { end, prev, reached: dist.size };
+  };
+  const first = adj.keys().next().value;
+  if (first === undefined) return null;
+  const a = far(first);
+  if (a.reached !== adj.size) return null; // in pieces
+  const b = far(a.end);
+  const out: LngLat[] = [];
+  for (let k: string | undefined = b.end; k !== undefined; k = b.prev.get(k)) out.push(at.get(k)!);
+  return out.length > 1 ? out : null;
 }
 
 // The vertices in order, if they form one unbranched line (or loop).

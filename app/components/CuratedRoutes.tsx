@@ -215,7 +215,8 @@ interface TrailState {
   focus: FocusTrail;
   loading: boolean;
   geom?: TrailGeometry | null;
-  prof?: Profile | null; // end to end, if the trail is one line
+  prof?: Profile | null; // end to end, or along its longest stretch
+  along?: number | null; // metres, if prof is its longest stretch
   range?: [number, number] | null; // low and high points
   hikes?: Item[];
 }
@@ -257,10 +258,10 @@ interface Props {
 function TrailBody({ trail, onHover, onHike, onPark }: {
   trail: TrailState; onHover: (c: [number, number] | null) => void; onHike: (park: string, id: string) => void; onPark?: () => void;
 }) {
-  const { prof, range, loading, hikes, geom } = trail;
+  const { prof, range, along, loading, hikes, geom } = trail;
   const m = (x: number) => `${Math.round(x).toLocaleString()} m`;
   return <>
-    {prof && <div className='mt-1'>↑ {m(prof.gain)} · ↓ {m(prof.loss)} end to end{range && ` · high point ${m(range[1])}`}</div>}
+    {prof && <div className='mt-1'>↑ {m(prof.gain)} · ↓ {m(prof.loss)} {along ? `along ${(along / 1000).toFixed(1)} km of it` : 'end to end'}{range && ` · high point ${m(range[1])} · low point ${m(range[0])}`}</div>}
     {!prof && range && <div className='mt-1'>High point {m(range[1])} · low point {m(range[0])}</div>}
     {prof
       ? <ElevationChart points={prof.points} lo={range![0]} hi={range![1]} onHover={(i) => onHover(i === null ? null : prof.coords[i])} />
@@ -474,11 +475,19 @@ export default function CuratedRoutes(props: Props) {
       setTrail((s) => s && { ...s, geom });
       let prof: Profile | null = null;
       let range: [number, number] | null = null;
+      let along: number | null = null;
       try {
-        if (geom?.single) {
-          prof = await profile(geom.single);
+        if (geom?.single || geom?.longest) {
+          prof = await profile((geom.single ?? geom.longest)!);
           const es = prof.points.map(([, e]) => e);
           range = [Math.min(...es), Math.max(...es)];
+          if (!geom.single) {
+            along = prof.points[prof.points.length - 1][0];
+            // The rest of the trail can reach higher or lower.
+            const all = await Promise.all(geom.lines.slice(0, 50).map((l) => profile(l, 20)));
+            const more = all.flatMap((p) => p.points.map(([, e]) => e));
+            range = [Math.min(range[0], ...more), Math.max(range[1], ...more)];
+          }
         } else if (geom && geom.lines.length > 0) {
           // Branched or in pieces: no one direction to climb along, so
           // just its low and high points.
@@ -490,7 +499,7 @@ export default function CuratedRoutes(props: Props) {
       const found = await hikes;
       if (!live) return;
       if (found.length > 0) setList({ heading: `Hikes on ${f.name}`, items: found });
-      setTrail((s) => s && { ...s, prof, range, hikes: found, loading: false });
+      setTrail((s) => s && { ...s, prof, range, along, hikes: found, loading: false });
     })();
     return () => { live = false; };
   }, [map, build, focusTrail, addLayers, setData]);
