@@ -2,7 +2,7 @@
 // trails and roads from the one before (see app/routing/), and the last point
 // can be undone. Used by the map's route planner and the trace picker
 // (routes/dev.trace.tsx).
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapMouseEvent } from 'maplibre-gl';
 import { withZstd, type Decompress } from '~/zstd';
@@ -77,8 +77,9 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     if (map.isStyleLoaded()) addLayers(); else map.once('load', addLayers);
   }, [map, addLayers]);
 
-  const coords = legs.flatMap((l, i) => (i ? l.coords.slice(1) : l.coords));
-  const metres = legs.reduce((s, l) => s + l.metres, 0);
+  // Memoized: a new array each render would re-fire effects that depend on it.
+  const coords = useMemo(() => legs.flatMap((l, i) => (i ? l.coords.slice(1) : l.coords)), [legs]);
+  const metres = useMemo(() => legs.reduce((s, l) => s + l.metres, 0), [legs]);
 
   // Draw what's in state.
   useEffect(() => {

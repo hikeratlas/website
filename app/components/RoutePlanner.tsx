@@ -29,7 +29,7 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
     const metres = route.metres;
     profile(route.coords).then((p) => { if (!stale) setResult({ metres, profile: p }); }).catch(() => {});
     return () => { stale = true; };
-  }, [route.coords, route.metres]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [route.coords, route.metres]);
 
   // Mark the point on the route that the elevation chart is hovered at.
   const showHover = (p: LngLat | null) => {
