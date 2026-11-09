@@ -7,7 +7,7 @@ import CuratedRoutes, { bundleIndex, parkRoutes, refreshBundle, type Crumb, type
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
-import { type Bbox, findHike, hikeEntries, hikesPath, parsePath, regionList, regionsUrl, resolve, type Regions } from '~/hikes';
+import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, regionList, regionsUrl, resolve, type Regions } from '~/hikes';
 
 // What a /hikes URL resolved to on the server (routes/hikes.$.tsx), to show
 // once the map is ready.
@@ -91,7 +91,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
 
   // Breadcrumbs for a park, or a hike in it, from the routes index's paths
   // and names.
-  const parkCrumbs = (idx: any, path: string, parkName: string) => {
+  const parkCrumbs = (idx: BundleIndex, path: string, parkName: string) => {
     const [c, s] = path.split('/');
     return [
       { name: 'Hikes', path: '/hikes' },
@@ -121,7 +121,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
       // search returns the new build's hikes: if the park or hike isn't
       // there, fetch the current index once and look again (basemap#185).
       let idx: Awaited<ReturnType<typeof bundleIndex>> & { paths?: Record<string, string> } = { bundle: '', parks: {} };
-      let doc: Awaited<ReturnType<typeof parkRoutes>>;
+      let doc!: Awaited<ReturnType<typeof parkRoutes>>; // set wherever path is
       let path: string | undefined;
       let entries: ReturnType<typeof hikeEntries> = [];
       let e: ReturnType<typeof hikeEntries>[number] | undefined;
@@ -197,9 +197,9 @@ export default function MapPage({ build, search, initial, summary }: Props) {
       applying.current = false;
       return;
     }
-    const idx: any = await bundleIndex(routesBuild);
+    const idx = await bundleIndex(routesBuild);
     const want = parts.slice(0, 3).join('/');
-    const park = Object.keys(idx.paths ?? {}).find((id) => idx.paths[id] === want);
+    const park = Object.keys(idx.paths ?? {}).find((id) => idx.paths![id] === want);
     if (!park) { window.location.assign(`${path}${window.location.search}`); return; } // let the server say
     setRegion(null);
     const doc = await parkRoutes(routesBuild, park);

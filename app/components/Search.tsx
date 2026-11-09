@@ -181,8 +181,6 @@ export default function Search(props: Props) {
     const nearRef = React.useRef<LatLon | null>(null);
     const {
       isOpen,
-      getToggleButtonProps,
-      getLabelProps,
       getMenuProps,
       getInputProps,
       highlightedIndex,

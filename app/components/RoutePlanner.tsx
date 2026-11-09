@@ -2,7 +2,9 @@
 // the route along trails and roads, its distance and climb, and an elevation
 // chart you can hover to see each point on the route. It all runs in the
 // browser, on the basemap's own tiles (see app/routing/).
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { FeatureCollection } from 'geojson';
+import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapMouseEvent } from 'maplibre-gl';
 import { withZstd, type Decompress } from '~/zstd';
 import { Z, buildGraph, lngLatToTile, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
 import { profile, type Profile } from '~/routing/elevation';
@@ -15,39 +17,44 @@ declare const pmtiles: {
     getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined>;
   };
 };
+type Archive = InstanceType<typeof pmtiles.PMTiles>;
 
-const EMPTY = { type: 'FeatureCollection', features: [] };
+const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const COLOR = '#c026d3';
 
 interface Result { metres: number; profile: Profile; ms: number }
 
-export default function RoutePlanner({ map, tiles }: { map: any; tiles: string }) {
+export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: string }) {
+  // Consts, so checks of map hold in the handlers below.
+  const { map, tiles } = props;
   const [active, setActive] = useState(false);
   const [status, setStatus] = useState('Click the map to set a start.');
   const [result, setResult] = useState<Result | null>(null);
   const points = useRef<LngLat[]>([]);
-  const source = useRef<any>(null);
+  const source = useRef<Archive | null>(null);
   const layersAdded = useRef(false);
 
-  const setData = (id: string, data: any) => map?.getSource(id)?.setData(data);
+  const setData = useCallback((id: string, data: GeoJSON.GeoJSON) => map?.getSource<GeoJSONSource>(id)?.setData(data), [map]);
 
-  const addLayers = () => {
+  const addLayers = useCallback(() => {
     if (layersAdded.current) return;
     layersAdded.current = true;
+    // Called once the map is up.
+    const map = props.map!;
     map.addSource('route-line', { type: 'geojson', data: EMPTY });
     map.addSource('route-points', { type: 'geojson', data: EMPTY });
     map.addSource('route-hover', { type: 'geojson', data: EMPTY });
-    const round = { 'line-join': 'round', 'line-cap': 'round' };
+    const round: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
     map.addLayer({ id: 'route-line-casing', type: 'line', source: 'route-line', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
     map.addLayer({ id: 'route-line', type: 'line', source: 'route-line', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } });
     map.addLayer({ id: 'route-points', type: 'circle', source: 'route-points', paint: { 'circle-radius': 7, 'circle-color': COLOR, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
     map.addLayer({ id: 'route-hover', type: 'circle', source: 'route-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
-  };
+  }, [props.map]);
 
-  const showPoints = () => setData('route-points', {
+  const showPoints = useCallback(() => setData('route-points', {
     type: 'FeatureCollection',
-    features: points.current.map((p) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } })),
-  });
+    features: points.current.map((p): GeoJSON.Feature => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } })),
+  }), [setData]);
 
   const clear = () => {
     points.current = [];
@@ -63,28 +70,28 @@ export default function RoutePlanner({ map, tiles }: { map: any; tiles: string }
 
   // The tile source, rebuilt if the map's tileset changes (e.g. a preview).
   const sourceFor = useRef<string | null>(null);
-  const ensureSource = () => {
+  const ensureSource = useCallback(() => {
     if (source.current && sourceFor.current === tiles) return;
     const decompress = withZstd(new pmtiles.PMTiles("").decompress);
     source.current = new pmtiles.PMTiles(new CoalescingSource(new pmtiles.FetchSource(tiles)), undefined, decompress);
     sourceFor.current = tiles;
-  };
+  }, [tiles]);
 
   // While the user picks an end, fetch the tile under the start: that reads
   // the archive's header and the directory for the area, which routing needs.
-  const warmUp = (p: LngLat) => {
+  const warmUp = useCallback((p: LngLat) => {
     ensureSource();
     const [x, y] = lngLatToTile(p[0], p[1], Z);
-    source.current.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
-  };
+    source.current!.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
+  }, [ensureSource]);
 
-  const route = async (a: LngLat, b: LngLat) => {
+  const route = useCallback(async (a: LngLat, b: LngLat) => {
     const t0 = performance.now();
     try {
       ensureSource();
       const ts = tilesAround(a, b);
       setStatus('Finding a route…');
-      const g = await buildGraph(source.current, ts);
+      const g = await buildGraph(source.current!, ts);
       const found = shortestPath(g, ...snapPair(g, a, b));
       if (!found) { setStatus('No route between those points on trails or roads.'); return; }
       const coords = found.path.map((i) => worldToLngLat(g, i));
@@ -93,17 +100,17 @@ export default function RoutePlanner({ map, tiles }: { map: any; tiles: string }
       const prof = await profile(coords);
       setResult({ metres: found.metres, profile: prof, ms: performance.now() - t0 });
       setStatus('Click the map to start a new route.');
-    } catch (e: any) {
-      setStatus(e.message ?? String(e));
+    } catch (e) {
+      setStatus((e as Error).message ?? String(e));
     }
-  };
+  }, [ensureSource, setData]);
 
   // In route mode, clicks set the start and end.
   useEffect(() => {
     if (!map || !active) return;
     if (map.isStyleLoaded()) addLayers(); else map.once('load', addLayers);
     map.getCanvas().style.cursor = 'crosshair';
-    const onClick = (e: any) => {
+    const onClick = (e: MapMouseEvent) => {
       if (points.current.length >= 2) points.current = [];
       points.current.push([e.lngLat.lng, e.lngLat.lat]);
       showPoints();
@@ -117,13 +124,13 @@ export default function RoutePlanner({ map, tiles }: { map: any; tiles: string }
     };
     map.on('click', onClick);
     return () => { map.off('click', onClick); map.getCanvas().style.cursor = ''; };
-  }, [map, active, tiles]);
+  }, [map, active, tiles, addLayers, route, setData, showPoints, warmUp]);
 
   // Test hook, in development only: route between two points.
   useEffect(() => {
     if (!map || process.env.NODE_ENV === 'production') return;
-    (window as any).__routePlanner = { map, route: (a: LngLat, b: LngLat) => { setActive(true); addLayers(); points.current = [a, b]; showPoints(); return route(a, b); } };
-  }, [map, tiles]);
+    (window as Window & { __routePlanner?: unknown }).__routePlanner = { map, route: (a: LngLat, b: LngLat) => { setActive(true); addLayers(); points.current = [a, b]; showPoints(); return route(a, b); } };
+  }, [map, tiles, addLayers, route, showPoints]);
 
   if (!map) return null;
 

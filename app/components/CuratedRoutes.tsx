@@ -6,28 +6,20 @@
 // located by <TILES_ROOT>/routes/<build>/index.json ({bundle, parks: {<park
 // osm id>: [offset, length]}}), so a build uploads 2 files, not one per park.
 // Builds from before the bundle have <TILES_ROOT>/routes/<build>/<park>.json.
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { FeatureCollection } from 'geojson';
+import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
 import { TILES_ROOT } from '~/build';
-import type { SeeAlso, Stop } from '~/hikes';
+import type { BaseCamp, BundleIndex, ParkDoc, Route, SeeAlso, Stop } from '~/hikes';
 import { profile, type Profile } from '~/routing/elevation';
-import type { LngLat } from '~/routing/graph';
 import { ElevationChart, type Mark } from './RoutePlanner';
 
 const LAYER = 'routes-route';
 // The basemap's park names (styles/parks.json's label-park, prefixed by
 // mapt): clicking one with curated hikes lists them (#59).
 const PARK_LABEL = 'parks-label-park';
-const EMPTY = { type: 'FeatureCollection', features: [] };
+const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const COLOR = '#c026d3';
-
-interface BundleIndex {
-  bundle: string;
-  parks: Record<string, [number, number]>;
-  // From hikeratlas/basemap's bin/hike-paths.py, in builds that have it:
-  // park id -> "<country>/<state>/<park>", and country or state path -> name.
-  paths?: Record<string, string>;
-  regions?: Record<string, string>;
-}
 
 // A build's index of the parks' routes in its bundle.
 const indexes = new Map<string, Promise<BundleIndex>>();
@@ -42,7 +34,7 @@ export function bundleIndex(build: string): Promise<BundleIndex> {
   return indexes.get(url)!;
 }
 
-async function fetchPark(build: string, park: string): Promise<any> {
+async function fetchPark(build: string, park: string): Promise<ParkDoc> {
   const index = await bundleIndex(build);
   const at = index.parks[park];
   if (!at) throw new Error(`no routes for park ${park} in ${build}`);
@@ -57,8 +49,8 @@ async function fetchPark(build: string, park: string): Promise<any> {
   return JSON.parse(text);
 }
 
-const parks = new Map<string, Promise<any>>();
-export function parkRoutes(build: string, park: string): Promise<any> {
+const parks = new Map<string, Promise<ParkDoc>>();
+export function parkRoutes(build: string, park: string): Promise<ParkDoc> {
   const key = `${build}/${park}`;
   if (!parks.has(key)) parks.set(key, fetchPark(build, park));
   return parks.get(key)!;
@@ -72,27 +64,13 @@ export function refreshBundle(build: string) {
   for (const k of [...parks.keys()]) if (k.startsWith(`${build}/`)) parks.delete(k);
 }
 
-interface Route {
-  km: number;
-  gain: number;
-  max_ele: number;
-  landcover: [string, number][];
-  passes: [string, string[]][];
-  stopovers: { name: string; km: number; at: LngLat }[];
-  via: string[];
-  // Hardest SAC grade along it (hikeratlas/routes): 4 is a scramble (#45).
-  // 0 or missing: ungraded, or a build from before grades.
-  max_sac?: number;
-  line: LngLat[];
-}
-
 interface Selected {
   id: string;
   title: string;
   label: string;
   route: Route;
   why?: [string, number][];
-  base?: any; // the base camp, for its walk in and day hikes from camp
+  base?: BaseCamp; // the base camp, for its walk in and day hikes from camp
   baseIndex?: number;
 }
 
@@ -101,14 +79,14 @@ const KIND: Record<string, string> = { 'out-and-back': 'out and back', loop: 'lo
 // A route that follows an OSM hiking route carries its name (hikeratlas/routes'
 // recall::name_routes): "Colchuck Lake Trail", not "Colchuck Lake from Stuart
 // Lake Trailhead".
-function named(r: any, otherwise: string): string {
+function named(r: { name?: string | null }, otherwise: string): string {
   return typeof r.name === 'string' && r.name ? r.name : otherwise;
 }
 
 // The route an id names: <park>/day/i, <park>/stop/i (a short walk to a
 // sight from where the car is, hikeratlas/routes#70), <park>/base/i (the walk
 // in to a base camp), <park>/base/i/j (a day hike from it), or <park>/multi/i.
-function lookup(doc: any, id: string): Selected | null {
+function lookup(doc: ParkDoc, id: string): Selected | null | undefined {
   const [, type, i, j] = id.split('/');
   if (type === 'day') {
     const h = doc.day_hikes[+i];
@@ -144,7 +122,30 @@ function walk(h: Stop): string {
 // A route in a list: the routes under a click, in view, or in a park. Items
 // with a section (a park's stops) are listed under its heading.
 interface Item { park: string; id: string; title: string; meta: string; section?: string }
-interface List { heading: string; items: Item[] }
+interface List { heading: string; items: Item[]; about?: ParkAbout }
+
+// A park's operator and official website (#72): from its routes record
+// (hikeratlas/routes' park), or, for a park without hikes, its map label.
+export interface ParkAbout { operator?: string; website?: string }
+
+const aboutOf = (p: { operator?: unknown; website?: unknown } | null | undefined): ParkAbout | undefined => {
+  const operator = typeof p?.operator === 'string' && p.operator ? p.operator : undefined;
+  const website = typeof p?.website === 'string' && /^https?:\/\//i.test(p.website) ? p.website : undefined;
+  return operator || website ? { operator, website } : undefined;
+};
+
+const hostOf = (url: string) => {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+};
+
+function About({ about }: { about: ParkAbout }) {
+  return <div className='text-gray-600 text-sm'>
+    {about.operator}
+    {about.operator && about.website && ' · '}
+    {about.website && <a href={about.website} target='_blank' rel='noopener noreferrer' className='text-blue-700 hover:underline'
+      title='Official website'>{hostOf(about.website)} ↗</a>}
+  </div>;
+}
 
 const TYPE_LABEL: Record<string, string> = { day: 'Day hike', approach: 'Base camp', 'multi-day': 'Multi-day', 'from-camp': 'From camp', stop: 'Stop' };
 const TYPE_ORDER: Record<string, number> = { day: 0, approach: 1, 'multi-day': 2, 'from-camp': 3, stop: 4 };
@@ -155,8 +156,8 @@ function meta(type: string, km: number, gain: number, sac?: number): string {
 
 // Items from the route layer's features (properties as in hikeratlas/routes'
 // routes.geojsonl), one per route, best first within each park.
-function itemsFromFeatures(features: any[], fromCamp = true): Item[] {
-  const seen = new Map<string, any>();
+function itemsFromFeatures(features: MapGeoJSONFeature[], fromCamp = true): Item[] {
+  const seen = new Map<string, MapGeoJSONFeature['properties']>();
   for (const f of features) if (!seen.has(f.properties.id)) seen.set(f.properties.id, f.properties);
   return [...seen.values()]
     .filter((p) => fromCamp || p.type !== 'from-camp')
@@ -172,12 +173,12 @@ function itemsFromFeatures(features: any[], fromCamp = true): Item[] {
 }
 
 // Items for a whole park, from its JSON.
-function itemsFromPark(doc: any): Item[] {
-  const park = String(doc.park.id);
+function itemsFromPark(doc: ParkDoc): Item[] {
+  const park = String(doc.park!.id);
   return [
-    ...doc.day_hikes.map((h: any, i: number) => ({ park, id: `${park}/day/${i}`, title: named(h, `${h.dest} from ${h.from}`), meta: meta('day', h.route.km, h.route.gain, h.route.max_sac) })),
-    ...doc.base_camps.map((b: any, i: number) => ({ park, id: `${park}/base/${i}`, title: `Base camp: ${b.camp} from ${b.from}`, meta: `${b.hikes.length} day hikes from camp · walk in ${b.approach.km.toFixed(1)} km` })),
-    ...doc.point_to_points.map((t: any, i: number) => ({ park, id: `${park}/multi/${i}`, title: named(t, `${t.from} to ${t.to}`), meta: meta('multi-day', t.route.km, t.route.gain, t.route.max_sac) })),
+    ...doc.day_hikes.map((h, i) => ({ park, id: `${park}/day/${i}`, title: named(h, `${h.dest} from ${h.from}`), meta: meta('day', h.route.km, h.route.gain, h.route.max_sac) })),
+    ...doc.base_camps.map((b, i) => ({ park, id: `${park}/base/${i}`, title: `Base camp: ${b.camp} from ${b.from}`, meta: `${b.hikes.length} day hikes from camp · walk in ${b.approach.km.toFixed(1)} km` })),
+    ...doc.point_to_points.map((t, i) => ({ park, id: `${park}/multi/${i}`, title: named(t, `${t.from} to ${t.to}`), meta: meta('multi-day', t.route.km, t.route.gain, t.route.max_sac) })),
     // Multi-day trips of a smaller park inside this one (hikeratlas/routes:
     // Guadalupe Mountains NP lists its Wilderness's), opened in that park.
     ...((doc.see_also ?? []) as SeeAlso[]).map((e) => ({ park: String(e.park), id: e.id, title: named(e, `${e.from} to ${e.to}`), meta: `${meta('multi-day', e.km, e.gain)} · in ${e.park_name}` })),
@@ -207,7 +208,7 @@ export interface RegionList { heading: string; items: { name: string; path: stri
 export interface Crumb { name: string; href: string; path: string }
 
 interface Props {
-  map: any;
+  map: MaplibreMap | null;
   build: string;
   focusPark?: FocusPark | null;
   onShowing?: (s: Showing) => void;
@@ -223,7 +224,9 @@ interface Props {
   onPark?: (id: string, name: string) => void;
 }
 
-export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs, region, onNavigate, closeAt, note, onPark }: Props) {
+export default function CuratedRoutes(props: Props) {
+  // Consts, so checks of map hold in the handlers below.
+  const { map, build, focusPark, onShowing, crumbs, region, onNavigate, closeAt, note, onPark } = props;
   const [sel, setSel] = useState<Selected | null>(null);
   const [prof, setProf] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -246,14 +249,16 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     setList(l); setMode('list'); setError(null); setSnap('half'); setListPark(park);
   };
 
-  const setData = (id: string, data: any) => map?.getSource(id)?.setData(data);
+  const setData = useCallback((id: string, data: GeoJSON.GeoJSON) => map?.getSource<GeoJSONSource>(id)?.setData(data), [map]);
 
-  const addLayers = () => {
+  const addLayers = useCallback(() => {
     if (added.current) return;
     added.current = true;
+    // Called once the map is up.
+    const map = props.map!;
     map.addSource('curated-sel', { type: 'geojson', data: EMPTY });
     map.addSource('curated-hover', { type: 'geojson', data: EMPTY });
-    const round = { 'line-join': 'round', 'line-cap': 'round' };
+    const round: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
     map.addLayer({ id: 'curated-sel-casing', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
     map.addLayer({ id: 'curated-sel', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } });
     map.addLayer({
@@ -261,9 +266,9 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
       paint: { 'circle-radius': 6, 'circle-color': '#16a34a', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 },
     });
     map.addLayer({ id: 'curated-hover', type: 'circle', source: 'curated-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
-  };
+  }, [props.map]);
 
-  const select = async (park: string, id: string) => {
+  const select = useCallback(async (park: string, id: string) => {
     setError(null);
     setMode('detail');
     setSnap('peek');
@@ -272,7 +277,7 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
       const s = lookup(doc, id);
       if (!s) { setError('That route is no longer available.'); return; }
       // A day hike from a base camp starts at the camp; don't list it as a stop.
-      if (s.base && id.split('/').length === 4) s.route = { ...s.route, stopovers: s.route.stopovers.filter((c) => c.name !== s.base.camp) };
+      if (s.base && id.split('/').length === 4) s.route = { ...s.route, stopovers: s.route.stopovers.filter((c) => c.name !== s.base!.camp) };
       addLayers();
       setSel(s);
       setProf(null);
@@ -280,17 +285,17 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
         type: 'FeatureCollection',
         features: [
           { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: s.route.line } },
-          ...s.route.stopovers.map((c) => ({ type: 'Feature', properties: { name: c.name }, geometry: { type: 'Point', coordinates: c.at } })),
+          ...s.route.stopovers.map((c): GeoJSON.Feature => ({ type: 'Feature', properties: { name: c.name }, geometry: { type: 'Point', coordinates: c.at } })),
         ],
       });
-      if (window.matchMedia(PHONE).matches) fitAbove(map, s.route.line, PEEK_PX);
+      if (window.matchMedia(PHONE).matches) fitAbove(map!, s.route.line, PEEK_PX);
       setProf(await profile(s.route.line));
-    } catch (e: any) {
-      setError(e.message ?? String(e));
+    } catch (e) {
+      setError((e as Error).message ?? String(e));
     }
-  };
+  }, [build, map, addLayers, setData]);
 
-  const close = () => {
+  const close = useCallback(() => {
     setListPark(null);
     setSel(null);
     setProf(null);
@@ -299,13 +304,13 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     setError(null);
     setData('curated-sel', EMPTY);
     setData('curated-hover', EMPTY);
-  };
+  }, [setData]);
 
   useEffect(() => {
     if (!map) return;
     // The route planner takes over clicks while it's active (crosshair).
     const planning = () => map.getCanvas().style.cursor === 'crosshair';
-    const at = (e: any) => {
+    const at = (e: MapMouseEvent) => {
       if (!map.getLayer(LAYER)) return [];
       const { x, y } = e.point;
       return map.queryRenderedFeatures([[x - 4, y - 4], [x + 4, y + 4]], { layers: [LAYER] });
@@ -317,21 +322,28 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     const parkAt = (e: { point: { x: number; y: number } }) => {
       if (!onPark || !map.getLayer(PARK_LABEL)) return null;
       const { x, y } = e.point;
+      // Parks with hikes open their list; others, only if their label says
+      // who runs them or where their website is (#72).
       const f = map.queryRenderedFeatures([[x - 2, y - 2], [x + 2, y + 2]], { layers: [PARK_LABEL] })
-        .find((f: { properties?: Record<string, unknown> }) => hiked.has(String(f.properties?.osm_id)));
-      return f ? { id: String(f.properties.osm_id), name: String(f.properties.name ?? f.properties.short_name ?? '') } : null;
+        .find((f: { properties?: Record<string, unknown> }) => hiked.has(String(f.properties?.osm_id)) || aboutOf(f.properties));
+      return f ? {
+        id: String(f.properties.osm_id), name: String(f.properties.name ?? f.properties.short_name ?? ''),
+        hiked: hiked.has(String(f.properties.osm_id)), about: aboutOf(f.properties),
+      } : null;
     };
-    const onClick = (e: any) => {
+    const onClick = (e: MapMouseEvent) => {
       if (planning()) return;
       const found = itemsFromFeatures(at(e));
       if (found.length === 1) { setList(null); select(found[0].park, found[0].id); }
       else if (found.length > 1) openList({ heading: `${found.length} routes here`, items: found });
       else {
         const p = parkAt(e);
-        if (p) onPark?.(p.id, p.name);
+        if (p?.hiked) onPark?.(p.id, p.name);
+        // No hikes: just the park, who runs it and its website.
+        else if (p) openList({ heading: p.name, items: [], about: p.about });
       }
     };
-    const onMove = (e: any) => {
+    const onMove = (e: MapMouseEvent) => {
       if (planning()) return;
       map.getCanvas().style.cursor = at(e).length || parkAt(e) ? 'pointer' : '';
     };
@@ -345,7 +357,7 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     map.on('moveend', onIdle);
     map.once('idle', onIdle);
     return () => { map.off('click', onClick); map.off('mousemove', onMove); map.off('moveend', onIdle); };
-  }, [map, build, onPark]);
+  }, [map, build, onPark, select]);
 
   // A park picked in search: list its routes, if it has any. A hike picked
   // in search (#44): open it.
@@ -354,16 +366,16 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     if (focusPark.route) {
       // As if from the park's list, so "←" goes back to it.
       parkRoutes(build, focusPark.id)
-        .then((doc) => { setList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc) }); setListPark({ id: focusPark.id, name: doc.park?.name ?? focusPark.name }); })
+        .then((doc) => { setList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc), about: aboutOf(doc.park) }); setListPark({ id: focusPark.id, name: doc.park?.name ?? focusPark.name }); })
         .catch(() => {});
       select(focusPark.id, focusPark.route);
       return;
     }
     parkRoutes(build, focusPark.id)
-      .then((doc) => openList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc) }, { id: focusPark.id, name: doc.park?.name ?? focusPark.name }))
+      .then((doc) => openList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc), about: aboutOf(doc.park) }, { id: focusPark.id, name: doc.park?.name ?? focusPark.name }))
       // Most parks have no curated routes; just close what was open.
       .catch(() => close());
-  }, [map, build, focusPark]);
+  }, [map, build, focusPark, close, select]);
 
   // Tell the page what's showing, for its URL.
   useEffect(() => {
@@ -375,6 +387,9 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, sel?.id, listPark?.id]);
 
+  // Only when closeAt changes: close also changes when the map arrives, which
+  // isn't a reason to close.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (closeAt) close(); }, [closeAt]);
 
   if (!map) return null;
@@ -418,6 +433,7 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
         {trail}
         {(!trail || !listPark) && mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
         {mode === 'list' && list && <div className='font-semibold text-base'>{list.heading}</div>}
+        {mode === 'list' && list?.about && <About about={list.about} />}
         {mode === 'detail' && sel && <div className='font-semibold text-base'>{sel.title}</div>}
         {mode === 'detail' && sel && <div className='text-gray-600'>{sel.label}</div>}
         {error && <div className='text-red-700'>{error}</div>}
@@ -425,6 +441,7 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
       </div>
       <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
     </div>
+    {mode === 'list' && list && list.items.length === 0 && <div className='mt-1 text-gray-500'>No curated hikes here yet.</div>}
     {mode === 'list' && list && <ul className='mt-1'>
       {list.items.map((c, k) => <li key={c.id} className='py-0.5'>
         {c.section && c.section !== list.items[k - 1]?.section && <h3 className='font-semibold text-gray-700 mt-2 mb-0.5'>{c.section}</h3>}
@@ -452,12 +469,12 @@ export default function CuratedRoutes({ map, build, focusPark, onShowing, crumbs
         {r.stopovers.map((c) => `${c.name} (${c.km} km)`).join(', ')}
       </Row>}
       {r.via.length > 0 && <Row label='Via'>{r.via.slice(0, 6).join(', ')}{r.via.length > 6 ? '…' : ''}</Row>}
-      {r.passes.length > 0 && <Row label='Passes'>{r.passes.map(([k, names]) => `${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`).join('; ')}</Row>}
+      {r.passes.length > 0 && <Row label='Passes'>{r.passes.map(([, names]) => `${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`).join('; ')}</Row>}
       {r.landcover.length > 0 && <Row label='Terrain'>{r.landcover.filter(([, s]) => s >= 0.05).map(([k, s]) => `${k} ${Math.round(s * 100)}%`).join(', ')}</Row>}
       {sel?.base && <div className='mt-2'>
         <div className='text-gray-600'>From {sel.base.camp}:</div>
         <ul className='ml-1'>
-          {sel.base.hikes.map((h: any, j: number) => <li key={j}>
+          {sel.base.hikes.map((h, j) => <li key={j}>
             <button className='text-blue-700 hover:underline text-left' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}/${j}`)}>
               {named(h, h.dest)}
             </button> <span className='text-gray-500'>{h.route.km} km · ↑ {Math.round(h.route.gain)} m{(h.route.max_sac ?? 0) >= 4 ? ' · scramble' : ''}</span>
@@ -519,7 +536,7 @@ function useIsPhone(): boolean {
 }
 
 // Fit a route into the part of the map a bottom sheet of `bottom` px leaves.
-function fitAbove(map: any, line: [number, number][], bottom: number) {
+function fitAbove(map: MaplibreMap, line: [number, number][], bottom: number) {
   if (line.length < 2) return;
   let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
   for (const [x, y] of line) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
