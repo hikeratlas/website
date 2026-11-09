@@ -9,10 +9,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
-import { TILES_ROOT } from '~/build';
+import { TILES_ROOT, tilesUrl } from '~/build';
 import type { BaseCamp, BundleIndex, ParkDoc, Route, SeeAlso, Stop } from '~/hikes';
 import { profile, type Profile } from '~/routing/elevation';
+import { trailGeometry, type TrailGeometry } from '~/routing/trail';
+import { CoalescingSource, type Source } from '~/routing/source';
+import { withZstd, type Decompress } from '~/zstd';
 import { ElevationChart, type Mark } from './RoutePlanner';
+
+declare const pmtiles: {
+  FetchSource: new (url: string) => Source;
+  PMTiles: new (source: string | Source, cache?: unknown, decompress?: Decompress) => {
+    decompress: Decompress;
+    getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined>;
+  };
+};
 
 const LAYER = 'routes-route';
 // The basemap's park names (styles/parks.json's label-park, prefixed by
@@ -192,6 +203,24 @@ function itemsFromPark(doc: ParkDoc): Item[] {
 // search (open it): route is its id, as select() takes.
 export interface FocusPark { id: string; name: string; at: number; route?: string }
 
+// An OSM trail picked in search (#242): its panel shows its length, its
+// elevation (from its ways in the tiles) and the park's hikes that walk it.
+// parkId: the park's routes id, when the park has curated hikes.
+export interface FocusTrail {
+  name: string; at: number; km?: number | null; park?: string | null; state?: string | null;
+  parkId?: string; box?: [number, number, number, number];
+}
+
+interface TrailState {
+  focus: FocusTrail;
+  loading: boolean;
+  geom?: TrailGeometry | null;
+  prof?: Profile | null; // end to end, or along its longest stretch
+  along?: number | null; // metres, if prof is its longest stretch
+  range?: [number, number] | null; // low and high points
+  hikes?: Item[];
+}
+
 // What the panel shows, for the page's URL (#55, #56): a park's hike list, a
 // hike, some other list (hikes in view, routes under a click: no URL of its
 // own), or nothing.
@@ -211,6 +240,7 @@ interface Props {
   map: MaplibreMap | null;
   build: string;
   focusPark?: FocusPark | null;
+  focusTrail?: FocusTrail | null;
   onShowing?: (s: Showing) => void;
   // Breadcrumbs for what's showing, and where clicking one goes.
   crumbs?: Crumb[];
@@ -224,16 +254,47 @@ interface Props {
   onPark?: (id: string, name: string) => void;
 }
 
+// A trail's elevation and the hikes that walk it (#242).
+function TrailBody({ trail, onHover, onHike, onPark }: {
+  trail: TrailState; onHover: (c: [number, number] | null) => void; onHike: (park: string, id: string) => void; onPark?: () => void;
+}) {
+  const { prof, range, along, loading, hikes, geom } = trail;
+  const m = (x: number) => `${Math.round(x).toLocaleString()} m`;
+  return <>
+    {prof && <div className='mt-1'>↑ {m(prof.gain)} · ↓ {m(prof.loss)} {along ? `along ${(along / 1000).toFixed(1)} km of it` : 'end to end'}{range && ` · high point ${m(range[1])} · low point ${m(range[0])}`}</div>}
+    {!prof && range && <div className='mt-1'>High point {m(range[1])} · low point {m(range[0])}</div>}
+    {prof
+      ? <ElevationChart points={prof.points} lo={range![0]} hi={range![1]} onHover={(i) => onHover(i === null ? null : prof.coords[i])} />
+      : loading && <div className='h-[40px] text-gray-400 flex items-center'>Measuring elevation…</div>}
+    {!loading && geom === null && <div className='mt-1 text-gray-500 text-xs'>Too long to measure here.</div>}
+    {hikes && hikes.length > 0 && <>
+      <h3 className='font-semibold text-gray-700 mt-2 mb-0.5'>Hikes on this trail</h3>
+      <ul>{hikes.map((h) => <li key={h.id} className='py-0.5'>
+        <button className='tap-row text-blue-700 hover:underline text-left' onClick={() => onHike(h.park, h.id)}>{h.title}</button>
+        <div className='text-gray-500 text-xs'>{h.meta}</div>
+      </li>)}</ul>
+    </>}
+    {!loading && hikes && hikes.length === 0 && <div className='mt-2 text-gray-500'>
+      No curated hikes use this trail yet.
+      {onPark && <> <button className='tap text-blue-700 hover:underline' onClick={onPark}>Hikes in the park</button></>}
+    </div>}
+  </>;
+}
+
 export default function CuratedRoutes(props: Props) {
   // Consts, so checks of map hold in the handlers below.
-  const { map, build, focusPark, onShowing, crumbs, region, onNavigate, closeAt, note, onPark } = props;
+  const { map, build, focusPark, focusTrail, onShowing, crumbs, region, onNavigate, closeAt, note, onPark } = props;
   const [sel, setSel] = useState<Selected | null>(null);
   const [prof, setProf] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   // A list of routes to pick from (see Item), and whether it's showing or a
   // route's details are.
   const [list, setList] = useState<List | null>(null);
-  const [mode, setMode] = useState<'list' | 'detail' | null>(null);
+  const [mode, setMode] = useState<'list' | 'detail' | 'trail' | null>(null);
+  // An OSM trail picked in search, and what's known of it so far (#242).
+  const [trailInfo, setTrail] = useState<TrailState | null>(null);
+  // The basemap's tiles, for a trail's ways (as RoutePlanner reads them).
+  const tiles = useRef<{ url: string; archive: { getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined> } } | null>(null);
   // The routes in view, for the "hikes in view" button.
   const [inView, setInView] = useState<Item[]>([]);
   const added = useRef(false);
@@ -296,6 +357,7 @@ export default function CuratedRoutes(props: Props) {
   }, [build, map, addLayers, setData]);
 
   const close = useCallback(() => {
+    setTrail(null);
     setListPark(null);
     setSel(null);
     setProf(null);
@@ -377,12 +439,77 @@ export default function CuratedRoutes(props: Props) {
       .catch(() => close());
   }, [map, build, focusPark, close, select]);
 
+  // An OSM trail picked in search (#242): draw it, measure it, and find the
+  // park's hikes that walk it (their routes' "via").
+  useEffect(() => {
+    if (!map || !focusTrail) return;
+    const f = focusTrail;
+    let live = true;
+    setSel(null); setProf(null); setList(null); setListPark(null); setError(null);
+    setTrail({ focus: f, loading: true });
+    setMode('trail');
+    setSnap('half');
+    addLayers();
+    setData('curated-sel', EMPTY);
+    setData('curated-hover', EMPTY);
+    const url = tilesUrl(build);
+    if (tiles.current?.url !== url) {
+      const decompress = withZstd(new pmtiles.PMTiles('').decompress);
+      tiles.current = { url, archive: new pmtiles.PMTiles(new CoalescingSource(new pmtiles.FetchSource(url)), undefined, decompress) };
+    }
+    const archive = tiles.current.archive;
+    const want = f.name.trim().toLowerCase();
+    const hikes: Promise<Item[]> = f.parkId
+      ? parkRoutes(build, f.parkId).then((doc) => itemsFromPark(doc).filter((it) => it.park === f.parkId
+        && (lookup(doc, it.id)?.route.via ?? []).some((v) => v.trim().toLowerCase() === want))).catch(() => [])
+      : Promise.resolve([]);
+    (async () => {
+      const geom = f.box ? await trailGeometry(archive, f.name, f.box).catch(() => null) : null;
+      if (!live) return;
+      if (geom) {
+        setData('curated-sel', {
+          type: 'FeatureCollection',
+          features: geom.lines.map((l) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: l } })),
+        });
+      }
+      setTrail((s) => s && { ...s, geom });
+      let prof: Profile | null = null;
+      let range: [number, number] | null = null;
+      let along: number | null = null;
+      try {
+        if (geom?.single || geom?.longest) {
+          prof = await profile((geom.single ?? geom.longest)!);
+          const es = prof.points.map(([, e]) => e);
+          range = [Math.min(...es), Math.max(...es)];
+          if (!geom.single) {
+            along = prof.points[prof.points.length - 1][0];
+            // The rest of the trail can reach higher or lower.
+            const all = await Promise.all(geom.lines.slice(0, 50).map((l) => profile(l, 20)));
+            const more = all.flatMap((p) => p.points.map(([, e]) => e));
+            range = [Math.min(range[0], ...more), Math.max(range[1], ...more)];
+          }
+        } else if (geom && geom.lines.length > 0) {
+          // Branched or in pieces: no one direction to climb along, so
+          // just its low and high points.
+          const ps = await Promise.all(geom.lines.slice(0, 50).map((l) => profile(l, 20)));
+          const es = ps.flatMap((p) => p.points.map(([, e]) => e));
+          range = [Math.min(...es), Math.max(...es)];
+        }
+      } catch { /* no elevation: the panel just omits it */ }
+      const found = await hikes;
+      if (!live) return;
+      if (found.length > 0) setList({ heading: `Hikes on ${f.name}`, items: found });
+      setTrail((s) => s && { ...s, prof, range, along, hikes: found, loading: false });
+    })();
+    return () => { live = false; };
+  }, [map, build, focusTrail, addLayers, setData]);
+
   // Tell the page what's showing, for its URL.
   useEffect(() => {
     if (!onShowing) return;
     if (mode === 'detail' && sel) onShowing({ type: 'hike', park: sel.id.split('/')[0], id: sel.id, title: sel.title });
     else if (mode === 'list' && listPark) onShowing({ type: 'park', park: listPark.id, name: listPark.name });
-    else if (mode === 'list') onShowing({ type: 'other' });
+    else if (mode === 'list' || mode === 'trail') onShowing({ type: 'other' });
     else if (mode === null && !error) onShowing(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, sel?.id, listPark?.id]);
@@ -433,6 +560,11 @@ export default function CuratedRoutes(props: Props) {
         {trail}
         {(!trail || !listPark) && mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
         {mode === 'list' && list && <div className='font-semibold text-base'>{list.heading}</div>}
+        {mode === 'trail' && trailInfo && <>
+          <div className='font-semibold text-base'>{trailInfo.focus.name}</div>
+          <div className='text-gray-600'>{['Trail', trailInfo.focus.km ? `${trailInfo.focus.km.toFixed(1)} km` : null,
+            [trailInfo.focus.park, trailInfo.focus.state].filter((x) => x).join(', ') || null].filter((x) => x).join(' · ')}</div>
+        </>}
         {mode === 'list' && list?.about && <About about={list.about} />}
         {mode === 'detail' && sel && <div className='font-semibold text-base'>{sel.title}</div>}
         {mode === 'detail' && sel && <div className='text-gray-600'>{sel.label}</div>}
@@ -442,6 +574,8 @@ export default function CuratedRoutes(props: Props) {
       <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
     </div>
     {mode === 'list' && list && list.items.length === 0 && <div className='mt-1 text-gray-500'>No curated hikes here yet.</div>}
+    {mode === 'trail' && trailInfo && <TrailBody trail={trailInfo} onHover={(c) => setData('curated-hover', c ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } } : EMPTY)}
+      onHike={(park, id) => select(park, id)} onPark={trailInfo.focus.parkId && onPark ? () => onPark(trailInfo.focus.parkId!, trailInfo.focus.park ?? '') : undefined} />}
     {mode === 'list' && list && <ul className='mt-1'>
       {list.items.map((c, k) => <li key={c.id} className='py-0.5'>
         {c.section && c.section !== list.items[k - 1]?.section && <h3 className='font-semibold text-gray-700 mt-2 mb-0.5'>{c.section}</h3>}

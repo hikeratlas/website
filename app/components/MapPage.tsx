@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { Map as MaplibreMap, JumpToOptions } from 'maplibre-gl';
 import Map from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
-import CuratedRoutes, { bundleIndex, parkRoutes, refreshBundle, type Crumb, type FocusPark, type RegionList, type Showing } from '~/components/CuratedRoutes';
+import CuratedRoutes, { bundleIndex, parkRoutes, refreshBundle, type Crumb, type FocusPark, type FocusTrail, type RegionList, type Showing } from '~/components/CuratedRoutes';
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
@@ -29,6 +29,12 @@ interface Props {
 }
 
 const regionsCache = new globalThis.Map<string, Promise<Regions | null>>();
+// As the basemap's export/zindex.lua shortens a park's name for search.
+function shortPark(x: string): string {
+  return x.replaceAll('National Park', 'NP').replaceAll('State Park', 'SP')
+    .replaceAll('Provincial Park', 'PP').replaceAll('National Forest', 'NF');
+}
+
 function loadRegions(build: string): Promise<Regions | null> {
   if (!regionsCache.has(build)) {
     regionsCache.set(build, fetch(regionsUrl(build)).then((r) => (r.ok ? (r.json() as Promise<Regions>) : null)).catch(() => null));
@@ -41,6 +47,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
   const [map, setMap] = useState<MaplibreMap | null>(null);
   // A park picked in search, to list its curated hikes.
   const [focusPark, setFocusPark] = useState<FocusPark | null>(null);
+  const [focusTrail, setFocusTrail] = useState<FocusTrail | null>(null);
   // The URL's state (#55, #56): breadcrumbs, an index page's list, a note.
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
   const [region, setRegion] = useState<RegionList | null>(null);
@@ -265,6 +272,22 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     map.jumpTo(camera);
     setRegion(null);
     if (item.kind === 'park') setFocusPark({ id: String(item.osm_id), name: item.name, at: Date.now() });
+    // An OSM trail (#242): its own panel, with the park's hikes that walk it.
+    // Search's park is shortened ("Killarney PP"); regions.json has the
+    // full name and the park's routes id.
+    if (item.kind === 'trail') {
+      const box: [number, number, number, number] | undefined = item.min_lon != null && item.min_lat != null && item.max_lon != null && item.max_lat != null
+        ? [item.min_lon, item.min_lat, item.max_lon, item.max_lat] : undefined;
+      const focus: FocusTrail = { name: item.name, km: item.km, park: item.park, state: item.state, box, at: Date.now() };
+      setFocusTrail(focus);
+      if (item.park) {
+        loadRegions(routesBuild).then((regions) => {
+          const state = regions?.countries.flatMap((c) => c.states).find((s) => s.name === item.state);
+          const area = state?.areas.find((a) => shortPark(a.name) === item.park);
+          if (area) setFocusTrail({ ...focus, parkId: area.id });
+        }).catch(() => {});
+      }
+    }
     // A curated hike (#44): its osm_id is its route id, <park>/day/i etc.
     if (item.kind === 'hike') {
       const route = String(item.osm_id);
@@ -324,6 +347,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
           map={map}
           build={routesBuild}
           focusPark={focusPark}
+          focusTrail={focusTrail}
           onShowing={onShowing}
           crumbs={crumbs}
           region={region}
