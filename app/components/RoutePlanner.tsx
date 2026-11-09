@@ -1,136 +1,56 @@
-// Route planning on the map: in route mode, click a start and an end to get
-// the route along trails and roads, its distance and climb, and an elevation
-// chart you can hover to see each point on the route. It all runs in the
-// browser, on the basemap's own tiles (see app/routing/).
-import { useCallback, useEffect, useRef, useState } from 'react';
+// Route planning on the map: in route mode, click points to get a route
+// through them along trails and roads (each click is routed from the one
+// before, and can be undone), its distance and climb, and an elevation chart
+// you can hover to see each point on the route. It all runs in the browser,
+// on the basemap's own tiles (see app/routing/ and useWaypoints).
+import { useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
-import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapMouseEvent } from 'maplibre-gl';
-import { withZstd, type Decompress } from '~/zstd';
-import { Z, buildGraph, lngLatToTile, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
+import type { Map as MaplibreMap, GeoJSONSource } from 'maplibre-gl';
+import type { LngLat } from '~/routing/graph';
 import { profile, type Profile } from '~/routing/elevation';
-import { CoalescingSource, type Source } from '~/routing/source';
-
-declare const pmtiles: {
-  FetchSource: new (url: string) => Source;
-  PMTiles: new (source: string | Source, cache?: unknown, decompress?: Decompress) => {
-    decompress: Decompress;
-    getZxy(z: number, x: number, y: number): Promise<{ data: ArrayBuffer } | undefined>;
-  };
-};
-type Archive = InstanceType<typeof pmtiles.PMTiles>;
+import { useWaypoints } from '~/components/useWaypoints';
 
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const COLOR = '#c026d3';
 
-interface Result { metres: number; profile: Profile; ms: number }
+interface Result { metres: number; profile: Profile }
 
 export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: string }) {
-  // Consts, so checks of map hold in the handlers below.
   const { map, tiles } = props;
   const [active, setActive] = useState(false);
-  const [status, setStatus] = useState('Click the map to set a start.');
+  const route = useWaypoints(map, tiles, { id: 'route', color: COLOR, active });
   const [result, setResult] = useState<Result | null>(null);
-  const points = useRef<LngLat[]>([]);
-  const source = useRef<Archive | null>(null);
-  const layersAdded = useRef(false);
+  const hoverAdded = useRef(false);
 
-  const setData = useCallback((id: string, data: GeoJSON.GeoJSON) => map?.getSource<GeoJSONSource>(id)?.setData(data), [map]);
-
-  const addLayers = useCallback(() => {
-    if (layersAdded.current) return;
-    layersAdded.current = true;
-    // Called once the map is up.
-    const map = props.map!;
-    map.addSource('route-line', { type: 'geojson', data: EMPTY });
-    map.addSource('route-points', { type: 'geojson', data: EMPTY });
-    map.addSource('route-hover', { type: 'geojson', data: EMPTY });
-    const round: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
-    map.addLayer({ id: 'route-line-casing', type: 'line', source: 'route-line', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
-    map.addLayer({ id: 'route-line', type: 'line', source: 'route-line', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } });
-    map.addLayer({ id: 'route-points', type: 'circle', source: 'route-points', paint: { 'circle-radius': 7, 'circle-color': COLOR, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
-    map.addLayer({ id: 'route-hover', type: 'circle', source: 'route-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
-  }, [props.map]);
-
-  const showPoints = useCallback(() => setData('route-points', {
-    type: 'FeatureCollection',
-    features: points.current.map((p): GeoJSON.Feature => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } })),
-  }), [setData]);
-
-  const clear = () => {
-    points.current = [];
-    setResult(null);
-    setStatus('Click the map to set a start.');
-    for (const id of ['route-line', 'route-points', 'route-hover']) setData(id, EMPTY);
-  };
+  // The elevation profile of the route so far, redone as it changes.
+  useEffect(() => {
+    if (route.coords.length < 2) { setResult(null); return; }
+    let stale = false;
+    const metres = route.metres;
+    profile(route.coords).then((p) => { if (!stale) setResult({ metres, profile: p }); }).catch(() => {});
+    return () => { stale = true; };
+  }, [route.coords, route.metres]);
 
   // Mark the point on the route that the elevation chart is hovered at.
-  const showHover = (p: LngLat | null) => setData('route-hover', p
-    ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } }
-    : EMPTY);
-
-  // The tile source, rebuilt if the map's tileset changes (e.g. a preview).
-  const sourceFor = useRef<string | null>(null);
-  const ensureSource = useCallback(() => {
-    if (source.current && sourceFor.current === tiles) return;
-    const decompress = withZstd(new pmtiles.PMTiles("").decompress);
-    source.current = new pmtiles.PMTiles(new CoalescingSource(new pmtiles.FetchSource(tiles)), undefined, decompress);
-    sourceFor.current = tiles;
-  }, [tiles]);
-
-  // While the user picks an end, fetch the tile under the start: that reads
-  // the archive's header and the directory for the area, which routing needs.
-  const warmUp = useCallback((p: LngLat) => {
-    ensureSource();
-    const [x, y] = lngLatToTile(p[0], p[1], Z);
-    source.current!.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
-  }, [ensureSource]);
-
-  const route = useCallback(async (a: LngLat, b: LngLat) => {
-    const t0 = performance.now();
-    try {
-      ensureSource();
-      const ts = tilesAround(a, b);
-      setStatus('Finding a route…');
-      const g = await buildGraph(source.current!, ts);
-      const found = shortestPath(g, ...snapPair(g, a, b));
-      if (!found) { setStatus('No route between those points on trails or roads.'); return; }
-      const coords = found.path.map((i) => worldToLngLat(g, i));
-      setData('route-line', { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } });
-      setStatus('Measuring elevation…');
-      const prof = await profile(coords);
-      setResult({ metres: found.metres, profile: prof, ms: performance.now() - t0 });
-      setStatus('Click the map to start a new route.');
-    } catch (e) {
-      setStatus((e as Error).message ?? String(e));
+  const showHover = (p: LngLat | null) => {
+    if (!map) return;
+    if (!hoverAdded.current) {
+      hoverAdded.current = true;
+      map.addSource('route-hover', { type: 'geojson', data: EMPTY });
+      map.addLayer({ id: 'route-hover', type: 'circle', source: 'route-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
     }
-  }, [ensureSource, setData]);
+    map.getSource<GeoJSONSource>('route-hover')?.setData(p
+      ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } }
+      : EMPTY);
+  };
 
-  // In route mode, clicks set the start and end.
-  useEffect(() => {
-    if (!map || !active) return;
-    if (map.isStyleLoaded()) addLayers(); else map.once('load', addLayers);
-    map.getCanvas().style.cursor = 'crosshair';
-    const onClick = (e: MapMouseEvent) => {
-      if (points.current.length >= 2) points.current = [];
-      points.current.push([e.lngLat.lng, e.lngLat.lat]);
-      showPoints();
-      if (points.current.length === 2) route(points.current[0], points.current[1]);
-      else {
-        setResult(null);
-        setStatus('Now click an end.');
-        setData('route-line', EMPTY);
-        warmUp(points.current[0]);
-      }
-    };
-    map.on('click', onClick);
-    return () => { map.off('click', onClick); map.getCanvas().style.cursor = ''; };
-  }, [map, active, tiles, addLayers, route, setData, showPoints, warmUp]);
-
-  // Test hook, in development only: route between two points.
+  // Test hook, in development only: route through points.
   useEffect(() => {
     if (!map || process.env.NODE_ENV === 'production') return;
-    (window as Window & { __routePlanner?: unknown }).__routePlanner = { map, route: (a: LngLat, b: LngLat) => { setActive(true); addLayers(); points.current = [a, b]; showPoints(); return route(a, b); } };
-  }, [map, tiles, addLayers, route, showPoints]);
+    (window as Window & { __routePlanner?: unknown }).__routePlanner = {
+      map, route: (...ps: LngLat[]) => { setActive(true); return route.set(ps); },
+    };
+  }, [map, route.set]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!map) return null;
 
@@ -138,10 +58,16 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
     return <button
       className='tap absolute left-3 top-3 bg-white rounded shadow px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50'
       style={{ zIndex: 2 }}
-      onClick={() => { clear(); setActive(true); }}
-      title='Plan a route: click a start and an end on the map'
+      onClick={() => { route.clear(); setActive(true); }}
+      title='Plan a route: click points on the map, in order'
     >Route</button>;
   }
+
+  const n = route.points.length;
+  const status = route.error ?? (route.busy ? 'Finding a route…'
+    : n === 0 ? 'Click the map to set a start.'
+    : n === 1 ? 'Click the next point: each is routed along trails from the one before.'
+    : 'Click to add a point, or undo the last one.');
 
   return <div
     className='absolute left-3 bottom-8 bg-white/95 rounded shadow p-3 text-sm'
@@ -149,10 +75,16 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
   >
     <div className='flex items-start justify-between gap-2'>
       <div className='text-gray-600'>{status}</div>
-      <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close route' title='Close route'
-        onClick={() => { clear(); setActive(false); }}>×</button>
+      <div className='flex items-center gap-1 shrink-0'>
+        <button className='tap px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40'
+          disabled={!n} onClick={route.undo} title='Remove the last point'>Undo</button>
+        <button className='tap px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40'
+          disabled={!n} onClick={route.clear} title='Start over'>Clear</button>
+        <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg ml-1' aria-label='Close route' title='Close route'
+          onClick={() => { route.clear(); showHover(null); setActive(false); }}>×</button>
+      </div>
     </div>
-    {result && <RouteSummary r={result} onHover={showHover} />}
+    {result && n > 1 && <RouteSummary r={result} onHover={showHover} />}
   </div>;
 }
 
