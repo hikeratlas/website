@@ -31,8 +31,9 @@ export const MAX_TILES = 256;
 const SNAP = 4; // tile units: edge vertices this close are one
 
 export function tilesFor(box: [number, number, number, number]): [number, number][] | null {
-  const [x0, y0] = lngLatToTile(box[0], box[3], Z);
-  const [x1, y1] = lngLatToTile(box[2], box[1], Z);
+  // lngLatToTile is fractional (a point within its tile): whole tiles here.
+  const [x0, y0] = lngLatToTile(box[0], box[3], Z).map(Math.floor);
+  const [x1, y1] = lngLatToTile(box[2], box[1], Z).map(Math.floor);
   if ((x1 - x0 + 1) * (y1 - y0 + 1) > MAX_TILES) return null;
   const out: [number, number][] = [];
   for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.push([x, y]);
