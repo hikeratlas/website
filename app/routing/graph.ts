@@ -11,6 +11,11 @@
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
 
+// The zoom routing reads tiles at, unless told otherwise. The basemap's path
+// and road layers hold the same trails and roads from z12 up (paths from z8
+// in parks, z10 outside; roads by z11), unsimplified; lower zooms have
+// coarser coordinates (z12: ~1.5 m a unit at 50°N, z14: ~0.4 m) and cover
+// 4x the area per zoom, so long legs can be routed from far fewer tiles.
 export const Z = 14;
 const LAYERS = ['path', 'road'];
 const R = 6371008.8;
@@ -42,6 +47,8 @@ export interface Graph {
   ys: number[];
   adj: { to: number; m: number }[][];
   extent: number;
+  // The tiles' zoom.
+  z: number;
 }
 
 export function lngLatToTile(lng: number, lat: number, z: number): [number, number] {
@@ -52,7 +59,7 @@ export function lngLatToTile(lng: number, lat: number, z: number): [number, numb
 }
 
 export function worldToLngLat(g: Graph, i: number): LngLat {
-  const n = 2 ** Z * g.extent;
+  const n = 2 ** g.z * g.extent;
   const lng = (g.xs[i] / n) * 360 - 180;
   const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * g.ys[i]) / n))) * 180) / Math.PI;
   return [lng, lat];
@@ -65,12 +72,13 @@ export function haversine(a: LngLat, b: LngLat): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// The z14 tiles covering two points, with a margin so the route can wander
-// outside the box between them.
-export function tilesAround(a: LngLat, b: LngLat, maxTiles = 600): [number, number][] {
-  const [ax, ay] = lngLatToTile(a[0], a[1], Z);
-  const [bx, by] = lngLatToTile(b[0], b[1], Z);
-  const margin = Math.max(2, 0.4 * Math.max(Math.abs(ax - bx), Math.abs(ay - by)));
+// The tiles (at zoom z) covering two points, with a margin so the route can
+// wander outside the box between them.
+export function tilesAround(a: LngLat, b: LngLat, maxTiles = 600, z = Z): [number, number][] {
+  const [ax, ay] = lngLatToTile(a[0], a[1], z);
+  const [bx, by] = lngLatToTile(b[0], b[1], z);
+  // At least two z14 tiles' width (half a tile at z12), or 40% of the span.
+  const margin = Math.max(2 * 2 ** (z - Z), 0.4 * Math.max(Math.abs(ax - bx), Math.abs(ay - by)));
   const x0 = Math.floor(Math.min(ax, bx) - margin), x1 = Math.floor(Math.max(ax, bx) + margin);
   const y0 = Math.floor(Math.min(ay, by) - margin), y1 = Math.floor(Math.max(ay, by) + margin);
   const tiles: [number, number][] = [];
@@ -79,8 +87,8 @@ export function tilesAround(a: LngLat, b: LngLat, maxTiles = 600): [number, numb
   return tiles;
 }
 
-export async function buildGraph(source: TileSource, tiles: [number, number][], phase: (name: string) => void = () => {}): Promise<Graph> {
-  const g: Graph = { xs: [], ys: [], adj: [], extent: 4096 };
+export async function buildGraph(source: TileSource, tiles: [number, number][], phase: (name: string) => void = () => {}, z = Z): Promise<Graph> {
+  const g: Graph = { xs: [], ys: [], adj: [], extent: 4096, z };
   const ids = new Map<string, number>();
   const edgeNodes: number[] = [];
   const node = (x: number, y: number, onEdge: boolean) => {
@@ -95,7 +103,7 @@ export async function buildGraph(source: TileSource, tiles: [number, number][], 
     return i;
   };
 
-  const results = await Promise.all(tiles.map(([x, y]) => source.getZxy(Z, x, y).then((r) => [x, y, r] as const)));
+  const results = await Promise.all(tiles.map(([x, y]) => source.getZxy(z, x, y).then((r) => [x, y, r] as const)));
   phase('fetch tiles');
   for (const [tx, ty, r] of results) {
     if (!r) continue;
@@ -136,7 +144,7 @@ function addEdge(g: Graph, a: number, b: number) {
 }
 
 // Join the copies of a line cut at a tile edge: vertices on tile edges within
-// 3 units (under 2 m at z14) of each other become connected by a 0 m edge.
+// 3 units (under 2 m at z14, ~5 m at z12) of each other become connected by a 0 m edge.
 function joinEdgeNodes(g: Graph, nodes: number[]) {
   const cell = 4;
   const buckets = new Map<string, number[]>();
@@ -161,7 +169,7 @@ function joinEdgeNodes(g: Graph, nodes: number[]) {
 // The node nearest a point, among nodes that have any edges (and, if given,
 // are in component `only`).
 export function nearestNode(g: Graph, p: LngLat, comp?: Int32Array, only?: number): number {
-  const [tx, ty] = lngLatToTile(p[0], p[1], Z);
+  const [tx, ty] = lngLatToTile(p[0], p[1], g.z);
   const wx = tx * g.extent, wy = ty * g.extent;
   let best = -1, bestD = Infinity;
   for (let i = 0; i < g.xs.length; i++) {
