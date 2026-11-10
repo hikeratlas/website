@@ -106,3 +106,38 @@ export function fixtureFor(f: ParkFile, bbox: [number, number, number, number]) 
   const key = short.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return { key, id: f.park_id, park: f.park, why: 'quality: park-listed trails as named regressions (routes#95)', bbox };
 }
+
+// An entry in fixtures/expect/ (routes' expectations.py): a trail entry, or
+// a dest entry (a route to `dest` from near `start`).
+export interface Entry {
+  kind?: 'trail' | 'dest'; name: string; park: string; park_id: string; issue: string;
+  km?: number; km_tolerance?: number; trail?: string; aka?: string[]; source?: string; why?: string;
+  trace?: LngLat[]; trace_within_m?: number; trace_cover?: number; trace_note?: string;
+  dest?: string; start?: LngLat; start_within_m?: number; max_km?: number;
+  [k: string]: unknown;
+}
+export const entryKey = (e: Pick<Entry, 'kind' | 'name'>) => `${e.kind ?? 'dest'}|${e.name}`;
+
+// A change to an existing entry, kept until committed.
+export type EntryEdit =
+  | { action: 'update'; km?: number; trace?: LngLat[]; how?: string; note?: string }
+  | { action: 'delete'; note?: string };
+
+// A name to compare, as routes' expectations.norm: 'The "Crack" Trail' and
+// 'the crack' are the same.
+export function norm(s: string | null | undefined): string {
+  return (s ?? '').toLowerCase().replace(/[^0-9a-z]+/g, ' ').split(' ').filter((w) => w && w !== 'the' && w !== 'trail').join(' ');
+}
+
+// Whether a hike offered under `label` (its name) passes a trail entry with a
+// trace, as routes' expect.py checks it: offered under the name, within
+// km_tolerance of km, and within trace_within_m of trace_cover of the trace's
+// points.
+export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; follows: number; ok: boolean } {
+  const names = new Set([e.name, e.trail, ...(e.aka ?? [])].filter(Boolean).map((n) => norm(n as string)));
+  const name = label !== null && names.has(norm(label));
+  const tol = e.km_tolerance ?? 0.3;
+  const length = e.km !== undefined && km >= e.km * (1 - tol) && km <= e.km * (1 + tol);
+  const follows = e.trace?.length ? walks([e.trace], line, e.trace_within_m ?? 50) : 0;
+  return { name, length, follows, ok: name && length && follows >= (e.trace_cover ?? 0.7) };
+}
