@@ -110,7 +110,8 @@ export default function Regressions({ build }: { build: string | null }) {
   const [km, setKm] = useState<string>('');
   const [note, setNote] = useState('');
   const [committing, setCommitting] = useState<string | null>(null);
-  const draw = useWaypoints(map, tilesUrl(routesBuild), { id: 'rg-draw', color: C.draw, active: drawing });
+  // A trace's start and end stay where they're put: routes' expect.py checks both.
+  const draw = useWaypoints(map, tilesUrl(routesBuild), { id: 'rg-draw', color: C.draw, active: drawing, exactEnds: true });
   const archive = useRef<InstanceType<typeof pmtiles.PMTiles> | null>(null);
 
   useEffect(() => {
@@ -471,7 +472,7 @@ export default function Regressions({ build }: { build: string | null }) {
         {entry && <div className='flex flex-col gap-1.5'>
           <div className='font-semibold text-base'>{entry.name} <span className='font-normal text-gray-500 text-xs'>{entry.kind ?? 'dest'} entry · {entry.issue}</span></div>
           {(entry.kind ?? 'dest') === 'trail'
-            ? <div>Expects <b>{entry.km} km</b> (±{Math.round((entry.km_tolerance ?? 0.3) * 100)}%){entry.trace ? `, following its trace (${entry.trace.length} points, dashed; the dot is where it starts)` : entry.trail ? `, walking the OSM trail ${entry.trail}` : ', walking the OSM trail of its name'}. {entry.why}</div>
+            ? <div>Expects <b>{entry.km} km</b> (±{Math.round((entry.km_tolerance ?? 0.3) * 100)}%){entry.trace ? `, following its trace (${entry.trace.length} points, dashed, its start and end labelled; to move them, press Edit the trace and drag)` : entry.trail ? `, walking the OSM trail ${entry.trail}` : ', walking the OSM trail of its name'}. {entry.why}</div>
             : <div>Expects a route to <b>{entry.dest}</b> from within {entry.start_within_m ?? '?'} m of the dot, at most {entry.max_km} km, named {entry.name}. {entry.why}</div>}
           {entry.trace_note && <div className='text-xs text-gray-600'>Note: {entry.trace_note}</div>}
           {(entry.source || entryProp?.source) && <a className='text-emerald-800 underline text-xs break-all' href={entry.source ?? entryProp!.source} target='_blank' rel='noreferrer'>{(entry.source ?? entryProp!.source).replace(/^https?:\/\/(www\.)?/, '')}</a>}
@@ -507,7 +508,7 @@ export default function Regressions({ build }: { build: string | null }) {
               <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.undo}>Undo point</button>
               <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.clear}>Clear</button>
             </div>
-            {(drawing || draw.points.length > 0) && <div className='text-xs text-gray-600'>{draw.error ?? (draw.busy ? 'Routing…' : draw.points.length < 2 ? 'Click where the hike starts (its trailhead), then along it: each click is routed along trails.' : `${(draw.metres / 1000).toFixed(1)} km through ${draw.points.length} points. Drag a point to move it, Start and End included.`)}</div>}
+            {(drawing || draw.points.length > 0) && <div className='text-xs text-gray-600'>{draw.error ?? (draw.busy ? 'Routing…' : draw.points.length < 2 ? 'Click exactly where the hike starts (its trailhead), then along it: each click is routed along trails.' : `${(draw.metres / 1000).toFixed(1)} km through ${draw.points.length} points. Drag any point to move it; Start and End stay exactly where you drop them, the rest snap to the trails.`)}</div>}
           </div>}
         </>}
       </div>

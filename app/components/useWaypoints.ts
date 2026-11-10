@@ -59,18 +59,44 @@ export interface Waypoints {
   move: (i: number, p: LngLat) => Promise<void>;
 }
 
+// Each leg is routed between two of the points as placed (clicked or
+// dropped), snapping both to the nearest trail or road. The points shown are
+// where they snapped, except, with `exactEnds`, the start and end: those stay
+// exactly where they were put (a trailhead in a parking lot, off the paths),
+// joined to the route by a straight line. Routes' named regressions check a
+// trace's start and end, so there they matter most.
+interface Route { placed: LngLat[]; legs: Leg[] }
+const FAR_M = 1; // an end further than this from where it snapped gets its own connector
+
+function shape(r: Route, exactEnds: boolean): { points: LngLat[]; coords: LngLat[]; metres: number } {
+  const n = r.placed.length;
+  if (n < 2 || r.legs.length < n - 1) return { points: [...r.placed], coords: [], metres: 0 };
+  const points = r.placed.map((p, i) => {
+    if (exactEnds && (i === 0 || i === n - 1)) return p;
+    return i === 0 ? r.legs[0].coords[0] : r.legs[i - 1].coords.at(-1)!;
+  });
+  let coords = r.legs.flatMap((l, i) => (i ? l.coords.slice(1) : l.coords));
+  let metres = r.legs.reduce((s, l) => s + l.metres, 0);
+  if (exactEnds) {
+    const [a, b] = [r.placed[0], r.placed[n - 1]];
+    if (haversine(a, coords[0]) > FAR_M) { metres += haversine(a, coords[0]); coords = [a, ...coords]; }
+    if (haversine(coords.at(-1)!, b) > FAR_M) { metres += haversine(coords.at(-1)!, b); coords = [...coords, b]; }
+  }
+  return { points, coords, metres };
+}
+
 // `id` prefixes the map sources and layers it adds; `active` is whether
-// clicks on the map add points.
-export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id: string; color: string; active: boolean }): Waypoints {
-  const { id, color, active } = opts;
-  const [points, setPoints] = useState<LngLat[]>([]);
-  const [legs, setLegs] = useState<Leg[]>([]);
+// clicks on the map add points; `exactEnds` keeps the start and end where
+// they were put rather than where they snap to the paths.
+export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id: string; color: string; active: boolean; exactEnds?: boolean }): Waypoints {
+  const { id, color, active, exactEnds = false } = opts;
+  const [route, setRoute] = useState<Route>({ placed: [], legs: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The work queue: legs are routed one at a time, in click order, so an
   // undo or a fast second click waits for the leg before it.
   const queue = useRef<Promise<void>>(Promise.resolve());
-  const state = useRef<{ points: LngLat[]; legs: Leg[] }>({ points: [], legs: [] });
+  const state = useRef<Route>({ placed: [], legs: [] });
   const source = useRef<Archive | null>(null);
   const sourceFor = useRef<string | null>(null);
 
@@ -108,8 +134,7 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
   }, [map, addLayers]);
 
   // Memoized: a new array each render would re-fire effects that depend on it.
-  const coords = useMemo(() => legs.flatMap((l, i) => (i ? l.coords.slice(1) : l.coords)), [legs]);
-  const metres = useMemo(() => legs.reduce((s, l) => s + l.metres, 0), [legs]);
+  const { points, coords, metres } = useMemo(() => shape(route, exactEnds), [route, exactEnds]);
 
   // Draw what's in state.
   useEffect(() => {
@@ -117,7 +142,7 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     map.getSource<GeoJSONSource>(`${id}-line`)?.setData(coords.length
       ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } } : EMPTY);
     map.getSource<GeoJSONSource>(`${id}-points`)?.setData(pointsData(points));
-  }, [map, id, points, legs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, id, points, coords]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The points as features: each with its index `i` and `role` (start, end,
   // via, or start for both where the route comes back to its start), and
@@ -136,7 +161,7 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     };
   };
 
-  const commit = () => { setPoints([...state.current.points]); setLegs([...state.current.legs]); };
+  const commit = () => { setRoute({ placed: [...state.current.placed], legs: [...state.current.legs] }); };
 
   // A leg from the end of the route so far (or the previous point) to p.
   const routeLeg = useCallback(async (from: LngLat, to: LngLat): Promise<Leg | null> => {
@@ -159,8 +184,8 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
   const add = useCallback((p: LngLat) => enqueue(async () => {
     const s = state.current;
     setError(null);
-    if (!s.points.length) {
-      s.points.push(p);
+    if (!s.placed.length) {
+      s.placed.push(p);
       // Warm up: the tile under the start reads the archive's header and
       // the directory for the area, which routing will need.
       ensureSource();
@@ -168,24 +193,21 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
       source.current!.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
       return;
     }
-    const last = s.legs.length ? s.legs[s.legs.length - 1].coords.at(-1)! : s.points[s.points.length - 1];
-    const leg = await routeLeg(last, p);
+    const leg = await routeLeg(s.placed[s.placed.length - 1], p);
     if (!leg) { setError('No route to that point on trails or roads.'); return; }
-    // Points sit where they snapped to the trails, not where clicked.
-    if (!s.legs.length) s.points[0] = leg.coords[0];
-    s.points.push(leg.coords.at(-1)!);
+    s.placed.push(p);
     s.legs.push(leg);
   }), [enqueue, ensureSource, routeLeg]);
 
   const undo = useCallback(() => { enqueue(async () => {
     const s = state.current;
     setError(null);
-    if (s.points.length > 1) s.legs.pop();
-    s.points.pop();
+    if (s.placed.length > 1) s.legs.pop();
+    s.placed.pop();
   }); }, [enqueue]);
 
   const clear = useCallback(() => { enqueue(async () => {
-    state.current = { points: [], legs: [] };
+    state.current = { placed: [], legs: [] };
     setError(null);
   }); }, [enqueue]);
 
@@ -193,20 +215,18 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
   const move = useCallback((i: number, p: LngLat) => enqueue(async () => {
     const s = state.current;
     setError(null);
-    if (i < 0 || i >= s.points.length) return;
-    if (s.points.length === 1) { s.points[0] = p; return; }
-    const before = i > 0 ? await routeLeg(s.points[i - 1], p) : null;
+    if (i < 0 || i >= s.placed.length) return;
+    const before = i > 0 ? await routeLeg(s.placed[i - 1], p) : null;
     if (i > 0 && !before) { setError('No route to that point on trails or roads.'); return; }
-    const at = before ? before.coords.at(-1)! : p;
-    const after = i < s.points.length - 1 ? await routeLeg(at, s.points[i + 1]) : null;
-    if (i < s.points.length - 1 && !after) { setError('No route from that point on trails or roads.'); return; }
+    const after = i < s.placed.length - 1 ? await routeLeg(p, s.placed[i + 1]) : null;
+    if (i < s.placed.length - 1 && !after) { setError('No route from that point on trails or roads.'); return; }
     if (before) s.legs[i - 1] = before;
     if (after) s.legs[i] = after;
-    s.points[i] = before ? at : after!.coords[0];
+    s.placed[i] = p;
   }), [enqueue, routeLeg]);
 
   const set = useCallback(async (ps: LngLat[]) => {
-    await enqueue(async () => { state.current = { points: [], legs: [] }; });
+    await enqueue(async () => { state.current = { placed: [], legs: [] }; });
     for (const p of ps) await add(p);
   }, [enqueue, add]);
 
@@ -229,7 +249,7 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     const hit = `${id}-hit`;
     let dragging: number | null = null;
     const follow = (p: LngLat) => {
-      const ps = [...state.current.points];
+      const ps = [...shape(state.current, exactEnds).points];
       ps[dragging!] = p;
       map.getSource<GeoJSONSource>(`${id}-points`)?.setData(pointsData(ps));
     };
@@ -252,9 +272,9 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
       const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
       // A loop or an out-and-back starts and ends at one place: dragging
       // either end moves both, as one trailhead.
-      const ps = state.current.points, last = ps.length - 1;
+      const ps = state.current.placed, last = ps.length - 1;
       if (last > 1 && (i === 0 || i === last) && haversine(ps[0], ps[last]) <= SAME_END_M) {
-        move(0, p).then(() => move(last, state.current.points[0]));
+        move(0, p).then(() => move(last, p));
       } else move(i, p);
     };
     const over = () => { if (dragging === null) map.getCanvas().style.cursor = 'grab'; };
@@ -270,7 +290,7 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
       map.off('mouseenter', hit, over); map.off('mouseleave', hit, out);
       if (dragging !== null) map.dragPan.enable();
     };
-  }, [map, id, active, move]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, id, active, move, exactEnds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { points, coords, metres, busy, error, undo, clear, set, move };
 }
