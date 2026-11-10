@@ -115,90 +115,6 @@ def fold(s):
     return ''.join(c for c in s if not unicodedata.combining(c)).lower()
 
 
-# db -> {folded place name: (column, value)}
-places_cache = {}
-
-
-def places(db):
-    if db not in places_cache:
-        out = {}
-        for col in ('country', 'state'):
-            for (v,) in db.execute('select distinct {} from items where {} is not null'.format(col, col)):
-                out[fold(v)] = (col, v)
-        for k, v in ABBREVIATIONS.items():
-            col, v = v if isinstance(v, tuple) else ('state', v)
-            out.setdefault(fold(k), (col, v))
-        places_cache[db] = out
-    return places_cache[db]
-
-
-# db -> [(folded words, park)] of every park, and its parks by first letter.
-parks_cache = {}
-
-# A park named by the start of its name ("granite ridge trail kil" for
-# Killarney PP) needs at least this many letters of the last word: one or
-# two would match thousands of parks.
-PARK_PREFIX_MIN = 3
-
-
-def parks(db):
-    if db not in parks_cache:
-        by_letter = {}
-        for (p,) in db.execute('select distinct park from items where park is not null'):
-            words = fold(p).replace(',', ' ').split()
-            if words:
-                by_letter.setdefault(words[0][0], []).append((words, p))
-        parks_cache[db] = by_letter
-    return parks_cache[db]
-
-
-def starts(typed, words, partial_min=1):
-    """Whether typed words begin words: all but the last whole, the last a
-    prefix (at least partial_min letters, if it's not the whole word)."""
-    if len(typed) > len(words):
-        return False
-    for i, w in enumerate(typed):
-        last = i == len(typed) - 1
-        if w == words[i]:
-            continue
-        if not (last and len(w) >= partial_min and words[i].startswith(w)):
-            return False
-    return True
-
-
-def split_place(q, db):
-    """Ways q may end with where it is: [(name, column, [values])], longest
-    place first. "Bear Mountain BC", "Dawson Creek, British Columbia" and
-    "Dawson Creek b" end in a state or province (#250: a prefix will do);
-    "Granite Ridge Trail Killarney" and "... kil" in a park (the start of its
-    name). The longest match wins ("New Brunswick", not "Brunswick")."""
-    words = q.replace(',', ' ').split()
-    known = places(db)
-    out = []
-    for n in (4, 3, 2, 1):
-        if len(words) <= n:
-            continue
-        name, typed = ' '.join(words[:-n]), [fold(w) for w in words[-n:]]
-        whole = ' '.join(typed)
-        # States and countries: their whole name or abbreviation, or the
-        # start of their name.
-        hits = {}
-        if whole in known:
-            col, v = known[whole]
-            hits.setdefault(col, []).append(v)
-        else:
-            for k, (col, v) in known.items():
-                if len(k) > 3 and starts(typed, k.split()) and v not in hits.get(col, []):
-                    hits.setdefault(col, []).append(v)
-        for col, vs in hits.items():
-            out.append((name, col, vs))
-        # Parks: the start of their name.
-        ps = [p for ws, p in parks(db).get(typed[0][0], []) if starts(typed, ws, PARK_PREFIX_MIN)]
-        if ps:
-            out.append((name, 'park', ps[:50]))
-    return out
-
-
 def fts_query(q):
     return '"{}"*'.format(' '.join(q.replace('"', ' ').strip().split()))
 
@@ -228,35 +144,102 @@ def near_score(h, near):
     return (h['qrank'] or 1) / (1 + km / NEAR_KM) ** 2
 
 
+# Narrowing by place (basemap#250): "granite ridge trail kil", "dawson
+# creek b". Every word of a query must match, the last as a prefix: the
+# first words the start of a result's name, the rest each the start of a
+# word of its place (park, state or province, its abbreviation, country). A
+# result matches if some split of the query into name and place fits it.
+# Typing more only narrows the name, or adds or tightens a place word, so
+# results only ever shrink as you type: "panorama ridge", "panorama ridge
+# g" and "panorama ridge gar" are each a subset of the one before.
+#
+# Results naming more of the query come first ("lake ontario" is the lake
+# before lakes in Ontario), then by QRank, or by distance with near.
+
+# A typed word as FTS tokens: "o'hara" -> o, hara.
+TOKEN = re.compile(r'[a-z0-9]+')
+
+# db -> whether its fts has a place column (basemap#250); older DBs' don't.
+place_column_cache = {}
+
+STATE_ABBR = {}
+for _k, _v in ABBREVIATIONS.items():
+    if not isinstance(_v, tuple):
+        STATE_ABBR.setdefault(_v, []).append(_k.lower())
+
+
+def tokens(words):
+    return [t for w in words for t in TOKEN.findall(fold(w))]
+
+
+def has_place_column(db):
+    if db not in place_column_cache:
+        cols = [r[1] for r in db.execute('pragma table_info(fts)')]
+        place_column_cache[db] = 'place' in cols
+    return place_column_cache[db]
+
+
+def search_split(name, place, db, limit):
+    """The limit best items whose names match the FTS query name and whose
+    places have a word starting with each of the place tokens."""
+    by_fts = has_place_column(db)
+    db.row_factory = dict_factory
+    if by_fts:
+        # One FTS query for both: fts has each item's place words.
+        match = '{name}: ' + name + ''.join(' AND {place}: ' + t + '*' for t in place)
+        rows = list(db.execute('select rowid, * from items where rowid in (select rowid from fts where fts match ?)'
+                               ' order by qrank desc limit ?', (match, limit)))
+        db.row_factory = None
+        return rows
+    # An older DB: match the place columns themselves (slower).
+    conds, args = [], []
+    text = "(' ' || lower(coalesce(park, '') || ' ' || coalesce(state, '') || ' ' || coalesce(country, '')))"
+    for t in place:
+        c = '{} like ?'.format(text)
+        args.append('% ' + t + '%')
+        states = sorted(s for s, abbrs in STATE_ABBR.items() if any(a.startswith(t) for a in abbrs))
+        if states:
+            c = '({} or state in ({}))'.format(c, ','.join('?' * len(states)))
+            args += states
+        conds.append(c)
+    cond = ' and '.join(conds)
+    sql = ('select rowid, * from items where rowid in (select rowid from fts where name match ?)'
+           ' and {} order by qrank desc limit ?'.format(cond))
+    rows = list(db.execute(sql, (name, *args, limit)))
+    db.row_factory = None
+    return rows
+
+
 def search(q, db=None, near=None):
     """Up to 10 items matching q, best first. near, a (lat, lon), re-ranks
     them by distance from it as well as QRank."""
     db = db or con
+    words = q.replace(',', ' ').replace('"', ' ').split()
+    if not words:
+        return []
+    # The whole query as a name.
+    hits = search_names(fts_query(q), db, limit=NEAR_TOP)
     if near:
-        hits = search_names(fts_query(q), db, limit=NEAR_TOP)
-        seen = {h['rowid'] for h in hits}
         for h in search_names(fts_query(q), db, limit=NEAR_LOCAL, box=box_around(near, NEAR_BOX_KM)):
-            if h['rowid'] not in seen:
+            hits.append(h)
+    tier = {h['rowid']: len(words) for h in hits}
+    # Then the first k words as a name and the rest as a place.
+    for k in range(len(words) - 1, 0, -1):
+        place = tokens(words[k:])
+        if not place:
+            continue
+        for h in search_split(fts_query(' '.join(words[:k])), place, db, NEAR_TOP):
+            if h['rowid'] not in tier:
                 hits.append(h)
-                seen.add(h['rowid'])
-        hits.sort(key=lambda h: near_score(h, near), reverse=True)
-        hits = hits[:10]
-    else:
-        hits = search_names(fts_query(q), db)
-    # Too few hits: the query may end with where it is, e.g. "Bear Mountain
-    # British Columbia" (website#38), which matches no names. Fill up with
-    # that name in that place, after the plain matches ("Lake Ontario" is a
-    # lake, not lakes in Ontario).
-    if len(hits) < 10:
-        seen = {h['rowid'] for h in hits}
-        for name, col, values in split_place(q, db):
-            for h in search_names(fts_query(name), db, col, values):
-                if h['rowid'] not in seen and len(hits) < 10:
-                    hits.append(h)
-                    seen.add(h['rowid'])
+                tier[h['rowid']] = k
+    best = {}
     for h in hits:
+        best.setdefault(h['rowid'], h)
+    score = (lambda h: near_score(h, near)) if near else (lambda h: h['qrank'] or 0)
+    out = sorted(best.values(), key=lambda h: (tier[h['rowid']], score(h)), reverse=True)[:10]
+    for h in out:
         del h['rowid']
-    return hits
+    return out
 
 
 def box_around(near, km):
@@ -266,10 +249,9 @@ def box_around(near, km):
     return (lat - dlat, lat + dlat, lon - dlon, lon + dlon)
 
 
-def search_names(q, db, col=None, values=None, limit=10, box=None):
+def search_names(q, db, limit=10, box=None):
     """The limit best items whose names match the FTS query q, optionally
-    only those with col (state, country or park) in values, or in box (min
-    lat, max lat, min lon, max lon)."""
+    only those in box (min lat, max lat, min lon, max lon)."""
     db.row_factory = None
     if box:
         # Every match, not just the popular ones: near the map, the obscure
@@ -277,18 +259,13 @@ def search_names(q, db, col=None, values=None, limit=10, box=None):
         sql = ("select rowid, * from items where rowid in (select rowid from fts where name match ?)"
                " and lat between ? and ? and lon between ? and ? order by qrank desc limit ?")
         args = (q, *box, limit)
-    elif col:
-        # Every match, not just the popular ones: filtering by place is for
-        # finding the obscure Bear Mountain, or a park's own trail.
-        sql = ("select rowid, * from items where rowid in (select rowid from fts where name match ?)"
-               " and {} in ({}) order by qrank desc limit ?".format(col, ','.join('?' * len(values))))
-        args = (q, *values, limit)
     else:
         count = db.execute("select count(*) from fts_popular where name match ?", (q,)).fetchone()[0]
         table = 'fts_popular' if count >= 100 else 'fts'
-        sql = ("select rowid, * from items where rowid in (select rowid from {} where name match ?"
-               " order by qrank desc limit ?) order by qrank desc limit ?".format(table))
-        args = (q, limit, limit)
+        # Ranked on items: the FTS tables keep no qrank (basemap#250).
+        sql = ("select rowid, * from items where rowid in (select rowid from {} where name match ?)"
+               " order by qrank desc limit ?".format(table))
+        args = (q, limit)
     db.row_factory = dict_factory
     cur = db.cursor()
     cur.execute(sql, args)
