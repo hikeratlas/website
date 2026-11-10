@@ -150,7 +150,7 @@ export function fixtureFor(f: ParkFile, bbox: [number, number, number, number]) 
 export interface Entry {
   kind?: 'trail' | 'dest'; name: string; park: string; park_id: string; issue: string;
   km?: number; km_tolerance?: number; trail?: string; aka?: string[]; source?: string; why?: string;
-  trace?: LngLat[]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_note?: string;
+  trace?: LngLat[]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_end_m?: number | null; trace_note?: string;
   dest?: string; start?: LngLat; start_within_m?: number; max_km?: number;
   [k: string]: unknown;
 }
@@ -172,10 +172,12 @@ export function norm(s: string | null | undefined): string {
 // km_tolerance of km or within 0.85-1.4 times the trace's own length (a
 // trace says which hike is meant better than a park's rounded figure; it cuts
 // corners, so it's shorter than the hike), starting (its line's first point) within trace_start_m
-// of the trace's first point, the trailhead (null: not checked), and within
+// of the trace's first point, the trailhead (null: not checked), ending (its
+// last point) within trace_end_m of the trace's last point (null: not
+// checked), and within
 // trace_within_m of trace_cover of the trace's points.
 export const TRACE_KM: [number, number] = [0.85, 1.4];
-export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; follows: number; ok: boolean } {
+export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; end: boolean | null; endOff: number | null; follows: number; ok: boolean } {
   const names = new Set([e.name, e.trail, ...(e.aka ?? [])].filter(Boolean).map((n) => norm(n as string)));
   const name = label !== null && names.has(norm(label));
   const tol = e.km_tolerance ?? 0.3;
@@ -187,5 +189,8 @@ export function passes(e: Entry, label: string | null, km: number, line: LngLat[
   const startM = e.trace_start_m === undefined ? 150 : e.trace_start_m;
   const startOff = e.trace?.length && line.length ? haversine(e.trace[0], line[0]) : null;
   const start = startM === null ? null : startOff !== null && startOff <= startM;
-  return { name, length, byTrace, start, startOff, follows, ok: name && length && start !== false && follows >= (e.trace_cover ?? 0.7) };
+  const endM = e.trace_end_m === undefined ? 150 : e.trace_end_m;
+  const endOff = e.trace?.length && line.length ? haversine(e.trace[e.trace.length - 1], line[line.length - 1]) : null;
+  const end = endM === null ? null : endOff !== null && endOff <= endM;
+  return { name, length, byTrace, start, startOff, end, endOff, follows, ok: name && length && start !== false && end !== false && follows >= (e.trace_cover ?? 0.7) };
 }

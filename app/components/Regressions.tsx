@@ -493,7 +493,7 @@ export default function Regressions({ build }: { build: string | null }) {
                 className={`tap w-full text-left rounded border px-2 py-1.5 ${pick === i ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50 hover:border-blue-400'}`}>
                 <div className='flex justify-between gap-2'><span className='font-medium break-words min-w-0'>{o.label}</span><span className='tabular-nums whitespace-nowrap'>{o.km} km</span></div>
                 <div className='text-xs text-gray-500'>{o.check
-                  ? <>{o.check.ok ? <b className='text-emerald-700'>passes this entry</b> : 'doesn’t pass'} · name {o.check.name ? '✓' : '✗'} · length {o.check.length ? (o.check.byTrace ? '✓ (by the trace)' : '✓') : '✗'}{o.check.start !== null && <> · start {o.check.start ? '✓' : `✗ (${Math.round(o.check.startOff ?? 0)} m off)`}</>} · follows {Math.round(o.check.follows * 100)}% of the trace</>
+                  ? <>{o.check.ok ? <b className='text-emerald-700'>passes this entry</b> : 'doesn’t pass'} · name {o.check.name ? '✓' : '✗'} · length {o.check.length ? (o.check.byTrace ? '✓ (by the trace)' : '✓') : '✗'}{o.check.start !== null && <> · start {o.check.start ? '✓' : `✗ (${Math.round(o.check.startOff ?? 0)} m off)`}</>}{o.check.end !== null && <> · end {o.check.end ? '✓' : `✗ (${Math.round(o.check.endOff ?? 0)} m off)`}</>} · follows {Math.round(o.check.follows * 100)}% of the trace</>
                   : trail ? `${Math.round(o.share * 100)}% of the OSM trail` : o.share ? 'named for it' : 'nearby'}</div>
               </button></li>)}
               {!offered.length && <li className='text-xs text-gray-500'>Routes offers nothing here yet: draw it.</li>}
