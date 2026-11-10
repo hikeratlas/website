@@ -101,6 +101,15 @@ export default function Regressions({ build }: { build: string | null }) {
   const [tab, setTab] = useState<'proposals' | 'entries'>('proposals');
   const [subject, setSubject] = useState<Subject | null>(null);
   const [filter, setFilter] = useState<'open' | 'all'>('open');
+  // What the URL names (?park=<file stem>&tab=entries&item=<name>[&km=<km>]),
+  // opened once the parks have loaded; the URL then follows what's open, so
+  // a page can be bookmarked or shared.
+  const linked = useRef<{ park: string; tab?: string; item?: string; km?: number } | null>(null);
+  if (typeof window !== 'undefined' && linked.current === null) {
+    const q = new URLSearchParams(window.location.search);
+    const park = q.get('park');
+    linked.current = park ? { park, tab: q.get('tab') ?? undefined, item: q.get('item') ?? undefined, km: q.get('km') ? Number(q.get('km')) : undefined } : { park: '' };
+  }
   const [decisions, setDecisions] = useState<Decisions>({});
   const [edits, setEdits] = useState<Edits>({});
   const [trail, setTrail] = useState<LngLat[][] | null>(null);
@@ -149,7 +158,8 @@ export default function Regressions({ build }: { build: string | null }) {
       files.sort((a, b) => a.park.localeCompare(b.park));
       setParks(files);
       setReadFrom(ref);
-      setStem((s) => s || files[0]?.stem || '');
+      const want = linked.current?.park;
+      setStem((s) => s || (want && files.some((f) => f.stem === want) ? want : files[0]?.stem) || '');
       setLoadMsg('');
     } catch (e) {
       setLoadMsg(`Couldn’t load: ${(e as Error).message}. Without a token GitHub allows 60 reads an hour; add one in Settings.`);
@@ -166,13 +176,47 @@ export default function Regressions({ build }: { build: string | null }) {
   const dec = park && prop ? decisions[park.stem]?.[key(prop)] : undefined;
   const edit = park && entry ? edits[park.stem]?.[entryKey(entry)] : undefined;
 
-  // Pick something sensible when the park or tab changes.
+  // Pick something sensible when the park or tab changes: what the URL
+  // names, the first time, else the first in the list.
   useEffect(() => {
     if (!park) return;
+    const l = linked.current;
+    if (l?.park === park.stem) {
+      const t = l.tab === 'entries' || l.tab === 'proposals' ? l.tab : tab;
+      if (t !== tab) { setTab(t); return; }  // this runs again for the tab
+      linked.current = { park: '' };
+      if (l.item && t === 'entries') {
+        const i = park.entries.findIndex((e) => e.name === l.item);
+        if (i >= 0) { setSubject({ type: 'entry', i }); return; }
+      }
+      if (l.item && t === 'proposals') {
+        const i = park.proposals.findIndex((p) => p.name === l.item && (l.km === undefined || p.km === l.km));
+        if (i >= 0) {
+          if (park.proposals[i].status !== 'open') setFilter('all');
+          setSubject({ type: 'proposal', i });
+          return;
+        }
+      }
+    }
     if (tab === 'proposals') setSubject(proposals.length ? { type: 'proposal', i: proposals[0].i } : null);
     else setSubject(park.entries.length ? { type: 'entry', i: 0 } : null);
   }, [park?.stem, tab]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (park && !park.proposals.length && park.entries.length) setTab('entries'); }, [park?.stem]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The URL follows what's open (replacing, not adding, history entries).
+  // Other parameters (?build=) and the map's #position are kept.
+  useEffect(() => {
+    if (!park || linked.current?.park) return;  // a linked page still opening
+    const q = new URLSearchParams(window.location.search);
+    q.set('park', park.stem);
+    q.set('tab', tab);
+    const name = prop?.name ?? entry?.name;
+    if (name) q.set('item', name); else q.delete('item');
+    // A park can list one name twice (two options): the length tells them apart.
+    if (prop && park.proposals.filter((p) => p.name === prop.name).length > 1) q.set('km', String(prop.km)); else q.delete('km');
+    const url = `${window.location.pathname}?${q.toString()}${window.location.hash}`;
+    if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) window.history.replaceState(window.history.state, '', url);
+  }, [park, tab, prop, entry]);
 
   const setDecision = (d: Decision | null) => {
     if (!park || !prop) return;
