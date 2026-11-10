@@ -139,7 +139,12 @@ export default function Regressions({ build }: { build: string | null }) {
     try {
       const open = await gh.openPull(settings.branch).catch(() => null);
       setPull(open);
-      const ref = open ? settings.branch : settings.base;
+      const branch = open ? settings.branch : settings.base;
+      // The branch's latest commit, and every file read at it: a commit's
+      // files never change, so GitHub's file CDN (which caches a branch's
+      // files for 5 minutes) can't serve them stale, and a reload right after
+      // a merge shows it. Not a branch (a commit given in Settings): read as is.
+      const ref = (await gh.head(branch)) ?? branch;
       const [pNames, eNames, fixturesText] = await Promise.all([
         gh.list('fixtures/proposals', ref).catch((): string[] => []), gh.list('fixtures/expect', ref), gh.read('fixtures/parks.json', ref),
       ]);
@@ -157,7 +162,7 @@ export default function Regressions({ build }: { build: string | null }) {
       }));
       files.sort((a, b) => a.park.localeCompare(b.park));
       setParks(files);
-      setReadFrom(ref);
+      setReadFrom(ref === branch ? branch : `${branch} @ ${ref.slice(0, 7)}`);
       const want = linked.current?.park;
       setStem((s) => s || (want && files.some((f) => f.stem === want) ? want : files[0]?.stem) || '');
       setLoadMsg('');
