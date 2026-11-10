@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent } from 'maplibre-gl';
 import { withZstd, type Decompress } from '~/zstd';
-import { Z, buildGraph, haversine, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
+import { Z, buildGraph, haversine, lngLatToTile, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
 import { CoalescingSource, type Source } from '~/routing/source';
 
 declare const pmtiles: {
@@ -69,6 +69,10 @@ interface Route { placed: LngLat[]; legs: Leg[] }
 const FAR_M = 1; // an end further than this from where it snapped gets its own connector
 // Tiles kept for routing (about 6 KB each): a leg near earlier ones needs none fetched.
 const TILE_CACHE = 2000;
+// While planning, the tiles in view (and VIEW_MARGIN around) are fetched
+// ahead of the clicks, from VIEW_MIN_ZOOM in and up to VIEW_MAX_TILES
+// (~3 MB): at z12 on a 1280x900 map, ~430 tiles.
+const VIEW_MIN_ZOOM = 12, VIEW_MARGIN = 2, VIEW_MAX_TILES = 600;
 
 function shape(r: Route, exactEnds: boolean): { points: LngLat[]; coords: LngLat[]; metres: number } {
   const n = r.placed.length;
@@ -140,6 +144,24 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
   const prefetch = useCallback((p: LngLat) => {
     for (const [x, y] of tilesAround(p, p)) cached.getZxy(Z, x, y).catch(() => {});
   }, [cached]);
+
+  // And while planning, those in view: a click anywhere on screen then routes
+  // from memory. A round trip to R2 is 0.5-4 s however small; a view's tiles,
+  // asked for at once, come in a few merged ranges (CoalescingSource).
+  useEffect(() => {
+    if (!map || !active) return;
+    const fetchView = () => {
+      if (map.getZoom() < VIEW_MIN_ZOOM) return;
+      const b = map.getBounds();
+      const [x0, y0] = lngLatToTile(b.getWest(), b.getNorth(), Z).map((v) => Math.floor(v) - VIEW_MARGIN);
+      const [x1, y1] = lngLatToTile(b.getEast(), b.getSouth(), Z).map((v) => Math.floor(v) + VIEW_MARGIN);
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) > VIEW_MAX_TILES) return;
+      for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) cached.getZxy(Z, x, y).catch(() => {});
+    };
+    fetchView();
+    map.on('moveend', fetchView);
+    return () => { map.off('moveend', fetchView); };
+  }, [map, active, cached]);
 
   const layers = useRef(false);
   const addLayers = useCallback(() => {
