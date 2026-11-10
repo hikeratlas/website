@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent } from 'maplibre-gl';
 import { withZstd, type Decompress } from '~/zstd';
-import { Z, buildGraph, haversine, lngLatToTile, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
+import { Z, buildGraph, haversine, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
 import { CoalescingSource, type Source } from '~/routing/source';
 
 declare const pmtiles: {
@@ -67,6 +67,8 @@ export interface Waypoints {
 // trace's start and end, so there they matter most.
 interface Route { placed: LngLat[]; legs: Leg[] }
 const FAR_M = 1; // an end further than this from where it snapped gets its own connector
+// Tiles kept for routing (about 6 KB each): a leg near earlier ones needs none fetched.
+const TILE_CACHE = 2000;
 
 function shape(r: Route, exactEnds: boolean): { points: LngLat[]; coords: LngLat[]; metres: number } {
   const n = r.placed.length;
@@ -102,13 +104,42 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
   const state = useRef<Route>({ placed: [], legs: [] });
   const source = useRef<Archive | null>(null);
   const sourceFor = useRef<string | null>(null);
+  // Tiles fetched (or being fetched) for routing, by "x/y", oldest first.
+  // Fetching from R2 is most of a leg's time (a round trip of 0.5-1.5 s,
+  // whatever the size), and legs overlap: each reads a box of at least 5x5
+  // tiles around its ends (tilesAround).
+  const cache = useRef(new Map<string, Promise<{ data: ArrayBuffer } | undefined>>());
 
   const ensureSource = useCallback(() => {
     if (source.current && sourceFor.current === tiles) return;
     const decompress = withZstd(new pmtiles.PMTiles("").decompress);
     source.current = new pmtiles.PMTiles(new CoalescingSource(new pmtiles.FetchSource(tiles)), undefined, decompress);
     sourceFor.current = tiles;
+    cache.current.clear();
   }, [tiles]);
+
+  // The routing tile source: the archive's tiles, through the cache.
+  const cached = useMemo(() => ({
+    getZxy(z: number, x: number, y: number) {
+      ensureSource();
+      const key = `${x}/${y}`;
+      let t = cache.current.get(key);
+      if (!t) {
+        t = source.current!.getZxy(z, x, y);
+        // A failed fetch isn't kept: the next leg tries again.
+        t.catch(() => cache.current.delete(key));
+        cache.current.set(key, t);
+        if (cache.current.size > TILE_CACHE) cache.current.delete(cache.current.keys().next().value!);
+      }
+      return t;
+    },
+  }), [ensureSource]);
+
+  // Fetch the tiles a leg from p would read, before it's asked for: while
+  // the next point is being picked.
+  const prefetch = useCallback((p: LngLat) => {
+    for (const [x, y] of tilesAround(p, p)) cached.getZxy(Z, x, y).catch(() => {});
+  }, [cached]);
 
   const layers = useRef(false);
   const addLayers = useCallback(() => {
@@ -191,12 +222,11 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
 
   // A leg from the end of the route so far (or the previous point) to p.
   const routeLeg = useCallback(async (from: LngLat, to: LngLat): Promise<Leg | null> => {
-    ensureSource();
-    const g = await buildGraph(source.current!, tilesAround(from, to));
+    const g = await buildGraph(cached, tilesAround(from, to));
     const found = shortestPath(g, ...snapPair(g, from, to));
     if (!found) return null;
     return { coords: found.path.map((i) => worldToLngLat(g, i)), metres: found.metres };
-  }, [ensureSource]);
+  }, [cached]);
 
   const enqueue = useCallback((job: () => Promise<void>) => {
     queue.current = queue.current.then(async () => {
@@ -214,20 +244,17 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
       setError(null);
       if (!s.placed.length) {
         s.placed.push(p);
-        // Warm up: the tile under the start reads the archive's header and
-        // the directory for the area, which routing will need.
-        ensureSource();
-        const [x, y] = lngLatToTile(p[0], p[1], Z);
-        source.current!.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
+        prefetch(p);
         return;
       }
       const leg = await routeLeg(s.placed[s.placed.length - 1], p);
       if (!leg) { setError('No route to that point on trails or roads.'); return; }
       s.placed.push(p);
       s.legs.push(leg);
+      prefetch(p);
     // Once committed: the routed point replaces the pending one.
     }).finally(() => setPending((ps) => ps.slice(1)));
-  }, [enqueue, ensureSource, routeLeg]);
+  }, [enqueue, prefetch, routeLeg]);
 
   const undo = useCallback(() => { enqueue(async () => {
     const s = state.current;
@@ -253,7 +280,8 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     if (before) s.legs[i - 1] = before;
     if (after) s.legs[i] = after;
     s.placed[i] = p;
-  }), [enqueue, routeLeg]);
+    if (i === s.placed.length - 1) prefetch(p);
+  }), [enqueue, prefetch, routeLeg]);
 
   const set = useCallback(async (ps: LngLat[]) => {
     await enqueue(async () => { state.current = { placed: [], legs: [] }; });
