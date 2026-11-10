@@ -92,6 +92,9 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
   const { id, color, active, exactEnds = false } = opts;
   const [route, setRoute] = useState<Route>({ placed: [], legs: [] });
   const [busy, setBusy] = useState(false);
+  // Clicks not yet routed, drawn at once (hollow, joined to the route by a
+  // dashed line) so a click shows it was taken while its leg is found (#91).
+  const [pending, setPending] = useState<LngLat[]>([]);
   const [error, setError] = useState<string | null>(null);
   // The work queue: legs are routed one at a time, in click order, so an
   // undo or a fast second click waits for the leg before it.
@@ -113,9 +116,14 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     layers.current = true;
     map.addSource(`${id}-line`, { type: 'geojson', data: EMPTY });
     map.addSource(`${id}-points`, { type: 'geojson', data: EMPTY });
+    map.addSource(`${id}-pending`, { type: 'geojson', data: EMPTY });
     const round: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
     map.addLayer({ id: `${id}-line-casing`, type: 'line', source: `${id}-line`, layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
     map.addLayer({ id: `${id}-line`, type: 'line', source: `${id}-line`, layout: round, paint: { 'line-color': color, 'line-width': 4 } });
+    map.addLayer({ id: `${id}-pending-line`, type: 'line', source: `${id}-pending`, filter: ['==', ['geometry-type'], 'LineString'],
+      paint: { 'line-color': color, 'line-width': 2, 'line-dasharray': [2, 2], 'line-opacity': 0.8 } });
+    map.addLayer({ id: `${id}-pending-points`, type: 'circle', source: `${id}-pending`, filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': 6, 'circle-color': '#ffffff', 'circle-stroke-color': color, 'circle-stroke-width': 2.5 } });
     // Points: the start green, the end red, the rest the route's colour; a
     // wide invisible ring under each takes a finger's drag on a phone.
     map.addLayer({ id: `${id}-hit`, type: 'circle', source: `${id}-points`, paint: { 'circle-radius': 18, 'circle-color': '#000000', 'circle-opacity': 0 } });
@@ -143,6 +151,24 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
       ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } } : EMPTY);
     map.getSource<GeoJSONSource>(`${id}-points`)?.setData(pointsData(points));
   }, [map, id, points, coords]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The clicks still being routed, from the route's last point.
+  useEffect(() => {
+    if (!map || !layers.current) return;
+    const from = points.length ? [points[points.length - 1]] : [];
+    const chain = [...from, ...pending];
+    map.getSource<GeoJSONSource>(`${id}-pending`)?.setData(pending.length ? {
+      type: 'FeatureCollection',
+      features: [
+        ...(chain.length > 1 ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'LineString' as const, coordinates: chain } }] : []),
+        ...pending.map((p) => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: p } })),
+      ],
+    } : EMPTY);
+    // A busy cursor while routing; put back only if it's still ours.
+    const canvas = map.getCanvas();
+    if (pending.length || busy) canvas.style.cursor = 'progress';
+    else if (canvas.style.cursor === 'progress') canvas.style.cursor = active ? 'crosshair' : '';
+  }, [map, id, points, pending, busy, active]);
 
   // The points as features: each with its index `i` and `role` (start, end,
   // via, or start for both where the route comes back to its start), and
@@ -181,23 +207,27 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     return queue.current;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const add = useCallback((p: LngLat) => enqueue(async () => {
-    const s = state.current;
-    setError(null);
-    if (!s.placed.length) {
+  const add = useCallback((p: LngLat) => {
+    setPending((ps) => [...ps, p]);
+    return enqueue(async () => {
+      const s = state.current;
+      setError(null);
+      if (!s.placed.length) {
+        s.placed.push(p);
+        // Warm up: the tile under the start reads the archive's header and
+        // the directory for the area, which routing will need.
+        ensureSource();
+        const [x, y] = lngLatToTile(p[0], p[1], Z);
+        source.current!.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
+        return;
+      }
+      const leg = await routeLeg(s.placed[s.placed.length - 1], p);
+      if (!leg) { setError('No route to that point on trails or roads.'); return; }
       s.placed.push(p);
-      // Warm up: the tile under the start reads the archive's header and
-      // the directory for the area, which routing will need.
-      ensureSource();
-      const [x, y] = lngLatToTile(p[0], p[1], Z);
-      source.current!.getZxy(Z, Math.floor(x), Math.floor(y)).catch(() => {});
-      return;
-    }
-    const leg = await routeLeg(s.placed[s.placed.length - 1], p);
-    if (!leg) { setError('No route to that point on trails or roads.'); return; }
-    s.placed.push(p);
-    s.legs.push(leg);
-  }), [enqueue, ensureSource, routeLeg]);
+      s.legs.push(leg);
+    // Once committed: the routed point replaces the pending one.
+    }).finally(() => setPending((ps) => ps.slice(1)));
+  }, [enqueue, ensureSource, routeLeg]);
 
   const undo = useCallback(() => { enqueue(async () => {
     const s = state.current;
