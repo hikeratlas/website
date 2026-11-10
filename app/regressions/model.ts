@@ -152,7 +152,7 @@ export function fixtureFor(f: ParkFile, bbox: [number, number, number, number]) 
 export interface Entry {
   kind?: 'trail' | 'dest'; name: string; park: string; park_id: string; issue: string;
   km?: number; km_tolerance?: number; trail?: string; aka?: string[]; source?: string; why?: string;
-  trace?: LngLat[]; trace_within_m?: number; trace_cover?: number; trace_note?: string;
+  trace?: LngLat[]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_note?: string;
   dest?: string; start?: LngLat; start_within_m?: number; max_km?: number;
   [k: string]: unknown;
 }
@@ -171,13 +171,17 @@ export function norm(s: string | null | undefined): string {
 
 // Whether a hike offered under `label` (its name) passes a trail entry with a
 // trace, as routes' expect.py checks it: offered under the name, within
-// km_tolerance of km, and within trace_within_m of trace_cover of the trace's
-// points.
-export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; follows: number; ok: boolean } {
+// km_tolerance of km, starting (its line's first point) within trace_start_m
+// of the trace's first point, the trailhead (null: not checked), and within
+// trace_within_m of trace_cover of the trace's points.
+export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; start: boolean | null; startOff: number | null; follows: number; ok: boolean } {
   const names = new Set([e.name, e.trail, ...(e.aka ?? [])].filter(Boolean).map((n) => norm(n as string)));
   const name = label !== null && names.has(norm(label));
   const tol = e.km_tolerance ?? 0.3;
   const length = e.km !== undefined && km >= e.km * (1 - tol) && km <= e.km * (1 + tol);
   const follows = e.trace?.length ? walks([e.trace], line, e.trace_within_m ?? 50) : 0;
-  return { name, length, follows, ok: name && length && follows >= (e.trace_cover ?? 0.7) };
+  const startM = e.trace_start_m === undefined ? 150 : e.trace_start_m;
+  const startOff = e.trace?.length && line.length ? haversine(e.trace[0], line[0]) : null;
+  const start = startM === null ? null : startOff !== null && startOff <= startM;
+  return { name, length, start, startOff, follows, ok: name && length && start !== false && follows >= (e.trace_cover ?? 0.7) };
 }
