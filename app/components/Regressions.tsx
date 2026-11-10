@@ -1,9 +1,13 @@
 // The named-regressions page for hikeratlas/routes (routes/dev.regressions):
-// the trails parks list on their own websites (routes' fixtures/proposals/),
-// shown on the map with the OSM trail of each one's name and the hikes routes
-// offers near it. Accept one of those hikes, or draw the hike meant, and it
-// becomes an entry in fixtures/expect/ with a trace; or reject the proposal.
-// Decisions are kept in this browser until committed: one commit to a working
+// each park's proposed regressions (routes' fixtures/proposals/: trails the
+// park lists on its own website) and its existing entries
+// (fixtures/expect/), on the map with the OSM trail of each one's name and
+// the hikes routes offers near it.
+//
+// A proposal: accept one of those hikes, or draw the hike meant, and it
+// becomes a trail entry with a trace; or reject it. An entry: redraw or
+// re-pick its trace, change the length it expects, or delete it.
+// Changes are kept in this browser until committed: one commit to a working
 // branch in routes, and a pull request from it, so routes' CI checks them.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
@@ -18,7 +22,10 @@ import { withZstd, type Decompress } from '~/zstd';
 import type { LngLat } from '~/routing/graph';
 import type { ParkDoc, Route } from '~/hikes';
 import { GitHub, REPO } from '~/regressions/github';
-import { entryFor, fixtureFor, key, lineKm, parseJsonl, simplify, toJsonl, walks, type Decision, type ParkFile, type Proposal } from '~/regressions/model';
+import {
+  entryFor, entryKey, fixtureFor, key, lineKm, norm, parseJsonl, passes, simplify, toJsonl, walks,
+  type Decision, type Entry, type EntryEdit, type ParkFile, type Proposal,
+} from '~/regressions/model';
 
 declare const pmtiles: {
   FetchSource: new (url: string) => Source;
@@ -29,14 +36,22 @@ declare const pmtiles: {
 };
 
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
-const C = { trail: '#f59e0b', cand: '#2563eb', sel: '#dc2626', draw: '#7c3aed' };
+const C = { trail: '#f59e0b', cand: '#2563eb', sel: '#dc2626', draw: '#7c3aed', trace: '#111827' };
 const TOKEN_KEY = 'regressions:github-token';
 const SETTINGS_KEY = 'regressions:settings';
 const DECISIONS_KEY = 'regressions:decisions';
+const EDITS_KEY = 'regressions:entry-edits';
 
 interface Settings { branch: string; base: string }
-interface Offered { label: string; km: number; line: LngLat[]; share: number }
-type Decisions = Record<string, Record<string, Decision>>; // stem -> proposal key -> decision
+type Box = [number, number, number, number];
+// A park: its proposals and its entries (either may be empty), by the file
+// stem both directories name it by.
+interface Park extends ParkFile { entries: Entry[]; bbox?: Box }
+interface Offered { label: string; name: string | null; km: number; line: LngLat[]; share: number; check?: ReturnType<typeof passes> }
+type Decisions = Record<string, Record<string, Decision>>;   // stem -> proposal key -> decision
+type Edits = Record<string, Record<string, EntryEdit>>;      // stem -> entry key -> edit
+// What's selected: a proposal or an entry, by index in its park's list.
+type Subject = { type: 'proposal'; i: number } | { type: 'entry'; i: number };
 
 function stored<T>(k: string, fallback: T): T {
   try { const v = localStorage.getItem(k); return v ? JSON.parse(v) as T : fallback; } catch { return fallback; }
@@ -48,16 +63,25 @@ function bounds(lines: LngLat[][]): [[number, number], [number, number]] {
   for (const l of lines) for (const [x, y] of l) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
   return [[w, s], [e, n]];
 }
+const pad = (b: [[number, number], [number, number]], d: number): Box => [b[0][0] - d, b[0][1] - d, b[1][0] + d, b[1][1] + d];
 
-// Every hike routes offers in a park, with a label as the site shows it.
-function offeredIn(doc: ParkDoc): { label: string; route: Route }[] {
-  const name = (r: { name?: string | null }, otherwise: string) => (r.name ? r.name : otherwise);
+// Every hike routes offers in a park, with a label as the site shows it and
+// the name it's offered under, if any (what routes' expect.py matches).
+function offeredIn(doc: ParkDoc): { label: string; name: string | null; route: Route }[] {
+  const n = (r: { name?: string | null }) => (r.name ? r.name : null);
   return [
-    ...doc.day_hikes.map((h) => ({ label: name(h, `${h.dest} from ${h.from}`), route: h.route })),
-    ...doc.base_camps.flatMap((b) => b.hikes.map((h) => ({ label: name(h, `${h.dest} from ${b.camp}`), route: h.route }))),
-    ...doc.point_to_points.map((t) => ({ label: `${name(t, `${t.from} to ${t.to}`)} (multi-day)`, route: t.route })),
+    ...doc.day_hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${h.from}`, name: n(h), route: h.route })),
+    ...doc.base_camps.flatMap((b) => b.hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${b.camp}`, name: n(h), route: h.route }))),
+    ...doc.point_to_points.map((t) => ({ label: `${n(t) ?? `${t.from} to ${t.to}`} (multi-day)`, name: n(t), route: t.route })),
   ];
 }
+
+const mergeEdits = <T,>(all: Record<string, Record<string, T>>, stem: string, k: string, v: T | null) => {
+  const next = { ...all, [stem]: { ...(all[stem] ?? {}) } };
+  if (v) next[stem][k] = v; else delete next[stem][k];
+  if (!Object.keys(next[stem]).length) delete next[stem];
+  return next;
+};
 
 export default function Regressions({ build }: { build: string | null }) {
   const routesBuild = build ?? 'north-america';
@@ -66,14 +90,16 @@ export default function Regressions({ build }: { build: string | null }) {
   const [login, setLogin] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>({ branch: 'regressions', base: 'main' });
   const [showSettings, setShowSettings] = useState(false);
-  const [parks, setParks] = useState<ParkFile[]>([]);
+  const [parks, setParks] = useState<Park[]>([]);
   const [readFrom, setReadFrom] = useState<string>('');
   const [pull, setPull] = useState<{ number: number; html_url: string } | null>(null);
-  const [loadMsg, setLoadMsg] = useState<string>('Loading proposals…');
+  const [loadMsg, setLoadMsg] = useState<string>('Loading…');
   const [stem, setStem] = useState<string>('');
-  const [sel, setSel] = useState<number>(0);
+  const [tab, setTab] = useState<'proposals' | 'entries'>('proposals');
+  const [subject, setSubject] = useState<Subject | null>(null);
   const [filter, setFilter] = useState<'open' | 'all'>('open');
   const [decisions, setDecisions] = useState<Decisions>({});
+  const [edits, setEdits] = useState<Edits>({});
   const [trail, setTrail] = useState<LngLat[][] | null>(null);
   const [offered, setOffered] = useState<Offered[]>([]);
   const [pick, setPick] = useState<number | null>(null);
@@ -88,90 +114,137 @@ export default function Regressions({ build }: { build: string | null }) {
     setToken(stored(TOKEN_KEY, ''));
     setSettings(stored(SETTINGS_KEY, { branch: 'regressions', base: 'main' }));
     setDecisions(stored(DECISIONS_KEY, {}));
+    setEdits(stored(EDITS_KEY, {}));
   }, []);
   const gh = useMemo(() => new GitHub(token || null), [token]);
   useEffect(() => { gh.user().then(setLogin).catch(() => setLogin(null)); }, [gh]);
 
-  // Proposals: from the working branch while its pull request is open (so
-  // committed decisions show), else from the base branch.
+  // Proposals and entries: from the working branch while its pull request is
+  // open (so committed changes show), else from the base branch.
   const load = useCallback(async () => {
-    setLoadMsg('Loading proposals…');
+    setLoadMsg('Loading…');
     try {
       const open = await gh.openPull(settings.branch).catch(() => null);
       setPull(open);
       const ref = open ? settings.branch : settings.base;
-      const names = (await gh.list('fixtures/proposals', ref)).filter((n) => n.endsWith('.jsonl'));
-      const files = await Promise.all(names.map(async (n) => {
-        const ps = parseJsonl<Proposal>(await gh.read(`fixtures/proposals/${n}`, ref));
-        return { stem: n.replace(/\.jsonl$/, ''), park: ps[0]?.park ?? n, park_id: String(ps[0]?.park_id ?? ''), region: ps[0]?.region ?? '', proposals: ps };
+      const [pNames, eNames, fixturesText] = await Promise.all([
+        gh.list('fixtures/proposals', ref).catch((): string[] => []), gh.list('fixtures/expect', ref), gh.read('fixtures/parks.json', ref),
+      ]);
+      const fixtures = JSON.parse(fixturesText ?? '[]') as { id?: string; park: string; bbox: Box }[];
+      const stems = [...new Set([...pNames, ...eNames].filter((n) => n.endsWith('.jsonl')).map((n) => n.replace(/\.jsonl$/, '')))];
+      const files = await Promise.all(stems.map(async (st): Promise<Park> => {
+        const [ps, es] = await Promise.all([
+          pNames.includes(`${st}.jsonl`) ? gh.read(`fixtures/proposals/${st}.jsonl`, ref).then((t) => parseJsonl<Proposal>(t)) : [],
+          eNames.includes(`${st}.jsonl`) ? gh.read(`fixtures/expect/${st}.jsonl`, ref).then((t) => parseJsonl<Entry>(t)) : [],
+        ]);
+        const any = (ps[0] ?? es[0]) as { park: string; park_id: string } | undefined;
+        const park = any?.park ?? st, park_id = String(any?.park_id ?? '');
+        const fx = fixtures.find((f) => String(f.id ?? '') === park_id || (!f.id && f.park === park));
+        return { stem: st, park, park_id, region: ps[0]?.region ?? '', proposals: ps, entries: es, bbox: ps[0]?.park_bbox ?? fx?.bbox };
       }));
-      files.sort((a, b) => a.region.localeCompare(b.region) || a.park.localeCompare(b.park));
+      files.sort((a, b) => a.park.localeCompare(b.park));
       setParks(files);
       setReadFrom(ref);
       setStem((s) => s || files[0]?.stem || '');
       setLoadMsg('');
     } catch (e) {
-      setLoadMsg(`Couldn’t load proposals: ${(e as Error).message}. Without a token GitHub allows 60 reads an hour; add one in Settings.`);
+      setLoadMsg(`Couldn’t load: ${(e as Error).message}. Without a token GitHub allows 60 reads an hour; add one in Settings.`);
     }
   }, [gh, settings.branch, settings.base]);
   useEffect(() => { load(); }, [load]);
 
   const park = parks.find((p) => p.stem === stem) ?? null;
-  const list = useMemo(() => (park?.proposals ?? []).map((p, i) => ({ p, i })).filter(({ p }) => filter === 'all' || p.status === 'open'), [park, filter]);
-  const cur = park?.proposals[sel] ?? null;
-  const dec = park && cur ? decisions[park.stem]?.[key(cur)] : undefined;
+  const proposals = useMemo(() => (park?.proposals ?? []).map((p, i) => ({ p, i })).filter(({ p }) => filter === 'all' || p.status === 'open'), [park, filter]);
+  const prop = park && subject?.type === 'proposal' ? park.proposals[subject.i] ?? null : null;
+  const entry = park && subject?.type === 'entry' ? park.entries[subject.i] ?? null : null;
+  // An entry's proposal, if it came from one: for the park's words and the OSM trail's box.
+  const entryProp = entry && park ? park.proposals.find((p) => p.name === entry.name) ?? null : null;
+  const dec = park && prop ? decisions[park.stem]?.[key(prop)] : undefined;
+  const edit = park && entry ? edits[park.stem]?.[entryKey(entry)] : undefined;
+
+  // Pick something sensible when the park or tab changes.
+  useEffect(() => {
+    if (!park) return;
+    if (tab === 'proposals') setSubject(proposals.length ? { type: 'proposal', i: proposals[0].i } : null);
+    else setSubject(park.entries.length ? { type: 'entry', i: 0 } : null);
+  }, [park?.stem, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (park && !park.proposals.length && park.entries.length) setTab('entries'); }, [park?.stem]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setDecision = (d: Decision | null) => {
-    if (!park || !cur) return;
-    const next = { ...decisions, [park.stem]: { ...(decisions[park.stem] ?? {}) } };
-    if (d) next[park.stem][key(cur)] = d; else delete next[park.stem][key(cur)];
-    if (!Object.keys(next[park.stem]).length) delete next[park.stem];
+    if (!park || !prop) return;
+    const next = mergeEdits(decisions, park.stem, key(prop), d);
     setDecisions(next); store(DECISIONS_KEY, next);
+  };
+  const setEdit = (x: EntryEdit | null) => {
+    if (!park || !entry) return;
+    const next = mergeEdits(edits, park.stem, entryKey(entry), x);
+    setEdits(next); store(EDITS_KEY, next);
   };
 
   // Map layers.
   const addLayers = useCallback(() => {
     if (!map || map.getSource('rg-trail')) return;
-    for (const id of ['rg-trail', 'rg-cands']) map.addSource(id, { type: 'geojson', data: EMPTY, ...(id === 'rg-cands' ? { promoteId: 'i' } : {}) });
+    for (const id of ['rg-trail', 'rg-cands', 'rg-trace', 'rg-start']) map.addSource(id, { type: 'geojson', data: EMPTY, ...(id === 'rg-cands' ? { promoteId: 'i' } : {}) });
     const round = { 'line-join': 'round', 'line-cap': 'round' } as const;
     map.addLayer({ id: 'rg-trail', type: 'line', source: 'rg-trail', layout: round, paint: { 'line-color': C.trail, 'line-width': 12, 'line-opacity': 0.45 } });
     map.addLayer({ id: 'rg-cands', type: 'line', source: 'rg-cands', layout: round, paint: {
       'line-color': ['case', ['boolean', ['feature-state', 'sel'], false], C.sel, C.cand],
       'line-width': ['case', ['boolean', ['feature-state', 'sel'], false], 6, ['boolean', ['feature-state', 'hover'], false], 5, 3],
       'line-opacity': ['case', ['any', ['boolean', ['feature-state', 'sel'], false], ['boolean', ['feature-state', 'hover'], false]], 1, 0.6] } });
+    map.addLayer({ id: 'rg-trace', type: 'line', source: 'rg-trace', layout: round, paint: { 'line-color': C.trace, 'line-width': 3, 'line-dasharray': [2, 2] } });
+    map.addLayer({ id: 'rg-start', type: 'circle', source: 'rg-start', paint: { 'circle-radius': 9, 'circle-color': C.trace, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 } });
     for (const id of ['rg-draw-line-casing', 'rg-draw-line', 'rg-draw-points']) if (map.getLayer(id)) map.moveLayer(id);
   }, [map]);
   useEffect(() => { if (!map) return; if (map.isStyleLoaded()) addLayers(); else map.once('load', addLayers); }, [map, addLayers]);
 
-  // A proposal: its OSM trail from the tiles, and the hikes routes offers
-  // near it, best first.
+  // What's selected: its OSM trail from the tiles, the hikes routes offers
+  // near it (best first), and, for an entry, its trace and where it starts.
   useEffect(() => {
-    if (!map || !park || !cur) return;
+    if (!map || !park || !subject || !(prop || entry)) return;
     let live = true;
     setTrail(null); setOffered([]); setPick(null); setDrawing(false); draw.clear();
-    setKm(String(dec?.km ?? cur.suggest_km ?? cur.km)); setNote(dec?.note ?? '');
+    const name = prop?.name ?? entry!.name;
+    const trace = entry?.trace ?? null;
+    if (prop) { setKm(String(dec?.km ?? prop.suggest_km ?? prop.km)); setNote(dec?.note ?? ''); }
+    else { setKm(String((edit?.action === 'update' ? edit.km : undefined) ?? entry!.km ?? '')); setNote(edit?.note ?? ''); }
+    if (map.getSource('rg-trace')) {
+      map.getSource<GeoJSONSource>('rg-trace')!.setData(trace ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: trace } } : EMPTY);
+      const start = trace?.[0] ?? entry?.start;
+      map.getSource<GeoJSONSource>('rg-start')!.setData(start ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: start } } : EMPTY);
+    }
     if (!archive.current) archive.current = new pmtiles.PMTiles(new CoalescingSource(new pmtiles.FetchSource(tilesUrl(routesBuild))), undefined, withZstd(new pmtiles.PMTiles('').decompress));
     (async () => {
-      const geom = cur.osm_trail && cur.osm_bbox ? await trailGeometry(archive.current!, cur.osm_trail, cur.osm_bbox).catch(() => null) : null;
-      const lines = geom?.lines ?? null;
+      // The OSM trail: the proposal's, or for an entry, its proposal's, or
+      // the trail of its name (`trail`, else its name) around its trace.
+      const src = prop ?? entryProp;
+      const osmName = src?.osm_trail ?? entry?.trail ?? name;
+      const osmBox = src?.osm_bbox ?? (trace ? pad(bounds([trace]), 0.01) : undefined);
+      const geom = osmBox ? await trailGeometry(archive.current!, osmName, osmBox).catch(() => null) : null;
+      const lines = geom?.lines?.length ? geom.lines : null;
       if (!live) return;
       setTrail(lines);
-      const fit = lines?.length ? bounds(lines) : cur.osm_bbox ? [[cur.osm_bbox[0], cur.osm_bbox[1]], [cur.osm_bbox[2], cur.osm_bbox[3]]] as [[number, number], [number, number]]
-        : cur.park_bbox ? [[cur.park_bbox[0], cur.park_bbox[1]], [cur.park_bbox[2], cur.park_bbox[3]]] as [[number, number], [number, number]] : null;
-      if (fit) map.fitBounds(fit, { padding: 70, maxZoom: 15, duration: 0 });
-      const doc = await parkRoutes(routesBuild, cur.park_id).catch(() => null);
+      const view = trace?.length ? bounds(lines ? [...lines, trace] : [trace])
+        : entry?.start ? bounds([[entry.start]]) : lines ? bounds(lines)
+        : osmBox ? bounds([[[osmBox[0], osmBox[1]], [osmBox[2], osmBox[3]]]]) : park.bbox ? bounds([[[park.bbox[0], park.bbox[1]], [park.bbox[2], park.bbox[3]]]]) : null;
+      if (view) map.fitBounds(view, { padding: 70, maxZoom: entry?.start && !trace ? 14 : 15, duration: 0 });
+      const doc = await parkRoutes(routesBuild, park.park_id).catch(() => null);
       if (!live || !doc) return;
-      const want = (cur.osm_trail ?? cur.name).toLowerCase();
-      const all = offeredIn(doc).map((o) => ({
-        label: o.label, km: o.route.km, line: o.route.line as LngLat[],
-        share: lines ? walks(lines, o.route.line as LngLat[]) : (o.label.toLowerCase().includes(want) || o.route.via.some((v) => v.toLowerCase() === want) ? 1 : 0),
-      }));
+      const want = norm(osmName);
+      const all: Offered[] = offeredIn(doc).map((o) => {
+        const line = o.route.line as LngLat[];
+        // An entry with a trace: how much of it each hike follows, as routes'
+        // expect.py checks it. Otherwise how much of the OSM trail it walks.
+        const check = entry && trace ? passes(entry, o.name, o.route.km, line) : undefined;
+        const share = check ? check.follows : lines ? walks(lines, line) : (norm(o.label).includes(want) || o.route.via.some((v) => norm(v) === want) ? 1 : 0);
+        return { label: o.label, name: o.name, km: o.route.km, line, share, check };
+      });
       const near = all.filter((o) => o.share >= 0.3);
-      const ranked = (near.length ? near : all).sort((a, b) => b.share - a.share || Math.abs(a.km - cur.km) - Math.abs(b.km - cur.km)).slice(0, 15);
+      const target = prop?.km ?? entry?.km ?? 0;
+      const ranked = (near.length ? near : all).sort((a, b) => Number(!!b.check?.ok) - Number(!!a.check?.ok) || b.share - a.share || Math.abs(a.km - target) - Math.abs(b.km - target)).slice(0, 15);
       setOffered(ranked);
     })();
     return () => { live = false; };
-  }, [map, park?.stem, sel, readFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, park?.stem, subject, readFrom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Draw what's selected.
   useEffect(() => {
@@ -201,22 +274,32 @@ export default function Regressions({ build }: { build: string | null }) {
   }, [map, drawing]);
 
   const kmNum = parseFloat(km);
-  const accept = () => {
-    if (!cur || !(kmNum > 0)) return;
-    if (draw.coords.length > 1) {
-      setDecision({ status: 'accepted', km: kmNum, trace: simplify(draw.coords), how: `drawn, ${(draw.metres / 1000).toFixed(1)} km`, note: note.trim() || undefined });
-      setDrawing(false);
-    } else if (pick !== null) {
-      const o = offered[pick];
-      setDecision({ status: 'accepted', km: kmNum, trace: simplify(o.line), how: `${o.label} (${o.km} km)`, note: note.trim() || undefined });
-    }
+  // The new trace, if one is drawn or picked: [trace, how].
+  const newTrace = (): [LngLat[], string] | null => {
+    if (draw.coords.length > 1) return [simplify(draw.coords), `drawn, ${(draw.metres / 1000).toFixed(1)} km`];
+    if (pick !== null) { const o = offered[pick]; return [simplify(o.line), `${o.label} (${o.km} km)`]; }
+    return null;
   };
-  const reject = () => setDecision({ status: 'rejected', note: note.trim() || undefined });
+  const accept = () => {
+    const t = newTrace();
+    if (!prop || !t || !(kmNum > 0)) return;
+    setDecision({ status: 'accepted', km: kmNum, trace: t[0], how: t[1], note: note.trim() || undefined });
+    setDrawing(false);
+  };
+  const saveEntry = () => {
+    if (!entry) return;
+    const t = newTrace();
+    const kmChanged = kmNum > 0 && kmNum !== entry.km;
+    if (!t && !kmChanged && !note.trim()) return;
+    setEdit({ action: 'update', ...(kmChanged ? { km: kmNum } : {}), ...(t ? { trace: t[0], how: t[1] } : {}), note: note.trim() || undefined });
+    setDrawing(false);
+  };
 
-  const nDecided = Object.values(decisions).reduce((s, d) => s + Object.keys(d).length, 0);
+  const nChanges = Object.values(decisions).reduce((s, d) => s + Object.keys(d).length, 0) + Object.values(edits).reduce((s, d) => s + Object.keys(d).length, 0);
 
-  // Commit every decision: proposals' statuses, the entries accepted ones
-  // become, and a fixture for each park that gets its first entries.
+  // Commit every change: proposals' statuses, the entries accepted ones
+  // become, edited and deleted entries, and a fixture for each park that
+  // gets its first entries.
   const commit = async () => {
     if (!token) { setShowSettings(true); return; }
     setCommitting('Committing…');
@@ -226,26 +309,44 @@ export default function Regressions({ build }: { build: string | null }) {
       const base = (open && await gh.head(settings.branch)) || (await gh.head(settings.base));
       if (!base) throw new Error(`no branch ${settings.base}`);
       const files: Record<string, string> = {};
-      const fixturesText = await gh.read('fixtures/parks.json', base);
-      const fixtures = JSON.parse(fixturesText ?? '[]') as { key: string; id?: string; park: string; bbox: number[] }[];
-      let addedFixtures = 0, accepted = 0, rejected = 0;
-      for (const [st, ds] of Object.entries(decisions)) {
-        const pf = parseJsonl<Proposal>(await gh.read(`fixtures/proposals/${st}.jsonl`, base));
-        const entries = parseJsonl<Record<string, unknown>>(await gh.read(`fixtures/expect/${st}.jsonl`, base));
+      const fixtures = JSON.parse(await gh.read('fixtures/parks.json', base) ?? '[]') as { key: string; id?: string; park: string; bbox: number[] }[];
+      let addedFixtures = 0, accepted = 0, rejected = 0, updated = 0, deleted = 0;
+      for (const st of new Set([...Object.keys(decisions), ...Object.keys(edits)])) {
+        const pText = await gh.read(`fixtures/proposals/${st}.jsonl`, base);
+        const pf = parseJsonl<Proposal>(pText);
+        let entries = parseJsonl<Entry>(await gh.read(`fixtures/expect/${st}.jsonl`, base));
+        const before = toJsonl(entries);
         for (const p of pf) {
-          const d = ds[key(p)];
+          const d = decisions[st]?.[key(p)];
           if (!d) continue;
           p.status = d.status;
           if (d.note) p.note = d.note;
           if (d.status === 'accepted') {
             accepted++;
-            const e = entryFor(p, d);
-            const at = entries.findIndex((x) => (x.kind ?? 'dest') === 'trail' && x.name === p.name);
+            const e = entryFor(p, d) as Entry;
+            const at = entries.findIndex((x) => entryKey(x) === entryKey(e));
             if (at >= 0) entries[at] = e; else entries.push(e);
           } else rejected++;
         }
-        files[`fixtures/proposals/${st}.jsonl`] = toJsonl(pf);
-        if (entries.length) files[`fixtures/expect/${st}.jsonl`] = toJsonl(entries);
+        for (const [k, x] of Object.entries(edits[st] ?? {})) {
+          const at = entries.findIndex((e) => entryKey(e) === k);
+          if (at < 0) continue;  // gone since: nothing to change
+          if (x.action === 'delete') {
+            // Its proposal, if it came from one, is open again.
+            for (const p of pf) if (p.name === entries[at].name && p.status === 'accepted') p.status = 'open';
+            entries = entries.filter((_, i) => i !== at);
+            deleted++;
+            continue;
+          }
+          const e = { ...entries[at] };
+          if (x.km !== undefined) e.km = x.km;
+          if (x.trace) e.trace = x.trace;
+          if (x.note) e.trace_note = x.note;
+          entries[at] = e;
+          updated++;
+        }
+        if (pText !== null) files[`fixtures/proposals/${st}.jsonl`] = toJsonl(pf);
+        if (toJsonl(entries) !== before) files[`fixtures/expect/${st}.jsonl`] = entries.length ? toJsonl(entries) : '';
         const pk = parks.find((x) => x.stem === st);
         const bbox = pf[0]?.park_bbox;
         // Older fixtures name their park without an id.
@@ -256,13 +357,15 @@ export default function Regressions({ build }: { build: string | null }) {
         }
       }
       if (addedFixtures) files['fixtures/parks.json'] = JSON.stringify(fixtures, null, 2) + '\n';
-      const parkNames = Object.keys(decisions).map((st) => parks.find((x) => x.stem === st)?.park ?? st);
-      const msg = `Named regressions: ${accepted} accepted, ${rejected} rejected (${parkNames.join(', ')})\n\nFrom the website's /dev/regressions page${login ? `, by ${login}` : ''}.` +
+      const parkNames = [...new Set([...Object.keys(decisions), ...Object.keys(edits)])].map((st) => parks.find((x) => x.stem === st)?.park ?? st);
+      const what = [accepted && `${accepted} accepted`, rejected && `${rejected} rejected`, updated && `${updated} entr${updated === 1 ? 'y' : 'ies'} edited`, deleted && `${deleted} deleted`].filter(Boolean).join(', ');
+      const msg = `Named regressions: ${what} (${parkNames.join(', ')})\n\nFrom the website's /dev/regressions page${login ? `, by ${login}` : ''}.` +
         (addedFixtures ? ` ${addedFixtures} park(s) added to fixtures/parks.json.` : '');
       await gh.commit(settings.branch, base, files, msg);
       const pr = open ?? await gh.createPull(settings.branch, 'Named regressions from the regressions page',
-        'Proposals accepted (as trail entries with traces) and rejected on the website\'s /dev/regressions page (routes#95). Each commit says what it decided.');
+        'Proposals accepted (as trail entries with traces) or rejected, and entries edited, on the website\'s /dev/regressions page (routes#95). Each commit says what it changed.');
       setDecisions({}); store(DECISIONS_KEY, {});
+      setEdits({}); store(EDITS_KEY, {});
       setCommitting(`Committed to ${settings.branch}: pull request #${pr.number}.`);
       setPull(pr);
       await load();
@@ -272,11 +375,14 @@ export default function Regressions({ build }: { build: string | null }) {
   };
 
   const btn = 'tap px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-40';
-  const counts = (pf: ParkFile) => {
+  const chip = (on: boolean) => `tap px-2.5 py-0.5 rounded-full border text-xs ${on ? 'bg-emerald-800 border-emerald-800 text-white' : 'border-gray-300 bg-white text-gray-800'}`;
+  const counts = (pf: Park) => {
     const open = pf.proposals.filter((p) => p.status === 'open').length;
-    const staged = Object.keys(decisions[pf.stem] ?? {}).length;
-    return `${open} open${staged ? `, ${staged} decided` : ''}`;
+    const changed = Object.keys(decisions[pf.stem] ?? {}).length + Object.keys(edits[pf.stem] ?? {}).length;
+    return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ');
   };
+  const t = newTrace();
+  const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `new trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
 
   return <div className='flex flex-col md:flex-row h-screen'>
     <aside className='md:w-[400px] md:h-full h-1/2 overflow-y-auto border-r border-gray-200 bg-white text-sm flex flex-col order-2 md:order-1'>
@@ -284,7 +390,7 @@ export default function Regressions({ build }: { build: string | null }) {
         <div className='flex items-start justify-between gap-2'>
           <div>
             <div className='text-lg font-semibold'>Named regressions</div>
-            <div className='text-gray-500 text-xs'>Trails parks list, proposed as regressions for <a className='underline' href={`https://github.com/${REPO}`} target='_blank' rel='noreferrer'>{REPO}</a>. Accept the hike meant, draw it, or reject.</div>
+            <div className='text-gray-500 text-xs'>For <a className='underline' href={`https://github.com/${REPO}`} target='_blank' rel='noreferrer'>{REPO}</a>: turn trails parks list into regressions, and check the ones there are.</div>
           </div>
           <button type='button' className={btn} onClick={() => setShowSettings(!showSettings)}>Settings</button>
         </div>
@@ -299,32 +405,48 @@ export default function Regressions({ build }: { build: string | null }) {
         {loadMsg && <div className='text-gray-600 text-xs'>{loadMsg}</div>}
         {parks.length > 0 && <>
           <div className='text-xs text-gray-500'>Reading from <b>{readFrom}</b>{pull && <> · open: <a className='underline' href={pull.html_url} target='_blank' rel='noreferrer'>#{pull.number}</a></>}</div>
-          <select className='border border-gray-300 rounded px-2 py-1' value={stem} onChange={(e) => { setStem(e.target.value); setSel(0); }}>
-            {parks.map((pf) => <option key={pf.stem} value={pf.stem}>{pf.park} ({pf.region}) — {counts(pf)}</option>)}
+          <select className='border border-gray-300 rounded px-2 py-1' value={stem} onChange={(e) => setStem(e.target.value)}>
+            {parks.map((pf) => <option key={pf.stem} value={pf.stem}>{pf.park} — {counts(pf)}</option>)}
           </select>
-          <div className='flex gap-1.5 text-xs'>
-            {(['open', 'all'] as const).map((f) => <button key={f} type='button' onClick={() => setFilter(f)}
-              className={`tap px-2.5 py-0.5 rounded-full border ${filter === f ? 'bg-emerald-800 border-emerald-800 text-white' : 'border-gray-300'}`}>{f === 'open' ? 'Open' : 'All'}</button>)}
+          <div className='flex gap-1.5 text-xs items-center'>
+            <button type='button' className={chip(tab === 'proposals')} disabled={!park?.proposals.length} onClick={() => setTab('proposals')}>Proposals ({park?.proposals.length ?? 0})</button>
+            <button type='button' className={chip(tab === 'entries')} disabled={!park?.entries.length} onClick={() => setTab('entries')}>Entries ({park?.entries.length ?? 0})</button>
+            {tab === 'proposals' && <span className='ml-auto flex gap-1'>
+              {(['open', 'all'] as const).map((f) => <button key={f} type='button' onClick={() => setFilter(f)} className={`tap px-2 rounded border ${filter === f ? 'border-gray-500' : 'border-transparent text-gray-500'}`}>{f === 'open' ? 'Open' : 'All'}</button>)}
+            </span>}
           </div>
           <div className='flex flex-wrap gap-1.5'>
-            {list.map(({ p, i }) => { const d = park && decisions[park.stem]?.[key(p)]; return <button key={key(p)} type='button' onClick={() => setSel(i)}
-              className={`tap px-2.5 py-0.5 rounded-full border text-xs ${i === sel ? 'bg-emerald-800 border-emerald-800 text-white' : 'border-gray-300 bg-white text-gray-800'}`}>
+            {tab === 'proposals' && proposals.map(({ p, i }) => { const d = park && decisions[park.stem]?.[key(p)]; return <button key={key(p)} type='button' onClick={() => setSubject({ type: 'proposal', i })} className={chip(subject?.type === 'proposal' && subject.i === i)}>
               <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${d ? (d.status === 'accepted' ? 'bg-emerald-500' : 'bg-red-500') : p.status === 'open' ? 'bg-gray-300' : p.status === 'accepted' ? 'bg-emerald-700' : 'bg-red-700'}`} />
               {p.name}</button>; })}
-            {!list.length && <span className='text-xs text-gray-500'>Nothing open in this park.</span>}
+            {tab === 'proposals' && !proposals.length && <span className='text-xs text-gray-500'>Nothing open in this park.</span>}
+            {tab === 'entries' && park?.entries.map((e, i) => { const x = edits[park.stem]?.[entryKey(e)]; return <button key={entryKey(e)} type='button' onClick={() => setSubject({ type: 'entry', i })} className={chip(subject?.type === 'entry' && subject.i === i)}>
+              <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${x ? (x.action === 'delete' ? 'bg-red-500' : 'bg-amber-500') : 'bg-gray-300'}`} />
+              {e.name}{(e.kind ?? 'dest') === 'dest' ? ' (dest)' : ''}</button>; })}
           </div>
         </>}
-        {cur && <div className='flex flex-col gap-1.5'>
-          <div className='font-semibold text-base'>{cur.name} <span className='font-normal text-gray-500 text-xs'>{cur.status !== 'open' ? `(${cur.status})` : ''}</span></div>
-          <div>The park says <b>{cur.km} km</b>{cur.km_basis ? ` (${cur.km_basis})` : ''}{cur.hours ? ` · ${cur.hours} h` : ''}. {cur.why}</div>
-          {cur.quote && <blockquote className='border-l-2 border-gray-300 pl-2 text-xs text-gray-700 break-words'>{cur.quote}</blockquote>}
-          <a className='text-emerald-800 underline text-xs break-all' href={cur.source} target='_blank' rel='noreferrer'>{cur.source.replace(/^https?:\/\/(www\.)?/, '')}</a>
-          <div className='text-xs text-gray-500'>OSM trail: {cur.osm_trail ? `${cur.osm_trail}${cur.osm_km ? ` (${cur.osm_km} km)` : ''}${trail === null && cur.osm_bbox ? ' · too long to draw here' : ''}` : 'none of this name: draw it'}</div>
-          {cur.suggest_why && <div className='text-xs bg-amber-50 text-amber-800 rounded px-2 py-1'>{cur.suggest_why}</div>}
+        {prop && <div className='flex flex-col gap-1.5'>
+          <div className='font-semibold text-base'>{prop.name} <span className='font-normal text-gray-500 text-xs'>{prop.status !== 'open' ? `(${prop.status})` : ''}</span></div>
+          <div>The park says <b>{prop.km} km</b>{prop.km_basis ? ` (${prop.km_basis})` : ''}{prop.hours ? ` · ${prop.hours} h` : ''}. {prop.why}</div>
+          {prop.quote && <blockquote className='border-l-2 border-gray-300 pl-2 text-xs text-gray-700 break-words'>{prop.quote}</blockquote>}
+          <a className='text-emerald-800 underline text-xs break-all' href={prop.source} target='_blank' rel='noreferrer'>{prop.source.replace(/^https?:\/\/(www\.)?/, '')}</a>
+          <div className='text-xs text-gray-500'>OSM trail: {prop.osm_trail ? `${prop.osm_trail}${prop.osm_km ? ` (${prop.osm_km} km)` : ''}${trail === null && prop.osm_bbox ? ' · too long to draw here' : ''}` : 'none of this name: draw it'}</div>
+          {prop.suggest_why && <div className='text-xs bg-amber-50 text-amber-800 rounded px-2 py-1'>{prop.suggest_why}</div>}
         </div>}
-        {cur && <>
+        {entry && <div className='flex flex-col gap-1.5'>
+          <div className='font-semibold text-base'>{entry.name} <span className='font-normal text-gray-500 text-xs'>{entry.kind ?? 'dest'} entry · {entry.issue}</span></div>
+          {(entry.kind ?? 'dest') === 'trail'
+            ? <div>Expects <b>{entry.km} km</b> (±{Math.round((entry.km_tolerance ?? 0.3) * 100)}%){entry.trace ? `, following its trace (${entry.trace.length} points, dashed; the dot is where it starts)` : entry.trail ? `, walking the OSM trail ${entry.trail}` : ', walking the OSM trail of its name'}. {entry.why}</div>
+            : <div>Expects a route to <b>{entry.dest}</b> from within {entry.start_within_m ?? '?'} m of the dot, at most {entry.max_km} km, named {entry.name}. {entry.why}</div>}
+          {entry.trace_note && <div className='text-xs text-gray-600'>Note: {entry.trace_note}</div>}
+          {(entry.source || entryProp?.source) && <a className='text-emerald-800 underline text-xs break-all' href={entry.source ?? entryProp!.source} target='_blank' rel='noreferrer'>{(entry.source ?? entryProp!.source).replace(/^https?:\/\/(www\.)?/, '')}</a>}
+          {entryProp?.quote && <blockquote className='border-l-2 border-gray-300 pl-2 text-xs text-gray-700 break-words'>{entryProp.quote}</blockquote>}
+          {(entry.kind ?? 'dest') === 'dest' && <div className='text-xs text-gray-500'>This page edits trail entries; a dest entry can only be deleted here.</div>}
+        </div>}
+        {(prop || entry) && <>
           <div className='flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600'>
             <span><i className='inline-block w-4 align-middle border-t-4 mr-1' style={{ borderColor: C.trail }} />OSM trail</span>
+            {entry && <span><i className='inline-block w-4 align-middle border-t-4 border-dashed mr-1' style={{ borderColor: C.trace }} />current trace</span>}
             <span><i className='inline-block w-4 align-middle border-t-4 mr-1' style={{ borderColor: C.cand }} />offered hike</span>
             <span><i className='inline-block w-4 align-middle border-t-4 mr-1' style={{ borderColor: C.sel }} />picked</span>
             <span><i className='inline-block w-4 align-middle border-t-4 mr-1' style={{ borderColor: C.draw }} />drawn</span>
@@ -335,34 +457,47 @@ export default function Regressions({ build }: { build: string | null }) {
               {offered.map((o, i) => <li key={i}><button type='button' onClick={() => { setDrawing(false); draw.clear(); setPick(pick === i ? null : i); if (pick !== i) map?.fitBounds(bounds([o.line]), { padding: 60, maxZoom: 15 }); }}
                 className={`tap w-full text-left rounded border px-2 py-1.5 ${pick === i ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50 hover:border-blue-400'}`}>
                 <div className='flex justify-between gap-2'><span className='font-medium break-words min-w-0'>{o.label}</span><span className='tabular-nums whitespace-nowrap'>{o.km} km</span></div>
-                <div className='text-xs text-gray-500'>{trail ? `${Math.round(o.share * 100)}% of the OSM trail` : o.share ? 'named for it' : 'nearby'}</div>
+                <div className='text-xs text-gray-500'>{o.check
+                  ? <>{o.check.ok ? <b className='text-emerald-700'>passes this entry</b> : 'doesn’t pass'} · name {o.check.name ? '✓' : '✗'} · length {o.check.length ? '✓' : '✗'} · follows {Math.round(o.check.follows * 100)}% of the trace</>
+                  : trail ? `${Math.round(o.share * 100)}% of the OSM trail` : o.share ? 'named for it' : 'nearby'}</div>
               </button></li>)}
               {!offered.length && <li className='text-xs text-gray-500'>Routes offers nothing here yet: draw it.</li>}
             </ol>
           </div>
-          <div className='flex flex-col gap-1.5 border border-gray-200 rounded p-2'>
+          {(prop || (entry?.kind ?? 'dest') === 'trail') && <div className='flex flex-col gap-1.5 border border-gray-200 rounded p-2'>
             <div className='flex items-center gap-1.5 flex-wrap'>
-              <button type='button' className={drawing ? `${btn} !bg-violet-700 !border-violet-700 !text-white` : btn} onClick={() => { setDrawing(!drawing); setPick(null); }}>{drawing ? 'Drawing: click along the hike' : 'Draw it'}</button>
+              <button type='button' className={drawing ? `${btn} !bg-violet-700 !border-violet-700 !text-white` : btn} onClick={() => { setDrawing(!drawing); setPick(null); }}>{drawing ? 'Drawing: click along the hike' : entry ? 'Redraw it' : 'Draw it'}</button>
               <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.undo}>Undo point</button>
               <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.clear}>Clear</button>
             </div>
-            {(drawing || draw.points.length > 0) && <div className='text-xs text-gray-600'>{draw.error ?? (draw.busy ? 'Routing…' : draw.points.length < 2 ? 'Click where the hike starts, then along it: each click is routed along trails.' : `${(draw.metres / 1000).toFixed(1)} km through ${draw.points.length} points (${lineKm(draw.coords).toFixed(1)} km of line).`)}</div>}
-          </div>
+            {(drawing || draw.points.length > 0) && <div className='text-xs text-gray-600'>{draw.error ?? (draw.busy ? 'Routing…' : draw.points.length < 2 ? 'Click where the hike starts (its trailhead), then along it: each click is routed along trails.' : `${(draw.metres / 1000).toFixed(1)} km through ${draw.points.length} points (${lineKm(draw.coords).toFixed(1)} km of line).`)}</div>}
+          </div>}
         </>}
       </div>
-      {cur && <div className='mt-auto sticky bottom-0 bg-white border-t border-gray-200 p-3 flex flex-col gap-1.5'>
-        <div className='flex items-center gap-2'>
+      {(prop || entry) && <div className='mt-auto sticky bottom-0 bg-white border-t border-gray-200 p-3 flex flex-col gap-1.5'>
+        {(prop || (entry?.kind ?? 'dest') === 'trail') && <div className='flex items-center gap-2'>
           <label className='text-xs text-gray-600 flex items-center gap-1'>Expect <input type='number' step='0.1' min='0' className='border border-gray-300 rounded px-1.5 py-0.5 w-20' value={km} onChange={(e) => setKm(e.target.value)} /> km</label>
           <input className='border border-gray-300 rounded px-2 py-0.5 text-sm flex-1 min-w-0' placeholder='Note (optional)' value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
-        <div className='flex gap-1.5'>
-          <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={!(kmNum > 0) || draw.busy || !(draw.coords.length > 1 || pick !== null)} onClick={accept}>Accept {draw.coords.length > 1 ? 'drawn hike' : pick !== null ? 'this hike' : ''}</button>
-          <button type='button' className={btn} onClick={reject}>Reject</button>
-          {dec && <button type='button' className={btn} onClick={() => setDecision(null)}>Undo</button>}
-        </div>
-        <div className='text-xs text-gray-600'>{dec ? <>Decided: <b>{dec.status === 'accepted' ? `accept, ${dec.km} km, ${dec.how}` : 'reject'}</b>{dec.note ? ` · ${dec.note}` : ''}</> : 'Not decided.'}</div>
+        </div>}
+        {prop && <>
+          <div className='flex gap-1.5'>
+            <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={!(kmNum > 0) || draw.busy || !t} onClick={accept}>Accept {draw.coords.length > 1 ? 'drawn hike' : pick !== null ? 'this hike' : ''}</button>
+            <button type='button' className={btn} onClick={() => setDecision({ status: 'rejected', note: note.trim() || undefined })}>Reject</button>
+            {dec && <button type='button' className={btn} onClick={() => setDecision(null)}>Undo</button>}
+          </div>
+          <div className='text-xs text-gray-600'>{dec ? <>Decided: <b>{dec.status === 'accepted' ? `accept, ${dec.km} km, ${dec.how}` : 'reject'}</b>{dec.note ? ` · ${dec.note}` : ''}</> : 'Not decided.'}</div>
+        </>}
+        {entry && <>
+          <div className='flex gap-1.5'>
+            {(entry.kind ?? 'dest') === 'trail' && <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={draw.busy || !(t || (kmNum > 0 && kmNum !== entry.km) || note.trim())} onClick={saveEntry}>
+              {t ? `Use ${draw.coords.length > 1 ? 'drawn hike' : 'this hike'} as its trace` : 'Save changes'}</button>}
+            <button type='button' className={btn} onClick={() => setEdit({ action: 'delete', note: note.trim() || undefined })}>Delete entry</button>
+            {edit && <button type='button' className={btn} onClick={() => setEdit(null)}>Undo</button>}
+          </div>
+          <div className='text-xs text-gray-600'>{edit ? <>Changed: <b>{editSummary(edit)}</b>{edit.note ? ` · ${edit.note}` : ''}</> : 'Unchanged.'}</div>
+        </>}
         <div className='flex items-center gap-2 border-t border-gray-100 pt-1.5'>
-          <button type='button' className={btn} disabled={!nDecided || !!committing?.startsWith('Committing')} onClick={commit}>Commit {nDecided} decision{nDecided === 1 ? '' : 's'}</button>
+          <button type='button' className={btn} disabled={!nChanges || !!committing?.startsWith('Committing')} onClick={commit}>Commit {nChanges} change{nChanges === 1 ? '' : 's'}</button>
           <span className='text-xs text-gray-600'>{committing ?? (token ? `to ${settings.branch}, as a pull request` : 'needs a token (Settings)')}</span>
         </div>
       </div>}
