@@ -132,20 +132,71 @@ def places(db):
     return places_cache[db]
 
 
+# db -> [(folded words, park)] of every park, and its parks by first letter.
+parks_cache = {}
+
+# A park named by the start of its name ("granite ridge trail kil" for
+# Killarney PP) needs at least this many letters of the last word: one or
+# two would match thousands of parks.
+PARK_PREFIX_MIN = 3
+
+
+def parks(db):
+    if db not in parks_cache:
+        by_letter = {}
+        for (p,) in db.execute('select distinct park from items where park is not null'):
+            words = fold(p).replace(',', ' ').split()
+            if words:
+                by_letter.setdefault(words[0][0], []).append((words, p))
+        parks_cache[db] = by_letter
+    return parks_cache[db]
+
+
+def starts(typed, words, partial_min=1):
+    """Whether typed words begin words: all but the last whole, the last a
+    prefix (at least partial_min letters, if it's not the whole word)."""
+    if len(typed) > len(words):
+        return False
+    for i, w in enumerate(typed):
+        last = i == len(typed) - 1
+        if w == words[i]:
+            continue
+        if not (last and len(w) >= partial_min and words[i].startswith(w)):
+            return False
+    return True
+
+
 def split_place(q, db):
-    """("Bear Mountain", ('state', 'British Columbia')) for "Bear Mountain,
-    British Columbia" or "Bear Mountain BC"; None if q doesn't end in a
-    state, province or country. The longest match wins ("New Brunswick", not
-    "Brunswick")."""
+    """Ways q may end with where it is: [(name, column, [values])], longest
+    place first. "Bear Mountain BC", "Dawson Creek, British Columbia" and
+    "Dawson Creek b" end in a state or province (#250: a prefix will do);
+    "Granite Ridge Trail Killarney" and "... kil" in a park (the start of its
+    name). The longest match wins ("New Brunswick", not "Brunswick")."""
     words = q.replace(',', ' ').split()
     known = places(db)
+    out = []
     for n in (4, 3, 2, 1):
         if len(words) <= n:
             continue
-        place = known.get(fold(' '.join(words[-n:])))
-        if place:
-            return ' '.join(words[:-n]), place
-    return None
+        name, typed = ' '.join(words[:-n]), [fold(w) for w in words[-n:]]
+        whole = ' '.join(typed)
+        # States and countries: their whole name or abbreviation, or the
+        # start of their name.
+        hits = {}
+        if whole in known:
+            col, v = known[whole]
+            hits.setdefault(col, []).append(v)
+        else:
+            for k, (col, v) in known.items():
+                if len(k) > 3 and starts(typed, k.split()) and v not in hits.get(col, []):
+                    hits.setdefault(col, []).append(v)
+        for col, vs in hits.items():
+            out.append((name, col, vs))
+        # Parks: the start of their name.
+        ps = [p for ws, p in parks(db).get(typed[0][0], []) if starts(typed, ws, PARK_PREFIX_MIN)]
+        if ps:
+            out.append((name, 'park', ps[:50]))
+    return out
 
 
 def fts_query(q):
@@ -197,13 +248,12 @@ def search(q, db=None, near=None):
     # that name in that place, after the plain matches ("Lake Ontario" is a
     # lake, not lakes in Ontario).
     if len(hits) < 10:
-        split = split_place(q, db)
-        if split:
-            name, (col, value) = split
-            seen = {h['rowid'] for h in hits}
-            for h in search_names(fts_query(name), db, col, value):
+        seen = {h['rowid'] for h in hits}
+        for name, col, values in split_place(q, db):
+            for h in search_names(fts_query(name), db, col, values):
                 if h['rowid'] not in seen and len(hits) < 10:
                     hits.append(h)
+                    seen.add(h['rowid'])
     for h in hits:
         del h['rowid']
     return hits
@@ -216,10 +266,10 @@ def box_around(near, km):
     return (lat - dlat, lat + dlat, lon - dlon, lon + dlon)
 
 
-def search_names(q, db, col=None, value=None, limit=10, box=None):
+def search_names(q, db, col=None, values=None, limit=10, box=None):
     """The limit best items whose names match the FTS query q, optionally
-    only those with col (state or country) = value, or in box (min lat, max
-    lat, min lon, max lon)."""
+    only those with col (state, country or park) in values, or in box (min
+    lat, max lat, min lon, max lon)."""
     db.row_factory = None
     if box:
         # Every match, not just the popular ones: near the map, the obscure
@@ -229,10 +279,10 @@ def search_names(q, db, col=None, value=None, limit=10, box=None):
         args = (q, *box, limit)
     elif col:
         # Every match, not just the popular ones: filtering by place is for
-        # finding the obscure Bear Mountain.
+        # finding the obscure Bear Mountain, or a park's own trail.
         sql = ("select rowid, * from items where rowid in (select rowid from fts where name match ?)"
-               " and {} = ? order by qrank desc limit ?".format(col))
-        args = (q, value, limit)
+               " and {} in ({}) order by qrank desc limit ?".format(col, ','.join('?' * len(values))))
+        args = (q, *values, limit)
     else:
         count = db.execute("select count(*) from fts_popular where name match ?", (q,)).fetchone()[0]
         table = 'fts_popular' if count >= 100 else 'fts'
