@@ -169,17 +169,23 @@ export function norm(s: string | null | undefined): string {
 
 // Whether a hike offered under `label` (its name) passes a trail entry with a
 // trace, as routes' expect.py checks it: offered under the name, within
-// km_tolerance of km, starting (its line's first point) within trace_start_m
+// km_tolerance of km or within 0.85-1.4 times the trace's own length (a
+// trace says which hike is meant better than a park's rounded figure; it cuts
+// corners, so it's shorter than the hike), starting (its line's first point) within trace_start_m
 // of the trace's first point, the trailhead (null: not checked), and within
 // trace_within_m of trace_cover of the trace's points.
-export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; start: boolean | null; startOff: number | null; follows: number; ok: boolean } {
+export const TRACE_KM: [number, number] = [0.85, 1.4];
+export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; follows: number; ok: boolean } {
   const names = new Set([e.name, e.trail, ...(e.aka ?? [])].filter(Boolean).map((n) => norm(n as string)));
   const name = label !== null && names.has(norm(label));
   const tol = e.km_tolerance ?? 0.3;
-  const length = e.km !== undefined && km >= e.km * (1 - tol) && km <= e.km * (1 + tol);
+  const byPark = e.km !== undefined && km >= e.km * (1 - tol) && km <= e.km * (1 + tol);
+  const tk = e.trace?.length ? lineKm(e.trace) : 0;
+  const byTrace = !byPark && tk > 0 && km >= tk * TRACE_KM[0] && km <= tk * TRACE_KM[1];
+  const length = byPark || byTrace;
   const follows = e.trace?.length ? walks([e.trace], line, e.trace_within_m ?? 50) : 0;
   const startM = e.trace_start_m === undefined ? 150 : e.trace_start_m;
   const startOff = e.trace?.length && line.length ? haversine(e.trace[0], line[0]) : null;
   const start = startM === null ? null : startOff !== null && startOff <= startM;
-  return { name, length, start, startOff, follows, ok: name && length && start !== false && follows >= (e.trace_cover ?? 0.7) };
+  return { name, length, byTrace, start, startOff, follows, ok: name && length && start !== false && follows >= (e.trace_cover ?? 0.7) };
 }
