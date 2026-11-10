@@ -2,7 +2,8 @@
 // regressions page (routes/dev.regressions.tsx).
 //
 // Reads go through raw.githubusercontent.com (the repo is public; no token,
-// no rate limit), or the API with the token where one is set. Writes need a
+// no rate limit), at a commit the API resolves a branch to, so the file CDN's
+// 5-minute cache of a branch's files never shows stale ones. Writes need a
 // token: a fine-grained one, for hikeratlas/routes only, with Contents and
 // Pull requests read and write. They go to a working branch, as one commit,
 // and a pull request from it to main: the routes CI checks the entries
@@ -16,6 +17,9 @@ export class GitHub {
 
   private async api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const r = await fetch(`${API}${path}`, {
+      // The API says max-age=60: always ask, so a ref read just after a push
+      // or merge is the new one.
+      cache: 'no-store',
       ...init,
       headers: {
         Accept: 'application/vnd.github+json',
