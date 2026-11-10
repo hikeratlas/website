@@ -1,12 +1,13 @@
 // A route drawn by clicking points on the map: each click is routed along
-// trails and roads from the one before (see app/routing/), and the last point
-// can be undone. Used by the map's route planner and the named-regressions
-// page (routes/dev.regressions.tsx).
+// trails and roads from the one before (see app/routing/), the last point can
+// be undone, and any point can be dragged (mouse or touch), re-routing the
+// legs either side of it. Its start and end are labelled. Used by the map's
+// route planner and the named-regressions page (routes/dev.regressions.tsx).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
-import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapMouseEvent } from 'maplibre-gl';
+import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapLayerMouseEvent, MapLayerTouchEvent, MapMouseEvent } from 'maplibre-gl';
 import { withZstd, type Decompress } from '~/zstd';
-import { Z, buildGraph, lngLatToTile, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
+import { Z, buildGraph, haversine, lngLatToTile, shortestPath, snapPair, tilesAround, worldToLngLat, type LngLat } from '~/routing/graph';
 import { CoalescingSource, type Source } from '~/routing/source';
 
 declare const pmtiles: {
@@ -19,6 +20,24 @@ declare const pmtiles: {
 type Archive = InstanceType<typeof pmtiles.PMTiles>;
 
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
+export const START_COLOR = '#15803d', END_COLOR = '#b91c1c';
+// The basemap style's label font (its glyphs are what the map can draw).
+export const LABEL_FONT = ['Hubot Sans-Regular'];
+// A route whose ends are this close is a loop or an out-and-back: one marker.
+const SAME_END_M = 30;
+
+// The start and end of a line, as labelled points: "Start" and "End", or one
+// "Start · End" where it comes back to where it started. `prefix` names them
+// ("Trace start"); `extra` is copied onto each feature.
+export function endFeatures(line: LngLat[], prefix = '', extra: Record<string, unknown> = {}): GeoJSON.Feature[] {
+  if (!line.length) return [];
+  const a = line[0], b = line[line.length - 1];
+  const name = (s: string) => (prefix ? `${prefix} ${s.toLowerCase()}` : s);
+  const same = line.length < 2 || haversine(a, b) <= SAME_END_M;
+  const f = (p: LngLat, role: string, label: string): GeoJSON.Feature => ({ type: 'Feature', properties: { role, label, color: role === 'end' ? END_COLOR : START_COLOR, ...extra }, geometry: { type: 'Point', coordinates: p } });
+  return same ? [f(a, 'start', prefix ? `${prefix} start · end` : 'Start · End')]
+    : [f(a, 'start', name('Start')), f(b, 'end', name('End'))];
+}
 
 interface Leg { coords: LngLat[]; metres: number }
 
@@ -36,6 +55,8 @@ export interface Waypoints {
   clear: () => void;
   // Replace the points (and route them), e.g. to restore a saved route.
   set: (points: LngLat[]) => Promise<void>;
+  // Move point i to p, re-routing the legs either side (what dragging does).
+  move: (i: number, p: LngLat) => Promise<void>;
 }
 
 // `id` prefixes the map sources and layers it adds; `active` is whether
@@ -69,7 +90,16 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     const round: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
     map.addLayer({ id: `${id}-line-casing`, type: 'line', source: `${id}-line`, layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
     map.addLayer({ id: `${id}-line`, type: 'line', source: `${id}-line`, layout: round, paint: { 'line-color': color, 'line-width': 4 } });
-    map.addLayer({ id: `${id}-points`, type: 'circle', source: `${id}-points`, paint: { 'circle-radius': ['case', ['get', 'end'], 7, 5], 'circle-color': color, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+    // Points: the start green, the end red, the rest the route's colour; a
+    // wide invisible ring under each takes a finger's drag on a phone.
+    map.addLayer({ id: `${id}-hit`, type: 'circle', source: `${id}-points`, paint: { 'circle-radius': 18, 'circle-color': '#000000', 'circle-opacity': 0 } });
+    map.addLayer({ id: `${id}-points`, type: 'circle', source: `${id}-points`, paint: {
+      'circle-radius': ['match', ['get', 'role'], 'via', 6, 8],
+      'circle-color': ['match', ['get', 'role'], 'start', START_COLOR, 'end', END_COLOR, color],
+      'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
+    map.addLayer({ id: `${id}-labels`, type: 'symbol', source: `${id}-points`, filter: ['!=', ['get', 'role'], 'via'], layout: {
+      'text-field': ['get', 'label'], 'text-font': LABEL_FONT, 'text-size': 13, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-allow-overlap': true },
+      paint: { 'text-color': ['match', ['get', 'role'], 'end', END_COLOR, START_COLOR], 'text-halo-color': '#ffffff', 'text-halo-width': 2 } });
   }, [map, id, color]);
 
   useEffect(() => {
@@ -86,11 +116,25 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     if (!map || !layers.current) return;
     map.getSource<GeoJSONSource>(`${id}-line`)?.setData(coords.length
       ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } } : EMPTY);
-    map.getSource<GeoJSONSource>(`${id}-points`)?.setData({
-      type: 'FeatureCollection',
-      features: points.map((p, i): GeoJSON.Feature => ({ type: 'Feature', properties: { end: i === 0 || i === points.length - 1 }, geometry: { type: 'Point', coordinates: p } })),
-    });
+    map.getSource<GeoJSONSource>(`${id}-points`)?.setData(pointsData(points));
   }, [map, id, points, legs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The points as features: each with its index `i` and `role` (start, end,
+  // via, or start for both where the route comes back to its start), and
+  // the start and end labelled.
+  const pointsData = (ps: LngLat[]): FeatureCollection => {
+    const loop = ps.length > 2 && haversine(ps[0], ps[ps.length - 1]) <= SAME_END_M;
+    return {
+      type: 'FeatureCollection',
+      features: ps.map((p, i): GeoJSON.Feature => {
+        const role = i === 0 ? 'start' : i === ps.length - 1 ? (loop ? 'via' : 'end') : 'via';
+        const label = i === 0 ? (loop ? 'Start · End' : 'Start') : role === 'end' ? 'End' : '';
+        return { type: 'Feature', properties: { i, role, label }, geometry: { type: 'Point', coordinates: p } };
+      // Drawn in order: the start last, so on a loop its green marker sits
+      // on top of the end that shares its place.
+      }).sort((a, b) => Number(a.properties!.role === 'start') - Number(b.properties!.role === 'start')),
+    };
+  };
 
   const commit = () => { setPoints([...state.current.points]); setLegs([...state.current.legs]); };
 
@@ -145,6 +189,22 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     setError(null);
   }); }, [enqueue]);
 
+  // Point i to p: the legs before and after it are routed again, through p.
+  const move = useCallback((i: number, p: LngLat) => enqueue(async () => {
+    const s = state.current;
+    setError(null);
+    if (i < 0 || i >= s.points.length) return;
+    if (s.points.length === 1) { s.points[0] = p; return; }
+    const before = i > 0 ? await routeLeg(s.points[i - 1], p) : null;
+    if (i > 0 && !before) { setError('No route to that point on trails or roads.'); return; }
+    const at = before ? before.coords.at(-1)! : p;
+    const after = i < s.points.length - 1 ? await routeLeg(at, s.points[i + 1]) : null;
+    if (i < s.points.length - 1 && !after) { setError('No route from that point on trails or roads.'); return; }
+    if (before) s.legs[i - 1] = before;
+    if (after) s.legs[i] = after;
+    s.points[i] = before ? at : after!.coords[0];
+  }), [enqueue, routeLeg]);
+
   const set = useCallback(async (ps: LngLat[]) => {
     await enqueue(async () => { state.current = { points: [], legs: [] }; });
     for (const p of ps) await add(p);
@@ -153,10 +213,64 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
   useEffect(() => {
     if (!map || !active) return;
     map.getCanvas().style.cursor = 'crosshair';
-    const onClick = (e: MapMouseEvent) => { add([e.lngLat.lng, e.lngLat.lat]); };
+    const onClick = (e: MapMouseEvent) => {
+      // A click on a point is the start of a drag, not a new point.
+      if (map.getLayer(`${id}-hit`) && map.queryRenderedFeatures(e.point, { layers: [`${id}-hit`] }).length) return;
+      add([e.lngLat.lng, e.lngLat.lat]);
+    };
     map.on('click', onClick);
     return () => { map.off('click', onClick); map.getCanvas().style.cursor = ''; };
-  }, [map, active, add]);
+  }, [map, active, add, id]);
 
-  return { points, coords, metres, busy, error, undo, clear, set };
+  // Dragging a point, with a mouse or a finger: it follows the pointer, and
+  // on release the legs either side are routed through where it was dropped.
+  useEffect(() => {
+    if (!map) return;
+    const hit = `${id}-hit`;
+    let dragging: number | null = null;
+    const follow = (p: LngLat) => {
+      const ps = [...state.current.points];
+      ps[dragging!] = p;
+      map.getSource<GeoJSONSource>(`${id}-points`)?.setData(pointsData(ps));
+    };
+    const start = (e: MapLayerMouseEvent | MapLayerTouchEvent) => {
+      const i = e.features?.[0]?.properties?.i;
+      if (typeof i !== 'number') return;
+      if ('points' in e && e.points.length !== 1) return;
+      e.preventDefault();
+      dragging = i;
+      map.dragPan.disable();
+      map.getCanvas().style.cursor = 'grabbing';
+    };
+    const moveTo = (e: MapMouseEvent | MapLayerTouchEvent) => { if (dragging !== null) follow([e.lngLat.lng, e.lngLat.lat]); };
+    const end = (e: MapMouseEvent | MapLayerTouchEvent) => {
+      if (dragging === null) return;
+      const i = dragging;
+      dragging = null;
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = active ? 'crosshair' : '';
+      const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
+      // A loop or an out-and-back starts and ends at one place: dragging
+      // either end moves both, as one trailhead.
+      const ps = state.current.points, last = ps.length - 1;
+      if (last > 1 && (i === 0 || i === last) && haversine(ps[0], ps[last]) <= SAME_END_M) {
+        move(0, p).then(() => move(last, state.current.points[0]));
+      } else move(i, p);
+    };
+    const over = () => { if (dragging === null) map.getCanvas().style.cursor = 'grab'; };
+    const out = () => { if (dragging === null) map.getCanvas().style.cursor = active ? 'crosshair' : ''; };
+    map.on('mousedown', hit, start); map.on('touchstart', hit, start);
+    map.on('mousemove', moveTo); map.on('touchmove', moveTo);
+    map.on('mouseup', end); map.on('touchend', end);
+    map.on('mouseenter', hit, over); map.on('mouseleave', hit, out);
+    return () => {
+      map.off('mousedown', hit, start); map.off('touchstart', hit, start);
+      map.off('mousemove', moveTo); map.off('touchmove', moveTo);
+      map.off('mouseup', end); map.off('touchend', end);
+      map.off('mouseenter', hit, over); map.off('mouseleave', hit, out);
+      if (dragging !== null) map.dragPan.enable();
+    };
+  }, [map, id, active, move]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { points, coords, metres, busy, error, undo, clear, set, move };
 }

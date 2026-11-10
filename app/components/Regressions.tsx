@@ -15,7 +15,7 @@ import type { Map as MaplibreMap, GeoJSONSource, MapLayerMouseEvent } from 'mapl
 import Map from '~/components/Map';
 import { styleUrl, tilesUrl } from '~/build';
 import { parkRoutes } from '~/components/CuratedRoutes';
-import { useWaypoints } from '~/components/useWaypoints';
+import { LABEL_FONT, endFeatures, useWaypoints } from '~/components/useWaypoints';
 import { trailGeometry } from '~/routing/trail';
 import { CoalescingSource, type Source } from '~/routing/source';
 import { withZstd, type Decompress } from '~/zstd';
@@ -23,7 +23,7 @@ import type { LngLat } from '~/routing/graph';
 import type { ParkDoc, Route } from '~/hikes';
 import { GitHub, REPO } from '~/regressions/github';
 import {
-  entryFor, entryKey, fixtureFor, key, lineKm, norm, parseJsonl, passes, simplify, toJsonl, walks, withFields,
+  entryFor, entryKey, fixtureFor, key, norm, parseJsonl, passes, simplify, toJsonl, walks, withFields,
   type Decision, type Entry, type EntryEdit, type ParkFile, type Proposal,
 } from '~/regressions/model';
 
@@ -90,6 +90,9 @@ export default function Regressions({ build }: { build: string | null }) {
   const [login, setLogin] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>({ branch: 'regressions', base: 'main' });
   const [showSettings, setShowSettings] = useState(false);
+  // Phones: the map takes 70% of the screen instead of half (to drag points).
+  const [bigMap, setBigMap] = useState(false);
+  useEffect(() => { map?.resize(); }, [map, bigMap]);
   const [parks, setParks] = useState<Park[]>([]);
   const [readFrom, setReadFrom] = useState<string>('');
   const [pull, setPull] = useState<{ number: number; html_url: string } | null>(null);
@@ -184,7 +187,7 @@ export default function Regressions({ build }: { build: string | null }) {
   // Map layers.
   const addLayers = useCallback(() => {
     if (!map || map.getSource('rg-trail')) return;
-    for (const id of ['rg-trail', 'rg-cands', 'rg-trace', 'rg-start']) map.addSource(id, { type: 'geojson', data: EMPTY, ...(id === 'rg-cands' ? { promoteId: 'i' } : {}) });
+    for (const id of ['rg-trail', 'rg-cands', 'rg-trace', 'rg-ends']) map.addSource(id, { type: 'geojson', data: EMPTY, ...(id === 'rg-cands' ? { promoteId: 'i' } : {}) });
     const round = { 'line-join': 'round', 'line-cap': 'round' } as const;
     map.addLayer({ id: 'rg-trail', type: 'line', source: 'rg-trail', layout: round, paint: { 'line-color': C.trail, 'line-width': 12, 'line-opacity': 0.45 } });
     map.addLayer({ id: 'rg-cands', type: 'line', source: 'rg-cands', layout: round, paint: {
@@ -192,7 +195,14 @@ export default function Regressions({ build }: { build: string | null }) {
       'line-width': ['case', ['boolean', ['feature-state', 'sel'], false], 6, ['boolean', ['feature-state', 'hover'], false], 5, 3],
       'line-opacity': ['case', ['any', ['boolean', ['feature-state', 'sel'], false], ['boolean', ['feature-state', 'hover'], false]], 1, 0.6] } });
     map.addLayer({ id: 'rg-trace', type: 'line', source: 'rg-trace', layout: round, paint: { 'line-color': C.trace, 'line-width': 3, 'line-dasharray': [2, 2] } });
-    map.addLayer({ id: 'rg-start', type: 'circle', source: 'rg-start', paint: { 'circle-radius': 9, 'circle-color': C.trace, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 } });
+    // Where the trace, and the hike picked, start and end: green and red,
+    // labelled, the trace's ringed in its own near-black.
+    map.addLayer({ id: 'rg-ends', type: 'circle', source: 'rg-ends', paint: {
+      'circle-radius': ['match', ['get', 'of'], 'trace', 9, 7], 'circle-color': ['get', 'color'],
+      'circle-stroke-color': ['match', ['get', 'of'], 'trace', C.trace, '#ffffff'], 'circle-stroke-width': 3 } });
+    map.addLayer({ id: 'rg-ends-labels', type: 'symbol', source: 'rg-ends', layout: {
+      'text-field': ['get', 'label'], 'text-font': LABEL_FONT, 'text-size': 13, 'text-offset': [0, 1.3], 'text-anchor': 'top', 'text-allow-overlap': true },
+      paint: { 'text-color': ['get', 'color'], 'text-halo-color': '#ffffff', 'text-halo-width': 2 } });
     for (const id of ['rg-draw-line-casing', 'rg-draw-line', 'rg-draw-points']) if (map.getLayer(id)) map.moveLayer(id);
   }, [map]);
   useEffect(() => { if (!map) return; if (map.isStyleLoaded()) addLayers(); else map.once('load', addLayers); }, [map, addLayers]);
@@ -209,8 +219,6 @@ export default function Regressions({ build }: { build: string | null }) {
     else { setKm(String((edit?.action === 'update' ? edit.km : undefined) ?? entry!.km ?? '')); setNote(edit?.note ?? ''); }
     if (map.getSource('rg-trace')) {
       map.getSource<GeoJSONSource>('rg-trace')!.setData(trace ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: trace } } : EMPTY);
-      const start = trace?.[0] ?? entry?.start;
-      map.getSource<GeoJSONSource>('rg-start')!.setData(start ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: start } } : EMPTY);
     }
     if (!archive.current) archive.current = new pmtiles.PMTiles(new CoalescingSource(new pmtiles.FetchSource(tilesUrl(routesBuild))), undefined, withZstd(new pmtiles.PMTiles('').decompress));
     (async () => {
@@ -245,6 +253,30 @@ export default function Regressions({ build }: { build: string | null }) {
     })();
     return () => { live = false; };
   }, [map, park?.stem, subject, readFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The start and end of the entry's trace (or a dest entry's trailhead),
+  // and of the hike picked, labelled.
+  useEffect(() => {
+    if (!map || !map.getSource('rg-ends')) return;
+    const trace = entry?.trace ?? null;
+    const features = [
+      ...(trace ? endFeatures(trace, 'Trace', { of: 'trace' })
+        : entry?.start ? endFeatures([entry.start], 'Trailhead', { of: 'trace' }).map((f) => ({ ...f, properties: { ...f.properties, label: 'Trailhead' } })) : []),
+      ...(pick !== null && offered[pick] ? endFeatures(offered[pick].line, 'Hike', { of: 'hike' }) : []),
+    ];
+    map.getSource<GeoJSONSource>('rg-ends')!.setData({ type: 'FeatureCollection', features });
+  }, [map, entry, pick, offered]);
+
+  // A line as a few points to drag: its start, its end, and the turns that
+  // keep its shape within ~100 m or more, at most a dozen. Dragging re-routes
+  // between them along the trails.
+  const editLine = (line: LngLat[]) => {
+    let pts = simplify(line, 100);
+    for (let tol = 200; pts.length > 12 && tol < 5000; tol *= 2) pts = simplify(line, tol);
+    setPick(null);
+    setDrawing(true);
+    draw.set(pts);
+  };
 
   // Draw what's selected.
   useEffect(() => {
@@ -384,15 +416,18 @@ export default function Regressions({ build }: { build: string | null }) {
   const t = newTrace();
   const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `new trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
 
-  return <div className='flex flex-col md:flex-row h-screen'>
-    <aside className='md:w-[400px] md:h-full h-1/2 overflow-y-auto border-r border-gray-200 bg-white text-sm flex flex-col order-2 md:order-1'>
-      <div className='p-3 flex flex-col gap-3'>
+  return <div className='flex flex-col md:flex-row h-[100dvh]'>
+    <aside className={`md:w-[400px] md:h-full ${bigMap ? 'h-[30%]' : 'h-1/2'} overflow-y-auto border-r border-gray-200 bg-white text-sm flex flex-col order-2 md:order-1`}>
+      <div className='p-2 md:p-3 flex flex-col gap-2 md:gap-3'>
         <div className='flex items-start justify-between gap-2'>
           <div>
             <div className='text-lg font-semibold'>Named regressions</div>
             <div className='text-gray-500 text-xs'>For <a className='underline' href={`https://github.com/${REPO}`} target='_blank' rel='noreferrer'>{REPO}</a>: turn trails parks list into regressions, and check the ones there are.</div>
           </div>
-          <button type='button' className={btn} onClick={() => setShowSettings(!showSettings)}>Settings</button>
+          <div className='flex gap-1.5 shrink-0'>
+            <button type='button' className={`${btn} md:hidden`} onClick={() => setBigMap(!bigMap)}>{bigMap ? 'Smaller map' : 'Bigger map'}</button>
+            <button type='button' className={btn} onClick={() => setShowSettings(!showSettings)}>Settings</button>
+          </div>
         </div>
         {showSettings && <div className='border border-gray-200 rounded p-2 flex flex-col gap-2 text-xs'>
           <label className='flex flex-col gap-1'>GitHub token (fine-grained: {REPO} only, Contents and Pull requests read and write). Kept in this browser.
@@ -467,14 +502,16 @@ export default function Regressions({ build }: { build: string | null }) {
           {(prop || (entry?.kind ?? 'dest') === 'trail') && <div className='flex flex-col gap-1.5 border border-gray-200 rounded p-2'>
             <div className='flex items-center gap-1.5 flex-wrap'>
               <button type='button' className={drawing ? `${btn} !bg-violet-700 !border-violet-700 !text-white` : btn} onClick={() => { setDrawing(!drawing); setPick(null); }}>{drawing ? 'Drawing: click along the hike' : entry ? 'Redraw it' : 'Draw it'}</button>
+              {!drawing && !draw.points.length && (pick !== null || entry?.trace) && <button type='button' className={btn}
+                onClick={() => editLine(pick !== null ? offered[pick].line : entry!.trace!)}>{pick !== null ? 'Edit this hike' : 'Edit the trace'}</button>}
               <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.undo}>Undo point</button>
               <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.clear}>Clear</button>
             </div>
-            {(drawing || draw.points.length > 0) && <div className='text-xs text-gray-600'>{draw.error ?? (draw.busy ? 'Routing…' : draw.points.length < 2 ? 'Click where the hike starts (its trailhead), then along it: each click is routed along trails.' : `${(draw.metres / 1000).toFixed(1)} km through ${draw.points.length} points (${lineKm(draw.coords).toFixed(1)} km of line).`)}</div>}
+            {(drawing || draw.points.length > 0) && <div className='text-xs text-gray-600'>{draw.error ?? (draw.busy ? 'Routing…' : draw.points.length < 2 ? 'Click where the hike starts (its trailhead), then along it: each click is routed along trails.' : `${(draw.metres / 1000).toFixed(1)} km through ${draw.points.length} points. Drag a point to move it, Start and End included.`)}</div>}
           </div>}
         </>}
       </div>
-      {(prop || entry) && <div className='mt-auto sticky bottom-0 bg-white border-t border-gray-200 p-3 flex flex-col gap-1.5'>
+      {(prop || entry) && <div className='mt-auto md:sticky md:bottom-0 bg-white border-t border-gray-200 p-2 md:p-3 flex flex-col gap-1.5'>
         {(prop || (entry?.kind ?? 'dest') === 'trail') && <div className='flex items-center gap-2'>
           <label className='text-xs text-gray-600 flex items-center gap-1'>Expect <input type='number' step='0.1' min='0' className='border border-gray-300 rounded px-1.5 py-0.5 w-20' value={km} onChange={(e) => setKm(e.target.value)} /> km</label>
           <input className='border border-gray-300 rounded px-2 py-0.5 text-sm flex-1 min-w-0' placeholder='Note (optional)' value={note} onChange={(e) => setNote(e.target.value)} />
