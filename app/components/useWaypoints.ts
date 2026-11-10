@@ -1,7 +1,7 @@
 // A route drawn by clicking points on the map: each click is routed along
 // trails and roads from the one before (see app/routing/), and the last point
-// can be undone. Used by the map's route planner and the trace picker
-// (routes/dev.trace.tsx).
+// can be undone. Used by the map's route planner and the named-regressions
+// page (routes/dev.regressions.tsx).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapMouseEvent } from 'maplibre-gl';
