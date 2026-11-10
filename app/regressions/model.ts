@@ -83,38 +83,36 @@ export function entryFor(p: Proposal, d: Decision): Record<string, unknown> {
   };
 }
 
-// Douglas-Peucker, with the tolerance doubled from ~10 m until at most `max`
-// points remain (as routes' apply-picks.py). The points kept are the line's
-// own, so they sit on the trail.
-export function simplify(line: LngLat[], max = 20): LngLat[] {
+// Douglas-Peucker at a fixed tolerance (metres), so a trace keeps the hike's
+// shape and length however long it is: routes' expect.py also measures a
+// trace's length, and a few points on a winding trail cut its corners (a cap
+// of 20 points made La Cloche's 80 km loop a 46 km trace). The points kept
+// are the line's own, the first and last exactly: the first is the
+// trailhead, which expect.py checks.
+export const TRACE_TOLERANCE_M = 10;
+export function simplify(line: LngLat[], tol = TRACE_TOLERANCE_M): LngLat[] {
   const round = (p: LngLat): LngLat => [+p[0].toFixed(5), +p[1].toFixed(5)];
-  if (line.length <= max) return line.map(round);
+  if (line.length <= 2) return line.map(round);
   const kx = Math.cos((line[0][1] * Math.PI) / 180) * 111320, ky = 110570;
   const xy = line.map(([x, y]) => [x * kx, y * ky]);
-  const dp = (tol: number) => {
-    const keep = new Uint8Array(line.length);
-    keep[0] = keep[line.length - 1] = 1;
-    const stack: [number, number][] = [[0, line.length - 1]];
-    while (stack.length) {
-      const [a, b] = stack.pop()!;
-      let best = -1, far = tol;
-      const [ax, ay] = xy[a], [bx, by] = xy[b];
-      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
-      for (let i = a + 1; i < b; i++) {
-        const [px, py] = xy[i];
-        const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
-        const d = Math.hypot(px - ax - t * dx, py - ay - t * dy);
-        if (d > far) { far = d; best = i; }
-      }
-      if (best >= 0) { keep[best] = 1; stack.push([a, best], [best, b]); }
+  const keep = new Uint8Array(line.length);
+  keep[0] = keep[line.length - 1] = 1;
+  const stack: [number, number][] = [[0, line.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let best = -1, far = tol;
+    const [ax, ay] = xy[a], [bx, by] = xy[b];
+    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+    for (let i = a + 1; i < b; i++) {
+      const [px, py] = xy[i];
+      const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+      const d = Math.hypot(px - ax - t * dx, py - ay - t * dy);
+      if (d > far) { far = d; best = i; }
     }
-    return line.filter((_, i) => keep[i]);
-  };
-  for (let tol = 10; tol < 2000; tol *= 2) {
-    const s = dp(tol);
-    if (s.length <= max) return s.map(round);
+    if (best >= 0) { keep[best] = 1; stack.push([a, best], [best, b]); }
   }
-  return dp(2000).map(round);
+  // Rounded to 5 decimals (~1 m); consecutive repeats dropped.
+  return line.filter((_, i) => keep[i]).map(round).filter((p, i, a) => !i || p[0] !== a[i - 1][0] || p[1] !== a[i - 1][1]);
 }
 
 // The share of a trail's points within `m` metres of a route's line: how much
