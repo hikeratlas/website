@@ -88,7 +88,8 @@ export default function MapPage({ build, search, initial, summary }: Props) {
       setCrumbs(toCrumbs(initial.crumbs));
       setNote(initial.note ?? null);
       setRegion(initial.region ?? null);
-      if (initial.focus) setFocusPark({ ...initial.focus, at: Date.now() });
+      // With a #zoom/lat/lng hash, the map stays where the URL says.
+      if (initial.focus) setFocusPark({ ...initial.focus, at: Date.now(), fit: !hadHash });
       if (!hadHash) fit(initial.bbox);
     };
     if (map.isStyleLoaded()) apply();
@@ -291,7 +292,8 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     // A curated hike (#44): its osm_id is its route id, <park>/day/i etc.
     if (item.kind === 'hike') {
       const route = String(item.osm_id);
-      setFocusPark({ id: route.split('/')[0], name: item.park ?? '', at: Date.now(), route });
+      // The map is already at its box.
+      setFocusPark({ id: route.split('/')[0], name: item.park ?? '', at: Date.now(), route, fit: false });
     }
   }
 

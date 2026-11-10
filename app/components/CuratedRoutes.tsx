@@ -201,7 +201,9 @@ function itemsFromPark(doc: ParkDoc): Item[] {
 
 // A park picked in search (list its hikes), or with route, a hike picked in
 // search (open it): route is its id, as select() takes.
-export interface FocusPark { id: string; name: string; at: number; route?: string }
+// fit: whether opening route fits the map to it (default yes); not when the
+// map is already there (a search pick) or the URL says where to look.
+export interface FocusPark { id: string; name: string; at: number; route?: string; fit?: boolean }
 
 // An OSM trail picked in search (#242): its panel shows its length, its
 // elevation (from its ways in the tiles) and the park's hikes that walk it.
@@ -329,7 +331,9 @@ export default function CuratedRoutes(props: Props) {
     map.addLayer({ id: 'curated-hover', type: 'circle', source: 'curated-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
   }, [props.map]);
 
-  const select = useCallback(async (park: string, id: string) => {
+  // fit: fit the map to the route (#90). Not for a route clicked on the map:
+  // it's already in view.
+  const select = useCallback(async (park: string, id: string, fit = true) => {
     setError(null);
     setMode('detail');
     setSnap('peek');
@@ -350,6 +354,7 @@ export default function CuratedRoutes(props: Props) {
         ],
       });
       if (window.matchMedia(PHONE).matches) fitAbove(map!, s.route.line, PEEK_PX);
+      else if (fit) fitBeside(map!, s.route.line);
       setProf(await profile(s.route.line));
     } catch (e) {
       setError((e as Error).message ?? String(e));
@@ -396,7 +401,7 @@ export default function CuratedRoutes(props: Props) {
     const onClick = (e: MapMouseEvent) => {
       if (planning()) return;
       const found = itemsFromFeatures(at(e));
-      if (found.length === 1) { setList(null); select(found[0].park, found[0].id); }
+      if (found.length === 1) { setList(null); select(found[0].park, found[0].id, false); }
       else if (found.length > 1) openList({ heading: `${found.length} routes here`, items: found });
       else {
         const p = parkAt(e);
@@ -430,7 +435,7 @@ export default function CuratedRoutes(props: Props) {
       parkRoutes(build, focusPark.id)
         .then((doc) => { setList({ heading: `Hikes in ${doc.park?.name ?? focusPark.name}`, items: itemsFromPark(doc), about: aboutOf(doc.park) }); setListPark({ id: focusPark.id, name: doc.park?.name ?? focusPark.name }); })
         .catch(() => {});
-      select(focusPark.id, focusPark.route);
+      select(focusPark.id, focusPark.route, focusPark.fit !== false);
       return;
     }
     parkRoutes(build, focusPark.id)
@@ -669,12 +674,24 @@ function useIsPhone(): boolean {
   return phone;
 }
 
-// Fit a route into the part of the map a bottom sheet of `bottom` px leaves.
-function fitAbove(map: MaplibreMap, line: [number, number][], bottom: number) {
+function fitLine(map: MaplibreMap, line: [number, number][], padding: { top: number; bottom: number; left: number; right: number }) {
   if (line.length < 2) return;
   let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
   for (const [x, y] of line) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
-  map.fitBounds([[w, s], [e, n]], { padding: { top: 70, bottom: bottom + 20, left: 30, right: 30 }, duration: 600, maxZoom: 15 });
+  map.fitBounds([[w, s], [e, n]], { padding, duration: 600, maxZoom: 15 });
+}
+
+// Fit a route into the part of the map a bottom sheet of `bottom` px leaves.
+function fitAbove(map: MaplibreMap, line: [number, number][], bottom: number) {
+  fitLine(map, line, { top: 70, bottom: bottom + 20, left: 30, right: 30 });
+}
+
+// Fit a route into the part of the map left of the desktop panel (the box
+// below: 480 px wide, 12 px from the right), if that leaves room for it.
+function fitBeside(map: MaplibreMap, line: [number, number][]) {
+  const width = map.getContainer().clientWidth;
+  const panel = Math.min(480, width - 24) + 12 + 20;
+  fitLine(map, line, { top: 70, bottom: 40, left: 30, right: width - panel - 30 >= 240 ? panel : 30 });
 }
 
 // The panel: a box on the right on desktop; on phones a bottom sheet.
