@@ -23,7 +23,7 @@ import type { LngLat } from '~/routing/graph';
 import type { ParkDoc, Route } from '~/hikes';
 import { GitHub, REPO } from '~/regressions/github';
 import {
-  entryFor, entryKey, fixtureFor, key, lineKm, norm, parseJsonl, passes, simplify, toJsonl, walks,
+  entryFor, entryKey, fixtureFor, key, lineKm, norm, parseJsonl, passes, simplify, toJsonl, walks, withFields,
   type Decision, type Entry, type EntryEdit, type ParkFile, type Proposal,
 } from '~/regressions/model';
 
@@ -316,11 +316,11 @@ export default function Regressions({ build }: { build: string | null }) {
         const pf = parseJsonl<Proposal>(pText);
         let entries = parseJsonl<Entry>(await gh.read(`fixtures/expect/${st}.jsonl`, base));
         const before = toJsonl(entries);
-        for (const p of pf) {
-          const d = decisions[st]?.[key(p)];
+        for (let pi = 0; pi < pf.length; pi++) {
+          const d = decisions[st]?.[key(pf[pi])];
           if (!d) continue;
-          p.status = d.status;
-          if (d.note) p.note = d.note;
+          // A copy: a changed row is written anew (model.ts' toJsonl).
+          const p = pf[pi] = withFields(pf[pi], { status: d.status, ...(d.note ? { note: d.note } : {}) });
           if (d.status === 'accepted') {
             accepted++;
             const e = entryFor(p, d) as Entry;
@@ -333,7 +333,7 @@ export default function Regressions({ build }: { build: string | null }) {
           if (at < 0) continue;  // gone since: nothing to change
           if (x.action === 'delete') {
             // Its proposal, if it came from one, is open again.
-            for (const p of pf) if (p.name === entries[at].name && p.status === 'accepted') p.status = 'open';
+            pf.forEach((p, pi) => { if (p.name === entries[at].name && p.status === 'accepted') pf[pi] = withFields(p, { status: 'open' }); });
             entries = entries.filter((_, i) => i !== at);
             deleted++;
             continue;
@@ -345,7 +345,7 @@ export default function Regressions({ build }: { build: string | null }) {
           entries[at] = e;
           updated++;
         }
-        if (pText !== null) files[`fixtures/proposals/${st}.jsonl`] = toJsonl(pf);
+        if (pText !== null && toJsonl(pf) !== toJsonl(parseJsonl(pText))) files[`fixtures/proposals/${st}.jsonl`] = toJsonl(pf);
         if (toJsonl(entries) !== before) files[`fixtures/expect/${st}.jsonl`] = entries.length ? toJsonl(entries) : '';
         const pk = parks.find((x) => x.stem === st);
         const bbox = pf[0]?.park_bbox;

@@ -27,10 +27,50 @@ export interface Decision {
   note?: string;
 }
 
+// Each parsed row's line as it was in the file: written back unchanged, so a
+// commit's diff shows only the rows it changed. A changed row is a new
+// object (copy it before changing it), so it has no line here.
+const RAW = new WeakMap<object, string>();
+
 export function parseJsonl<T>(text: string | null): T[] {
-  return (text ?? '').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l) as T);
+  return (text ?? '').split('\n').filter((l) => l.trim()).map((l) => {
+    const row = JSON.parse(l) as T;
+    if (row && typeof row === 'object') RAW.set(row as object, l);
+    return row;
+  });
 }
-export const toJsonl = (rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+
+// JSON as routes' Python tools write it (json.dumps with ensure_ascii=False):
+// ", " between items and ": " after keys, so new and changed rows look like
+// the rest of the file.
+export function pyJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(pyJson).join(', ')}]`;
+  if (v && typeof v === 'object') {
+    return `{${Object.entries(v as Record<string, unknown>).filter(([, x]) => x !== undefined).map(([k, x]) => `${JSON.stringify(k)}: ${pyJson(x)}`).join(', ')}}`;
+  }
+  return JSON.stringify(v);
+}
+
+// A copy of a parsed row with some top-level string fields set. Where its
+// line can be patched in place (each field present as a string in it, or
+// absent and appended), the copy keeps that patched line, so its diff is
+// just those fields and numbers keep their spelling (Python's 17.0).
+export function withFields<T extends object>(row: T, fields: Record<string, string>): T {
+  const next = { ...row, ...fields };
+  let line = RAW.get(row);
+  if (line === undefined) return next;
+  for (const [k, v] of Object.entries(fields)) {
+    const old = (row as Record<string, unknown>)[k];
+    const val = JSON.stringify(v);
+    if (old === undefined) line = line.replace(/\}\s*$/, `, ${JSON.stringify(k)}: ${val}}`);
+    else if (typeof old === 'string' && line.includes(`${JSON.stringify(k)}: ${JSON.stringify(old)}`)) line = line.replace(`${JSON.stringify(k)}: ${JSON.stringify(old)}`, `${JSON.stringify(k)}: ${val}`);
+    else return next;  // not in the spelling expected: write the row anew
+  }
+  RAW.set(next, line);
+  return next;
+}
+
+export const toJsonl = (rows: unknown[]) => rows.map((r) => (r && typeof r === 'object' && RAW.get(r as object)) || pyJson(r)).join('\n') + '\n';
 
 // The entry an accepted proposal becomes: a trail entry with a trace (see
 // routes' expect.py), so it's checked against the hike meant rather than the
