@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, MapLayerMouseEvent } from 'maplibre-gl';
 import Map from '~/components/Map';
+import OsmLink from '~/components/OsmLink';
 import { styleUrl, tilesUrl } from '~/build';
 import { parkRoutes } from '~/components/CuratedRoutes';
 import { LABEL_FONT, endFeatures, useWaypoints } from '~/components/useWaypoints';
@@ -591,6 +592,12 @@ export default function Regressions({ build }: { build: string | null }) {
     </aside>
     <div className='relative flex-1 order-1 md:order-2 min-h-0'>
       <Map style={styleUrl(build)} lng={-100} lat={52} zoom={4} onInitialized={setMap} />
+      {/* This view on openstreetmap.org, and in its editor: to check what's
+          mapped, or map a trail that's missing. */}
+      <div className='absolute left-2 top-2 flex items-center gap-2 bg-white/90 rounded shadow px-2 py-0.5' style={{ zIndex: 2 }}>
+        <OsmLink map={map} />
+        <OsmLink map={map} edit />
+      </div>
     </div>
   </div>;
 }
