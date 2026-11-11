@@ -88,7 +88,8 @@ export function parkHikes(doc: ParkDoc, reports: ParkReports | null): ParkHike[]
   return doc.day_hikes.map((h: Hike, i) => {
     const r = h.route;
     const kinds = new Map(r.passes.map(([k, names]) => [k, names]));
-    const features = r.passes.filter(([k]) => ['lake', 'peak', 'waterfall', 'pass', 'glacier', 'viewpoint'].includes(k)).flatMap(([, n]) => n);
+    const features = r.passes.filter(([k]) => ['lake', 'peak', 'waterfall', 'pass', 'glacier', 'viewpoint'].includes(k)).flatMap(([, n]) => n)
+      .filter((n) => n && !/^unnamed$/i.test(n));
     const rep = reports?.[h.key ?? `${park}/day/${i}`];
     return {
       id: `${park}/day/${i}`,

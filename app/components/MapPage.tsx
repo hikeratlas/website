@@ -237,7 +237,14 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     setFocusPark({ id, name, at: Date.now() });
     loadRegions(routesBuild).then((regions) => {
       const area = regions?.countries.flatMap((c) => c.states.flatMap((s) => s.areas)).find((a) => a.id === id || a.ids?.includes(id));
-      if (area?.bbox && map) map.fitBounds([[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]], { padding: 60, maxZoom: 13 });
+      if (!area?.bbox || !map) return;
+      // Beside the park's sheet: on the right on desktop, the lower half on
+      // phones (CuratedRoutes' Sheet).
+      const { clientWidth: w, clientHeight: h } = map.getContainer();
+      const panel = Math.min(480, w - 24) + 32;
+      const padding = w <= 640 ? { top: 40, left: 30, right: 30, bottom: Math.round(h / 2) + 20 }
+        : { top: 60, bottom: 60, left: 60, right: w - panel - 60 >= 240 ? panel + 20 : 60 };
+      map.fitBounds([[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]], { padding, maxZoom: 13 });
     });
   }, [map, routesBuild]);
 
