@@ -165,9 +165,9 @@ export type EntryEdit =
   | { action: 'delete'; note?: string };
 
 // A name to compare, as routes' expectations.norm: 'The "Crack" Trail' and
-// 'the crack' are the same.
+// 'the crack' are the same, and so are "Benjie's Lake" and 'Benjies Lake'.
 export function norm(s: string | null | undefined): string {
-  return (s ?? '').toLowerCase().replace(/[^0-9a-z]+/g, ' ').split(' ').filter((w) => w && w !== 'the' && w !== 'trail').join(' ');
+  return (s ?? '').toLowerCase().replace(/['\u2019]/g, '').replace(/[^0-9a-z]+/g, ' ').split(' ').filter((w) => w && w !== 'the' && w !== 'trail').join(' ');
 }
 
 // Whether a hike offered under `label` (its name) passes a trail entry with a
