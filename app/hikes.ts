@@ -39,6 +39,9 @@ export interface Route {
   landcover: [string, number][];
   // [kind, names]: the passes, peaks, lakes... it goes by.
   passes: [string, string[]][];
+  // [kind, name, km, [lon, lat]]: what it passes, in order (from the
+  // routes builds after hikeratlas/routes#170).
+  along?: [string, string, number, [number, number]][];
   // Campsites along it, at km from its start.
   stopovers: { name: string; km: number; at: [number, number] }[];
   via: string[];

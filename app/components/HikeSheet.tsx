@@ -38,7 +38,8 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
   const sac = r.max_sac ?? 0;
   const words = whyWords(why, r);
   const terrain = r.landcover.filter(([, s]) => s >= 0.03);
-  const feats = r.passes.flatMap(([k, names]) => names.filter((n) => n && !/^unnamed$/i.test(n)).map((n) => ({ kind: k, name: n })));
+  // What it passes: in order and numbered, from builds that say where.
+  const feats = alongOf(r);
   const [shared, setShared] = useState(false);
   const start = r.line[0];
   const share = async () => {
@@ -85,6 +86,7 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
             lo={Math.min(...prof.points.map(([, e]) => e))}
             hi={Math.max(...prof.points.map(([, e]) => e))}
             marks={r.stopovers.map((c): Mark => ({ at: c.km * 1000, label: c.name }))}
+            pins={feats.filter((f) => f.km !== undefined).map((f) => ({ at: f.km! * 1000, n: f.n }))}
             onHover={(i) => onHover(i === null ? null : prof.coords[i])}
           />
         : <div className='flex h-[150px] items-center text-stone-400'>Measuring elevation…</div>}
@@ -99,9 +101,12 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
 
     {feats.length > 0 && <section>
       <h2 className='font-display text-base font-bold'>Along the way</h2>
-      <ul className='mt-1'>{feats.slice(0, 12).map((f) => <li key={`${f.kind}-${f.name}`} className='flex justify-between gap-3 border-b border-stone-100 py-2 text-sm'>
-        <span className='font-semibold'>{f.name}</span><span className='text-stone-600'>{KIND_NAMES[f.kind] ?? f.kind.replace(/_/g, ' ')}</span>
-      </li>)}</ul>
+      <ol className='mt-1'>{feats.map((f) => <li key={`${f.kind}-${f.name}`} className='flex items-center gap-2.5 border-b border-stone-100 py-2 text-sm'
+        onMouseEnter={() => f.at && onHover(f.at)} onMouseLeave={() => onHover(null)}>
+        {f.km !== undefined && <span className='flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-fuchsia-700 text-xs font-bold text-white'>{f.n}</span>}
+        <span className='flex-1 font-semibold'>{f.name}</span>
+        <span className='text-stone-600'>{KIND_NAMES[f.kind] ?? f.kind.replace(/_/g, ' ')}{f.km !== undefined && ` · km ${f.km.toFixed(1)}`}</span>
+      </li>)}</ol>
     </section>}
 
     {terrain.length > 0 && <section className='flex flex-col gap-2'>
@@ -134,6 +139,21 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
       <button type='button' onClick={share} className='tap h-11 rounded-xl border border-stone-300 px-4 text-sm font-semibold hover:bg-stone-50'>{shared ? 'Copied' : 'Share'}</button>
     </div>
   </div>;
+}
+
+export interface AlongFeature { n: number; kind: string; name: string; km?: number; at?: [number, number] }
+
+// What a route passes: from "along" (in order, with where), else "passes"
+// (builds before hikeratlas/routes#170). Unnamed ones and repeats left out;
+// at most 12.
+export function alongOf(r: Route): AlongFeature[] {
+  const ok = (n: string) => !!n && !/^unnamed$/i.test(n);
+  const seen = new Set<string>();
+  const fresh = (n: string) => !seen.has(n) && !!seen.add(n);
+  const out: Omit<AlongFeature, 'n'>[] = r.along
+    ? r.along.filter(([, n]) => ok(n) && fresh(n)).map(([kind, name, km, at]) => ({ kind, name, km, at }))
+    : r.passes.flatMap(([kind, names]) => names.filter((n) => ok(n) && fresh(n)).map((name) => ({ kind, name })));
+  return out.slice(0, 12).map((f, i) => ({ ...f, n: i + 1 }));
 }
 
 function list(xs: string[]): string {

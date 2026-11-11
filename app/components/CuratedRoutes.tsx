@@ -19,7 +19,7 @@ import { withZstd, type Decompress } from '~/zstd';
 import { ElevationChart } from './RoutePlanner';
 import ParkSheet, { type NearbyPark } from './ParkSheet';
 import { isSmall, trailhead } from '~/park';
-import HikeSheet from './HikeSheet';
+import HikeSheet, { alongOf } from './HikeSheet';
 
 declare const pmtiles: {
   FetchSource: new (url: string) => Source;
@@ -372,8 +372,14 @@ export default function CuratedRoutes(props: Props) {
     map.addLayer({ id: 'curated-sel-casing', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
     map.addLayer({ id: 'curated-sel', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } });
     map.addLayer({
-      id: 'curated-stops', type: 'circle', source: 'curated-sel', filter: ['==', ['geometry-type'], 'Point'],
+      id: 'curated-stops', type: 'circle', source: 'curated-sel', filter: ['all', ['==', ['geometry-type'], 'Point'], ['!', ['has', 'n']]],
       paint: { 'circle-radius': 6, 'circle-color': '#16a34a', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 },
+    });
+    map.addLayer({ id: 'curated-feat', type: 'circle', source: 'curated-sel', filter: ['has', 'n'], paint: { 'circle-radius': 9, 'circle-color': '#a21caf', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+    map.addLayer({
+      id: 'curated-feat-n', type: 'symbol', source: 'curated-sel', filter: ['has', 'n'],
+      layout: { 'text-field': ['get', 'n'], 'text-font': ['Metropolis Semi Bold'], 'text-size': 11, 'text-allow-overlap': true, 'text-ignore-placement': true },
+      paint: { 'text-color': '#ffffff' },
     });
     map.addLayer({ id: 'curated-hover', type: 'circle', source: 'curated-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
   }, [props.map]);
@@ -400,6 +406,8 @@ export default function CuratedRoutes(props: Props) {
         features: [
           { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: s.route.line } },
           ...s.route.stopovers.map((c): GeoJSON.Feature => ({ type: 'Feature', properties: { name: c.name }, geometry: { type: 'Point', coordinates: c.at } })),
+          // What it passes, numbered as in the sheet's "Along the way".
+          ...alongOf(s.route).filter((f) => f.at).map((f): GeoJSON.Feature => ({ type: 'Feature', properties: { n: String(f.n) }, geometry: { type: 'Point', coordinates: f.at! } })),
         ],
       });
       if (window.matchMedia(PHONE).matches) fitAbove(map!, s.route.line, PEEK_PX);
