@@ -7,7 +7,7 @@ import CuratedRoutes, { bundleIndex, parkRoutes, prefetchRoute, refreshBundle, t
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
-import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, regionList, regionsUrl, resolve, type Regions } from '~/hikes';
+import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, loadRegions, regionList, resolve } from '~/hikes';
 
 // What a /hikes URL resolved to on the server (routes/hikes.$.tsx), to show
 // once the map is ready.
@@ -28,18 +28,10 @@ interface Props {
   summary?: ReactNode;
 }
 
-const regionsCache = new globalThis.Map<string, Promise<Regions | null>>();
 // As the basemap's export/zindex.lua shortens a park's name for search.
 function shortPark(x: string): string {
   return x.replaceAll('National Park', 'NP').replaceAll('State Park', 'SP')
     .replaceAll('Provincial Park', 'PP').replaceAll('National Forest', 'NF');
-}
-
-function loadRegions(build: string): Promise<Regions | null> {
-  if (!regionsCache.has(build)) {
-    regionsCache.set(build, fetch(regionsUrl(build)).then((r) => (r.ok ? (r.json() as Promise<Regions>) : null)).catch(() => null));
-  }
-  return regionsCache.get(build)!;
 }
 
 export default function MapPage({ build, search, initial, summary }: Props) {

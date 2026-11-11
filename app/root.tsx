@@ -15,6 +15,10 @@ import stylesheet from "~/tailwind.css";
 export const links: LinksFunction = () => [
   ...(cssBundleHref ? [{ rel: "stylesheet", href: cssBundleHref }] : []),
   { rel: "stylesheet", href: stylesheet },
+  // Hubot Sans, for the park and hike sheets' headings (font-display).
+  { rel: "preconnect", href: "https://fonts.googleapis.com" },
+  { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+  { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Hubot+Sans:wght@600;700;800&display=swap" },
   // Lucide's "mountain" icon on a green tile (see public/favicon.svg); the
   // .ico is for browsers without SVG favicons.
   { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
