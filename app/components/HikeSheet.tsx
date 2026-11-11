@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { slugify, type Route, type RouteReports } from '~/hikes';
 import type { Profile } from '~/routing/elevation';
-import { DIFF_COLORS, SAC_WORDS, TERRAIN_COLORS, difficulty, gpx, hours, timeLabel, whyWords } from '~/park';
+import { DIFF_COLORS, SAC_WORDS, TERRAIN_COLORS, TERRAIN_TITLES, difficulty, gpx, hours, timeLabel, whyWords } from '~/park';
 import { ElevationChart, type Mark } from './RoutePlanner';
 import RouteReportsList from './RouteReports';
 import { TerrainBar } from './ParkSheet';
@@ -113,9 +113,12 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
       <h2 className='font-display text-base font-bold'>Terrain</h2>
       <TerrainBar landcover={r.landcover} className='h-2.5 w-full' />
       <div className='flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-stone-700'>
-        {terrain.map(([k, s]) => <span key={k} className='flex items-center gap-1.5'>
+        {terrain.map(([k, s]) => <span key={k} className='flex items-center gap-1.5' title={TERRAIN_TITLES[k]}>
           <span className='inline-block h-2.5 w-2.5 rounded-sm' style={{ background: TERRAIN_COLORS[k] ?? '#d6d3d1' }} />{k} {Math.round(s * 100)}%
         </span>)}
+      </div>
+      <div className='text-xs text-stone-500'>
+        From OpenStreetMap, and <a className='underline' href='https://esa-worldcover.org/'>ESA WorldCover 2021</a> (CC BY 4.0) where it has none.
       </div>
     </section>}
 
