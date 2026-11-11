@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
 import { TILES_ROOT, tilesUrl } from '~/build';
-import { loadRegions, nearbyParks, parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
+import { hikeEntries, loadRegions, nearbyParks, parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
 import AppLink from './AppLink';
 import { profile, type Profile } from '~/routing/elevation';
 import { trailGeometry, type TrailGeometry } from '~/routing/trail';
@@ -388,6 +388,8 @@ export default function CuratedRoutes(props: Props) {
       const doc = await parkRoutes(build, park);
       const s = lookup(doc, id);
       if (!s) { setError('That route is no longer available.'); return; }
+      // As its page and breadcrumbs title it.
+      s.title = hikeEntries(doc).find((e) => e.id === id)?.title ?? s.title;
       // A day hike from a base camp starts at the camp; don't list it as a stop.
       if (s.base && id.split('/').length === 4) s.route = { ...s.route, stopovers: s.route.stopovers.filter((c) => c.name !== s.base!.camp) };
       addLayers();
@@ -691,7 +693,7 @@ export default function CuratedRoutes(props: Props) {
         </>}
         {mode === 'list' && list?.about && <About about={list.about} />}
         {mode === 'detail' && sel && <h1 className='font-display text-[26px] font-extrabold leading-tight tracking-tight text-stone-900'>{sel.title}</h1>}
-        {mode === 'detail' && sel && <div className='text-sm text-stone-700'>{sel.label}{sel.from && !sel.label.includes(sel.from) ? ` · from ${trailhead(sel.from)}` : ''}</div>}
+        {mode === 'detail' && sel && <div className='text-sm text-stone-700'>{sel.label}{sel.from && !sel.label.includes(sel.from) && !sel.title.includes(sel.from) ? ` · from ${trailhead(sel.from)}` : ''}</div>}
         {error && <div className='text-red-700'>{error}</div>}
         {note && <div className='text-gray-600'>{note}</div>}
       </div>

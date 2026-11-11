@@ -69,8 +69,8 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
         <div className='mt-0.5 text-xs text-stone-600'>{l}</div>
       </div>)}
     </div>
-    <div className='-mt-1 flex items-center gap-2 text-[13px] text-stone-700'>
-      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${DIFF_COLORS[diff]}`}>{diff}</span>
+    <div className='-mt-1 flex items-start gap-2 text-[13px] text-stone-700'>
+      <span className={`mt-px shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${DIFF_COLORS[diff]}`}>{diff}</span>
       {sac > 0 && <span>{SAC_WORDS[sac] ?? `SAC T${sac}`}</span>}
     </div>
     {sac >= 4 && <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900'>
