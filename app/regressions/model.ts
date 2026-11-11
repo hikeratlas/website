@@ -11,6 +11,9 @@ export interface Proposal {
   park_bbox?: [number, number, number, number];
   osm_trail?: string; osm_bbox?: [number, number, number, number]; osm_km?: number;
   suggest_km?: number; suggest_why?: string; note?: string;
+  // No OSM trail of its name: the place its name goes to, and a box around
+  // it to frame (routes' locate-proposals.py).
+  near?: string; near_bbox?: [number, number, number, number];
 }
 
 // A park's file: <region>-<park>, as both directories name them.
