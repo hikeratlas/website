@@ -23,6 +23,19 @@ export const NL_DEM_ATTRIBUTION =
   'Contains information licensed under the Open Government Licence – Newfoundland and Labrador</a>';
 export const NL_MINZOOM = 10;
 export const NL_MAXZOOM = 13;
+// The archive's bounds (from its header, rounded out a little): w, s, e, n.
+// A tile outside them can't be in it, so it isn't looked up there: each
+// lookup costs round trips (the archive's header, then a directory) before
+// Mapterhorn is asked, for every profile, hillshade and contour tile.
+export const NL_BOUNDS: [number, number, number, number] = [-59.5, 46.5, -52.5, 51.7];
+
+/** Whether tile z/x/y overlaps nl-dem's bounds. */
+export function nlCovers(z: number, x: number, y: number): boolean {
+  const n = 2 ** z;
+  const lat = (t: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * t) / n))) * 180) / Math.PI;
+  const [w, s, e, nn] = NL_BOUNDS;
+  return (x + 1) / n * 360 - 180 >= w && x / n * 360 - 180 <= e && lat(y) >= s && lat(y + 1) <= nn;
+}
 
 const MAPTERHORN = /^https:\/\/tiles\.mapterhorn\.com\/(\d+)\/(\d+)\/(\d+)\.webp$/;
 
@@ -65,7 +78,7 @@ function notFound(message: string): Error {
 
 export const nlDemProtocol: maplibregl.AddProtocolAction = async (params, abortController) => {
   const [z, x, y] = params.url.replace('nldem://', '').split('/').map(Number);
-  if (z >= NL_MINZOOM) {
+  if (z >= NL_MINZOOM && nlCovers(z, x, y)) {
     let overzoom = false;
     try {
       if (z <= NL_MAXZOOM) {

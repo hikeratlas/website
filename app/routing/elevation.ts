@@ -5,7 +5,7 @@
 // exist (Mapterhorn past its coverage, nl-dem past z13), a point is sampled
 // from the nearest ancestor that does.
 import { haversine, lngLatToTile, type LngLat } from './graph';
-import { nlTile, NL_MAXZOOM, NL_MINZOOM } from '~/components/nlDem';
+import { nlCovers, nlTile, NL_MAXZOOM, NL_MINZOOM } from '~/components/nlDem';
 
 const MAPTERHORN = 'https://tiles.mapterhorn.com';
 const DEM_Z = 14; // ~5 m pixels at 512 px: finer than the 10 m sampling step
@@ -67,8 +67,8 @@ function demGrid(x: number, y: number): Promise<Grid> {
   if (!grids.has(key)) {
     grids.set(key, (async () => {
       const nz = Math.min(DEM_Z, NL_MAXZOOM);
-      if (nz >= NL_MINZOOM) {
-        const s = DEM_Z - nz;
+      const s = DEM_Z - nz;
+      if (nz >= NL_MINZOOM && nlCovers(nz, x >> s, y >> s)) {
         const h = await fromNl(nz, x >> s, y >> s);
         if (h) return { z: nz, x: x >> s, y: y >> s, h };
       }

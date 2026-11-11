@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { Map as MaplibreMap, JumpToOptions } from 'maplibre-gl';
 import Map from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
-import CuratedRoutes, { bundleIndex, parkRoutes, refreshBundle, type Crumb, type FocusPark, type FocusTrail, type RegionList, type Showing } from '~/components/CuratedRoutes';
+import CuratedRoutes, { bundleIndex, parkRoutes, prefetchRoute, refreshBundle, type Crumb, type FocusPark, type FocusTrail, type RegionList, type Showing } from '~/components/CuratedRoutes';
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
@@ -78,6 +78,14 @@ export default function MapPage({ build, search, initial, summary }: Props) {
   };
 
   const onInitialized = (m: MaplibreMap) => setMap(m);
+
+  // A hike page's hike: its park's routes and elevation start loading now,
+  // alongside the map, rather than after it (they don't need it).
+  useEffect(() => {
+    const f = initial?.focus;
+    if (f?.route) prefetchRoute(routesBuild, f.id, f.route);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The page the server resolved, once the map is up.
   useEffect(() => {

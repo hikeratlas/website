@@ -4,7 +4,7 @@ import { ImageryControl } from '~/components/imagery';
 import mlcontour from 'maplibre-contour';
 import { withDemFallback } from '~/components/demFallback';
 import {
-  demTransformRequest, nlDemProtocol, NL_DEM_ATTRIBUTION, NL_DEM_URL, NL_MAXZOOM, NL_MINZOOM, PMTILES_JS,
+  demTransformRequest, nlDemProtocol, NL_BOUNDS, NL_DEM_ATTRIBUTION, NL_DEM_URL, NL_MAXZOOM, NL_MINZOOM, PMTILES_JS,
 } from '~/components/nlDem';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
@@ -63,7 +63,7 @@ function registerContours() {
   // Mapterhorn 404s below its coverage (z12 in Banff); fill those from the
   // parent tile rather than leaving holes in the contours. Over Newfoundland,
   // use nl-dem's 5 m tiles instead (see nlDem.ts).
-  withDemFallback(mlcontour, { archive: NL_DEM_URL, pmtilesJs: PMTILES_JS, minzoom: NL_MINZOOM, maxzoom: NL_MAXZOOM });
+  withDemFallback(mlcontour, { archive: NL_DEM_URL, pmtilesJs: PMTILES_JS, minzoom: NL_MINZOOM, maxzoom: NL_MAXZOOM, bounds: NL_BOUNDS });
   new mlcontour.DemSource({
     url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
     encoding: "terrarium",

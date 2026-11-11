@@ -16,7 +16,8 @@
 //
 // The function is stringified into the worker, so it must not refer to
 // anything outside itself.
-export interface NlDemConfig { archive: string; pmtilesJs: string; minzoom: number; maxzoom: number }
+// bounds: w, s, e, n; tiles outside them aren't looked up in the archive.
+export interface NlDemConfig { archive: string; pmtilesJs: string; minzoom: number; maxzoom: number; bounds: [number, number, number, number] }
 
 export function demFallbackWorker(nl?: NlDemConfig) {
   const realFetch = self.fetch.bind(self);
@@ -126,8 +127,16 @@ export function demFallbackWorker(nl?: NlDemConfig) {
     }
     return got;
   }
+  // Whether tile z/x/y overlaps nl-dem's bounds (as nlDem.ts's nlCovers;
+  // repeated here, as this function runs stringified in a worker).
+  function covers(z: number, x: number, y: number): boolean {
+    const n = 2 ** z;
+    const lat = (t: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * t) / n))) * 180) / Math.PI;
+    const [w, s, e, nn] = nl!.bounds;
+    return (x + 1) / n * 360 - 180 >= w && x / n * 360 - 180 <= e && lat(y) >= s && lat(y + 1) <= nn;
+  }
   async function fromNl(z: number, x: number, y: number, signal?: AbortSignal | null): Promise<Response | null> {
-    if (!archive || !nl || z < nl.minzoom) return null;
+    if (!archive || !nl || z < nl.minzoom || !covers(z, x, y)) return null;
     try {
       if (z <= nl.maxzoom) {
         const t = await archive.getZxy(z, x, y, signal ?? undefined);
