@@ -9,9 +9,10 @@ import { useLoaderData } from "@remix-run/react";
 import MapPage, { type Initial } from '~/components/MapPage';
 import { buildFor } from '~/build';
 import {
-  type Bbox, type BundleIndex, findHike, hikeCount, hikeEntries, hikesPath, indexUrl, parkDoc, parsePath,
-  regionList, regionsUrl, resolve, suggest, type Regions, type SeeAlso,
+  type Bbox, type BundleIndex, findHike, hikeCount, hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, parsePath,
+  regionList, regionsUrl, reportsKey, resolve, suggest, type Regions, type RouteReports, type SeeAlso,
 } from '~/hikes';
+import RouteReportsList from '~/components/RouteReports';
 
 export { handle } from './map';
 
@@ -29,6 +30,10 @@ interface Page {
   // An index page's list, a park's hikes, or a hike's facts.
   items: { name: string; path: string; meta: string }[];
   facts: string[];
+  // A hike's pages on other sites (trip reports, hikeratlas/cc-crawler), and
+  // its destination's name for "More about ...".
+  reports?: RouteReports | null;
+  dest?: string;
   initial: Initial;
 }
 
@@ -191,6 +196,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     if (camp) hikeTrail.push({ name: camp.title, path: `${parkPath}/${camp.slug}` });
   }
   hikeTrail.push({ name: e.title, path: `${parkPath}/${e.slug}` });
+  const { key, dest } = reportsKey(doc!, e.id);
+  // By the routes document's park id: a park mapped twice (Cape Breton
+  // Highlands is 4855583 and 17879029) has its routes, and reports, under one.
+  const reports = (await parkReports(routesBuild, index, String(doc!.park?.id ?? area.id)).catch(() => null))?.[key] ?? null;
   const kind = e.type === 'Multi-day' ? 'multi-day hike' : e.type === 'Base camp' ? 'walk to a base camp' : e.type === 'Stop' ? 'short walk' : 'day hike';
   const stats = `${e.km.toFixed(e.km < 10 ? 1 : 0)} km · ↑ ${Math.round(e.gain).toLocaleString('en-US')} m`;
   return page({
@@ -201,6 +210,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     crumbs: hikeTrail,
     items: [],
     facts: [`${e.type} · ${stats}`, `In ${area.name}, ${r.state!.name}`],
+    reports,
+    dest,
     initial: { crumbs: hikeTrail, focus: { id: area.id, name: area.name, at: 0, route: e.id }, bbox: routeBox(e.id) ?? parkBox },
   });
 };
@@ -246,6 +257,7 @@ export default function Hikes() {
     </nav>}
     <h1 className='font-semibold text-base'>{data.heading}</h1>
     {data.facts.map((f) => <p key={f} className='text-gray-600'>{f}</p>)}
+    <RouteReportsList reports={data.reports} dest={data.dest} />
     {data.items.length > 0 && <ul className='mt-1'>
       {data.items.map((c) => <li key={c.path} className='py-0.5'>
         <a href={href(c.path)} className='text-blue-700 hover:underline'>{c.name}</a>

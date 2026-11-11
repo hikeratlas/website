@@ -10,7 +10,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
 import { TILES_ROOT, tilesUrl } from '~/build';
-import type { BaseCamp, BundleIndex, ParkDoc, Route, SeeAlso, Stop } from '~/hikes';
+import { parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
+import RouteReportsList from './RouteReports';
 import { profile, type Profile } from '~/routing/elevation';
 import { trailGeometry, type TrailGeometry } from '~/routing/trail';
 import { CoalescingSource, type Source } from '~/routing/source';
@@ -67,12 +68,24 @@ export function parkRoutes(build: string, park: string): Promise<ParkDoc> {
   return parks.get(key)!;
 }
 
+// A park's pages about its routes (trip reports, hikeratlas/cc-crawler), from
+// the build's reports bundle; null when it has none for the park.
+const reportsCache = new Map<string, Promise<ParkReports | null>>();
+function reportsFor(build: string, park: string): Promise<ParkReports | null> {
+  const key = `${build}/${park}`;
+  if (!reportsCache.has(key)) {
+    reportsCache.set(key, bundleIndex(build).then((index) => parkReports(build, index, park)).catch(() => null));
+  }
+  return reportsCache.get(key)!;
+}
+
 // Forget a build's index and park routes, so the next call fetches the
 // current ones. A tab kept open across a routes build holds the old index,
 // while search already returns the new build's hikes (basemap#185).
 export function refreshBundle(build: string) {
   indexes.delete(`${TILES_ROOT}/routes/${build}/index.json`);
   for (const k of [...parks.keys()]) if (k.startsWith(`${build}/`)) parks.delete(k);
+  for (const k of [...reportsCache.keys()]) if (k.startsWith(`${build}/`)) reportsCache.delete(k);
 }
 
 interface Selected {
@@ -289,6 +302,8 @@ export default function CuratedRoutes(props: Props) {
   const [sel, setSel] = useState<Selected | null>(null);
   const [prof, setProf] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The selected route's pages on other sites (trip reports), once loaded.
+  const [reps, setReps] = useState<{ id: string; reports: RouteReports | null; dest?: string } | null>(null);
   // A list of routes to pick from (see Item), and whether it's showing or a
   // route's details are.
   const [list, setList] = useState<List | null>(null);
@@ -509,6 +524,25 @@ export default function CuratedRoutes(props: Props) {
     return () => { live = false; };
   }, [map, build, focusTrail, addLayers, setData]);
 
+  // The selected route's trip reports: filed under its key (its id in builds
+  // without keys).
+  useEffect(() => {
+    if (!sel) return;
+    let live = true;
+    const park = sel.id.split('/')[0];
+    // Filed under the routes document's park id (a park mapped twice has its
+    // routes under one of its ids).
+    parkRoutes(build, park)
+      .then(async (doc) => {
+        const all = await reportsFor(build, String(doc.park?.id ?? park));
+        const { key, dest } = reportsKey(doc, sel.id);
+        if (live) setReps({ id: sel.id, reports: all?.[key] ?? null, dest });
+      })
+      .catch(() => { if (live) setReps({ id: sel.id, reports: null }); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [build, sel?.id]);
+
   // Tell the page what's showing, for its URL.
   useEffect(() => {
     if (!onShowing) return;
@@ -621,6 +655,7 @@ export default function CuratedRoutes(props: Props) {
           <li><button className='text-blue-700 hover:underline' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}`)}>The walk in</button></li>
         </ul>
       </div>}
+      {sel && reps?.id === sel.id && <RouteReportsList reports={reps.reports} dest={reps.dest} />}
       {sel?.why && <details className='mt-2 text-gray-500'>
         <summary className='cursor-pointer'>Why this route</summary>
         <div className='mt-1'>{sel.why.map(([k, v]) => `${k.replace(/_/g, ' ')} ${v > 0 ? '+' : ''}${v}`).join(' · ')}</div>
