@@ -50,6 +50,9 @@ export interface Hike {
   dest: string;
   kind: string;
   name?: string | null;
+  // Stays the same across routes builds, unlike the id (hikeratlas/routes#153);
+  // missing in builds from before it.
+  key?: string;
   // The score's parts: [name, points].
   why?: [string, number][];
   route: Route;
@@ -62,6 +65,7 @@ export type Stop = Hike;
 export interface BaseCamp {
   camp: string;
   from: string;
+  key?: string;
   // The walk in.
   approach: Route;
   hikes: Hike[];
@@ -73,6 +77,7 @@ export interface PointToPoint {
   to: string;
   kind: string;
   name?: string | null;
+  key?: string;
   route: Route;
 }
 
@@ -106,7 +111,31 @@ export interface BundleIndex {
   // park id -> "<country>/<state>/<park>", and country or state path -> name.
   paths?: Record<string, string>;
   regions?: Record<string, string>;
+  // Trip reports and other pages about the routes (hikeratlas/cc-crawler,
+  // linked in basemap's routes build): a bundle of its own, located the same
+  // way. Missing in builds without them.
+  reports?: { bundle: string; parks: Record<string, [number, number]> };
 }
+
+// A page on another site about a route: a trip report or trail guide that
+// follows it, or a page about its destination. Empty fields are left out.
+export interface ReportPage {
+  url: string;
+  title: string;
+  site: string;
+  // From someone's own site (a blog), not an organisation's.
+  personal?: boolean;
+  type?: string; // trip_report or trail_guide
+  date?: string; // YYYY, YYYY-MM or YYYY-MM-DD
+}
+
+// A route's pages: reports follow the route; about pages are about its
+// destination (the way up unknown, or another way). At most 8 of each,
+// personal sites first.
+export interface RouteReports { reports?: ReportPage[]; about?: ReportPage[] }
+
+// A park's pages, by route key (by id in builds without keys).
+export type ParkReports = Record<string, RouteReports>;
 
 // Lowercase ASCII words joined by hyphens, as bin/hike-paths.py makes them.
 export function slugify(s: string): string {
@@ -265,18 +294,46 @@ export function shortName(s: string): string {
   return s.replace('National Park', 'NP').replace('State Park', 'SP').replace('Provincial Park', 'PP').replace('National Forest', 'NF');
 }
 
-// One park's routes document, from the routes bundle (a byte range of it,
-// gzipped), on the server or in the browser.
-export async function parkDoc(build: string, index: BundleIndex | null, park: string): Promise<ParkDoc | null> {
-  const at = index?.parks?.[park];
+// One park's JSON from a bundle (a byte range of it, gzipped), on the server
+// or in the browser.
+async function bundlePart<T>(build: string, bundle: string, at: [number, number] | undefined): Promise<T | null> {
   if (!at) return null;
   const [offset, length] = at;
-  const r = await fetch(`${TILES_ROOT}/routes/${build}/${index.bundle}`, { headers: { Range: `bytes=${offset}-${offset + length - 1}` } });
+  const r = await fetch(`${TILES_ROOT}/routes/${build}/${bundle}`, { headers: { Range: `bytes=${offset}-${offset + length - 1}` } });
   if (!r.ok) return null;
   const bytes = await r.arrayBuffer();
+  // A server that ignores Range sends the whole bundle: take the park's part.
   const part = r.status === 206 ? bytes : bytes.slice(offset, offset + length);
   const text = await new Response(new Blob([part]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
   return JSON.parse(text);
+}
+
+// One park's routes document, from the routes bundle.
+export async function parkDoc(build: string, index: BundleIndex | null, park: string): Promise<ParkDoc | null> {
+  return index ? bundlePart<ParkDoc>(build, index.bundle, index.parks?.[park]) : null;
+}
+
+// One park's pages about its routes, from the reports bundle; null when the
+// build has none, or none for the park.
+export async function parkReports(build: string, index: BundleIndex | null, park: string): Promise<ParkReports | null> {
+  const rep = index?.reports;
+  return rep ? bundlePart<ParkReports>(build, rep.bundle, rep.parks?.[park]) : null;
+}
+
+// What a route's pages are filed under (its key, else its id), and its
+// destination's name for "More about ...": <park>/day/i, /stop/i, /base/i
+// (the walk in: the camp), /base/i/j, /multi/i (no one destination).
+export function reportsKey(doc: ParkDoc, id: string): { key: string; dest?: string } {
+  const [, type, i, j] = id.split('/');
+  const r: { key?: string; dest?: string } | undefined =
+    type === 'day' ? doc.day_hikes[+i]
+    : type === 'stop' ? doc.stops?.[+i]
+    : type === 'base' ? (j === undefined
+      ? doc.base_camps[+i] && { key: doc.base_camps[+i].key, dest: doc.base_camps[+i].camp }
+      : doc.base_camps[+i]?.hikes[+j])
+    : type === 'multi' ? doc.point_to_points[+i] && { key: doc.point_to_points[+i].key }
+    : undefined;
+  return { key: r?.key ?? id, dest: r?.dest };
 }
 
 const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
