@@ -64,7 +64,7 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
     [m(r.max_ele), 'high point'],
   ];
   return <div className='flex flex-col gap-4'>
-    <div className='mt-2 grid grid-cols-4 gap-2'>
+    <div className='mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4'>
       {tiles.map(([v, l]) => <div key={l} className='rounded-xl border border-stone-200 px-2.5 py-2'>
         <div className='font-display text-lg font-bold leading-tight'>{v}</div>
         <div className='mt-0.5 text-xs text-stone-600'>{l}</div>
