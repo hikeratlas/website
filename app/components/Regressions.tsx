@@ -14,6 +14,7 @@ import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, MapLayerMouseEvent } from 'maplibre-gl';
 import Map from '~/components/Map';
 import OsmLink from '~/components/OsmLink';
+import Search, { type Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
 import { parkRoutes } from '~/components/CuratedRoutes';
 import { LABEL_FONT, endFeatures, useWaypoints } from '~/components/useWaypoints';
@@ -284,7 +285,7 @@ export default function Regressions({ build }: { build: string | null }) {
       setTrail(lines);
       const view = trace?.length ? bounds(lines ? [...lines, trace] : [trace])
         : entry?.start ? bounds([[entry.start]]) : lines ? bounds(lines)
-        : osmBox ? bounds([[[osmBox[0], osmBox[1]], [osmBox[2], osmBox[3]]]]) : park.bbox ? bounds([[[park.bbox[0], park.bbox[1]], [park.bbox[2], park.bbox[3]]]]) : null;
+        : osmBox ?? src?.near_bbox ? (([w, so, e, n]) => bounds([[[w, so], [e, n]]]))((osmBox ?? src!.near_bbox)!) : park.bbox ? bounds([[[park.bbox[0], park.bbox[1]], [park.bbox[2], park.bbox[3]]]]) : null;
       if (view) map.fitBounds(view, { padding: 70, maxZoom: entry?.start && !trace ? 14 : 15, duration: 0 });
       const doc = await parkRoutes(routesBuild, park.park_id).catch(() => null);
       if (!live || !doc) return;
@@ -467,6 +468,22 @@ export default function Regressions({ build }: { build: string | null }) {
   const t = newTrace();
   const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `new trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
 
+  // Search (as on the map page): results near the map's centre, and a pick
+  // framed by its box, or at zoom 13.
+  const searchNear = () => {
+    if (!map || map.getZoom() < 5) return null;
+    const c = map.getCenter();
+    return { lat: c.lat, lon: c.lng };
+  };
+  const goTo = (item: Item) => {
+    if (!map) return;
+    if (item.min_lon != null && item.min_lat != null && item.max_lon != null && item.max_lat != null) {
+      map.fitBounds([[item.min_lon, item.min_lat], [item.max_lon, item.max_lat]], { padding: 70, maxZoom: 15, duration: 0 });
+    } else {
+      map.jumpTo({ center: [item.lon, item.lat], zoom: 13 });
+    }
+  };
+
   return <div className='flex flex-col md:flex-row h-[100dvh]'>
     <aside className={`md:w-[400px] md:h-full ${bigMap ? 'h-[30%]' : 'h-1/2'} overflow-y-auto border-r border-gray-200 bg-white text-sm flex flex-col order-2 md:order-1`}>
       <div className='p-2 md:p-3 flex flex-col gap-2 md:gap-3'>
@@ -516,7 +533,7 @@ export default function Regressions({ build }: { build: string | null }) {
           <div>The park says <b>{prop.km} km</b>{prop.km_basis ? ` (${prop.km_basis})` : ''}{prop.hours ? ` · ${prop.hours} h` : ''}. {prop.why}</div>
           {prop.quote && <blockquote className='border-l-2 border-gray-300 pl-2 text-xs text-gray-700 break-words'>{prop.quote}</blockquote>}
           <a className='text-emerald-800 underline text-xs break-all' href={prop.source} target='_blank' rel='noreferrer'>{prop.source.replace(/^https?:\/\/(www\.)?/, '')}</a>
-          <div className='text-xs text-gray-500'>OSM trail: {prop.osm_trail ? `${prop.osm_trail}${prop.osm_km ? ` (${prop.osm_km} km)` : ''}${trail === null && prop.osm_bbox ? ' · too long to draw here' : ''}` : 'none of this name: draw it'}</div>
+          <div className='text-xs text-gray-500'>OSM trail: {prop.osm_trail ? `${prop.osm_trail}${prop.osm_km ? ` (${prop.osm_km} km)` : ''}${trail === null && prop.osm_bbox ? ' · too long to draw here' : ''}` : `none of this name: draw it${prop.near_bbox ? ` (shown: around ${prop.near})` : ''}`}</div>
           {prop.suggest_why && <div className='text-xs bg-amber-50 text-amber-800 rounded px-2 py-1'>{prop.suggest_why}</div>}
         </div>}
         {entry && <div className='flex flex-col gap-1.5'>
@@ -592,9 +609,11 @@ export default function Regressions({ build }: { build: string | null }) {
     </aside>
     <div className='relative flex-1 order-1 md:order-2 min-h-0'>
       <Map style={styleUrl(build)} lng={-100} lat={52} zoom={4} onInitialized={setMap} />
-      {/* This view on openstreetmap.org, to check what's mapped. */}
-      <div className='absolute left-2 top-2 bg-white/90 rounded shadow px-2 py-0.5' style={{ zIndex: 2 }}>
-        <OsmLink map={map} />
+      {/* The site's search, to go where a trail is thought to be, and this
+          view on openstreetmap.org, to check what's mapped. */}
+      <div className='absolute left-2 top-2 flex flex-col items-start gap-1.5 w-72 max-w-[calc(100%-4rem)]' style={{ zIndex: 2 }}>
+        <div className='w-full'><Search onSelect={goTo} build={build} near={searchNear} /></div>
+        <div className='bg-white/90 rounded shadow px-2 py-0.5'><OsmLink map={map} /></div>
       </div>
     </div>
   </div>;
