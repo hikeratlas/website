@@ -7,7 +7,7 @@ import CuratedRoutes, { bundleIndex, parkRoutes, prefetchRoute, refreshBundle, t
 import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
-import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, regionList, regionsUrl, resolve, type Regions } from '~/hikes';
+import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, loadRegions, regionList, resolve } from '~/hikes';
 
 // What a /hikes URL resolved to on the server (routes/hikes.$.tsx), to show
 // once the map is ready.
@@ -28,18 +28,19 @@ interface Props {
   summary?: ReactNode;
 }
 
-const regionsCache = new globalThis.Map<string, Promise<Regions | null>>();
 // As the basemap's export/zindex.lua shortens a park's name for search.
+// Padding to fit a box beside the panel (CuratedRoutes' Sheet): on the right
+// on desktop, the lower half on phones.
+function besideSheet(map: MaplibreMap) {
+  const { clientWidth: w, clientHeight: h } = map.getContainer();
+  const panel = Math.min(480, w - 24) + 32;
+  return w <= 640 ? { top: 40, left: 30, right: 30, bottom: Math.round(h / 2) + 20 }
+    : { top: 60, bottom: 60, left: 60, right: w - panel - 60 >= 240 ? panel + 20 : 60 };
+}
+
 function shortPark(x: string): string {
   return x.replaceAll('National Park', 'NP').replaceAll('State Park', 'SP')
     .replaceAll('Provincial Park', 'PP').replaceAll('National Forest', 'NF');
-}
-
-function loadRegions(build: string): Promise<Regions | null> {
-  if (!regionsCache.has(build)) {
-    regionsCache.set(build, fetch(regionsUrl(build)).then((r) => (r.ok ? (r.json() as Promise<Regions>) : null)).catch(() => null));
-  }
-  return regionsCache.get(build)!;
 }
 
 export default function MapPage({ build, search, initial, summary }: Props) {
@@ -74,7 +75,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
   };
   const fit = (bbox: Bbox | null | undefined) => {
     if (!map || !bbox) return;
-    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 60, maxZoom: 13, duration: 0 });
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: besideSheet(map), maxZoom: 13, duration: 0 });
   };
 
   const onInitialized = (m: MaplibreMap) => setMap(m);
@@ -245,7 +246,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     setFocusPark({ id, name, at: Date.now() });
     loadRegions(routesBuild).then((regions) => {
       const area = regions?.countries.flatMap((c) => c.states.flatMap((s) => s.areas)).find((a) => a.id === id || a.ids?.includes(id));
-      if (area?.bbox && map) map.fitBounds([[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]], { padding: 60, maxZoom: 13 });
+      if (area?.bbox && map) map.fitBounds([[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]], { padding: besideSheet(map), maxZoom: 13 });
     });
   }, [map, routesBuild]);
 

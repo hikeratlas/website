@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
 import { TILES_ROOT, tilesUrl } from '~/build';
-import { parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
+import { loadRegions, nearbyParks, parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
 import RouteReportsList from './RouteReports';
 import AppLink from './AppLink';
 import { profile, type Profile } from '~/routing/elevation';
@@ -18,6 +18,8 @@ import { trailGeometry, type TrailGeometry } from '~/routing/trail';
 import { CoalescingSource, type Source } from '~/routing/source';
 import { withZstd, type Decompress } from '~/zstd';
 import { ElevationChart, type Mark } from './RoutePlanner';
+import ParkSheet, { type NearbyPark } from './ParkSheet';
+import { isSmall } from '~/park';
 
 declare const pmtiles: {
   FetchSource: new (url: string) => Source;
@@ -334,6 +336,9 @@ export default function CuratedRoutes(props: Props) {
 
   // The park whose list is open, if the list is a park's (not "in view").
   const [listPark, setListPark] = useState<{ id: string; name: string } | null>(null);
+  // That park's routes and trip reports, for its sheet (ParkSheet), and for
+  // a small park, the parks near it with more hikes.
+  const [parkView, setParkView] = useState<{ id: string; doc: ParkDoc; reports: ParkReports | null; nearby: NearbyPark[] | null } | null>(null);
   const openList = (l: List, park: { id: string; name: string } | null = null) => {
     setList(l); setMode('list'); setError(null); setSnap('half'); setListPark(park);
   };
@@ -347,7 +352,18 @@ export default function CuratedRoutes(props: Props) {
     const map = props.map!;
     map.addSource('curated-sel', { type: 'geojson', data: EMPTY });
     map.addSource('curated-hover', { type: 'geojson', data: EMPTY });
+    // A park's routes while its sheet is open: those the filters leave in
+    // magenta, the others grey, the one pointed at in the list thick. The
+    // basemap's routes start at z9; a park's view is often wider.
+    map.addSource('curated-park', { type: 'geojson', data: EMPTY });
     const round: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
+    map.addLayer({ id: 'curated-park-casing', type: 'line', source: 'curated-park', layout: round, filter: ['get', 'on'], paint: { 'line-color': '#ffffff', 'line-width': 4 } });
+    map.addLayer({
+      id: 'curated-park', type: 'line', source: 'curated-park', layout: round,
+      paint: { 'line-color': ['case', ['get', 'on'], COLOR, '#a8a29e'], 'line-width': ['case', ['get', 'on'], 2.5, 1.5], 'line-opacity': ['case', ['get', 'on'], 0.9, 0.6] },
+    });
+    map.addLayer({ id: 'curated-park-hl-casing', type: 'line', source: 'curated-park', layout: round, filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#ffffff', 'line-width': 9 } });
+    map.addLayer({ id: 'curated-park-hl', type: 'line', source: 'curated-park', layout: round, filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#a21caf', 'line-width': 5 } });
     map.addLayer({ id: 'curated-sel-casing', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
     map.addLayer({ id: 'curated-sel', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } });
     map.addLayer({
@@ -397,6 +413,7 @@ export default function CuratedRoutes(props: Props) {
     setError(null);
     setData('curated-sel', EMPTY);
     setData('curated-hover', EMPTY);
+    setData('curated-park', EMPTY);
   }, [setData]);
 
   useEffect(() => {
@@ -535,6 +552,51 @@ export default function CuratedRoutes(props: Props) {
     return () => { live = false; };
   }, [map, build, focusTrail, addLayers, setData]);
 
+  // The open park's routes, trip reports and (for a small park) neighbours.
+  useEffect(() => {
+    if (!listPark) { setParkView(null); return; }
+    let live = true;
+    (async () => {
+      const doc = await parkRoutes(build, listPark.id);
+      const reports = await reportsFor(build, String(doc.park?.id ?? listPark.id));
+      if (!live) return;
+      setParkView({ id: listPark.id, doc, reports, nearby: null });
+      if (isSmall(doc)) {
+        const regions = await loadRegions(build);
+        if (live && regions) setParkView({ id: listPark.id, doc, reports, nearby: nearbyParks(regions, listPark.id) });
+      }
+    })().catch(() => { if (live) setParkView(null); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [build, listPark?.id]);
+  useEffect(() => { if (mode !== 'list') setData('curated-park', EMPTY); }, [mode, setData]);
+
+  // The park sheet's routes on the map: its day hikes, those in `ids`
+  // highlighted; with ids null (another tab open), everything, base camps,
+  // trips and stops too.
+  const showPark = useCallback((ids: string[] | null) => {
+    if (!parkView || !map) return;
+    addLayers();
+    const { doc } = parkView;
+    const park = String(doc.park?.id ?? parkView.id);
+    const on = new Set(ids ?? []);
+    const line = (id: string, coords: [number, number][]): GeoJSON.Feature => ({ type: 'Feature', properties: { id, on: !ids || on.has(id) }, geometry: { type: 'LineString', coordinates: coords } });
+    setData('curated-park', {
+      type: 'FeatureCollection',
+      features: [
+        ...doc.day_hikes.map((h, i) => line(`${park}/day/${i}`, h.route.line)),
+        ...(!ids ? [
+          ...doc.base_camps.map((b, i) => line(`${park}/base/${i}`, b.approach.line)),
+          ...doc.point_to_points.map((t, i) => line(`${park}/multi/${i}`, t.route.line)),
+          ...((doc.stops ?? []) as Stop[]).map((t, i) => line(`${park}/stop/${i}`, t.route.line)),
+        ] : []),
+      ],
+    });
+  }, [parkView, map, addLayers, setData]);
+  const hoverPark = useCallback((id: string | null) => {
+    for (const l of ['curated-park-hl-casing', 'curated-park-hl']) if (map?.getLayer(l)) map.setFilter(l, ['==', ['get', 'id'], id ?? '']);
+  }, [map]);
+
   // The selected route's trip reports: filed under its key (its id in builds
   // without keys).
   useEffect(() => {
@@ -606,13 +668,17 @@ export default function CuratedRoutes(props: Props) {
   if (mode === null && !error) return button || null;
 
   const r = sel?.route;
+  // The park's sheet, once its routes are in (until then, the plain list).
+  const sheet = mode === 'list' && listPark && parkView?.id === listPark.id ? parkView : null;
   return <Sheet phone={phone} snap={snap} setSnap={setSnap}>
     {/* data-drag: on a phone, dragging the header row moves the sheet. */}
     <div className='flex items-start justify-between gap-2' data-drag style={phone ? { touchAction: 'none' } : undefined}>
       <div>
         {trail}
         {(!trail || !listPark) && mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
-        {mode === 'list' && list && <div className='font-semibold text-base'>{list.heading}</div>}
+        {mode === 'list' && list && (sheet
+          ? <h1 className='font-display text-[28px] font-extrabold leading-tight tracking-tight text-stone-900'>{sheet.doc.park?.name ?? listPark!.name}</h1>
+          : <div className='font-semibold text-base'>{list.heading}</div>)}
         {mode === 'trail' && trailInfo && <>
           <div className='font-semibold text-base'>{trailInfo.focus.name}</div>
           <div className='text-gray-600'>{['Trail', trailInfo.focus.km ? `${trailInfo.focus.km.toFixed(1)} km` : null,
@@ -633,7 +699,10 @@ export default function CuratedRoutes(props: Props) {
     {mode === 'list' && list && list.items.length === 0 && <div className='mt-1 text-gray-500'>No curated hikes here yet.</div>}
     {mode === 'trail' && trailInfo && <TrailBody trail={trailInfo} onHover={(c) => setData('curated-hover', c ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } } : EMPTY)}
       onHike={(park, id) => select(park, id)} onPark={trailInfo.focus.parkId && onPark ? () => onPark(trailInfo.focus.parkId!, trailInfo.focus.park ?? '') : undefined} />}
-    {mode === 'list' && list && <ul className='mt-1'>
+    {mode === 'list' && sheet && <ParkSheet key={sheet.id} doc={sheet.doc} reports={sheet.reports} nearby={sheet.nearby}
+      onOpen={(park, id) => { hoverPark(null); select(park, id); }} onHover={hoverPark} onShown={showPark}
+      onPark={onPark ? (id, name) => onPark(id, name) : undefined} />}
+    {mode === 'list' && list && !sheet && <ul className='mt-1'>
       {list.items.map((c, k) => <li key={c.id} className='py-0.5'>
         {c.section && c.section !== list.items[k - 1]?.section && <h3 className='font-semibold text-gray-700 mt-2 mb-0.5'>{c.section}</h3>}
         <button className='tap-row text-blue-700 hover:underline text-left' onClick={() => select(c.park, c.id)}>{c.title}</button>

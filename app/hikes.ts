@@ -30,6 +30,8 @@ export interface Route {
   gain: number;
   loss: number;
   max_ele: number;
+  // Missing in builds from before it.
+  min_ele?: number;
   // Hardest SAC grade along it (hikeratlas/routes): 4 is a scramble (#45).
   // 0 or missing: ungraded, or a build from before grades.
   max_sac?: number;
@@ -53,8 +55,12 @@ export interface Hike {
   // Stays the same across routes builds, unlike the id (hikeratlas/routes#153);
   // missing in builds from before it.
   key?: string;
-  // The score's parts: [name, points].
+  // The score's parts: [name, points], and their total: the park's hikes
+  // are listed best first by it.
   why?: [string, number][];
+  score?: number;
+  // What the destination is: peak, lake, waterfall, viewpoint, trail...
+  dest_kind?: string;
   route: Route;
 }
 
@@ -220,6 +226,33 @@ export function findHike(entries: HikeEntry[], slug: string): { entry: HikeEntry
 
 export function regionsUrl(build: string): string {
   return `${TILES_ROOT}/routes/${build}/regions.json`;
+}
+
+const regionsCache = new globalThis.Map<string, Promise<Regions | null>>();
+export function loadRegions(build: string): Promise<Regions | null> {
+  if (!regionsCache.has(build)) {
+    regionsCache.set(build, fetch(regionsUrl(build)).then((r) => (r.ok ? (r.json() as Promise<Regions>) : null)).catch(() => null));
+  }
+  return regionsCache.get(build)!;
+}
+
+// The parks nearest a park with at least `min` hikes, by the distance
+// between their boxes' centres, for a small park's "More hiking nearby".
+export function nearbyParks(regions: Regions, id: string, min = 3, n = 3): { id: string; name: string; hikes: number; km: number }[] {
+  const areas = regions.countries.flatMap((c) => c.states.flatMap((s) => s.areas));
+  const me = areas.find((a) => a.id === id || a.ids?.includes(id));
+  if (!me?.bbox) return [];
+  const mid = (b: Bbox) => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+  const [x0, y0] = mid(me.bbox);
+  const rad = Math.PI / 180;
+  const dist = (b: Bbox) => {
+    const [x, y] = mid(b);
+    const a = Math.sin(((y - y0) * rad) / 2) ** 2 + Math.cos(y0 * rad) * Math.cos(y * rad) * Math.sin(((x - x0) * rad) / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(a));
+  };
+  return areas.filter((a) => a !== me && a.bbox && a.hikes >= min && a.id !== me.id)
+    .map((a) => ({ id: a.id, name: a.name, hikes: a.hikes, km: Math.round(dist(a.bbox!)) }))
+    .sort((a, b) => a.km - b.km).slice(0, n);
 }
 
 export function indexUrl(build: string): string {
