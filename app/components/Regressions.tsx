@@ -177,11 +177,16 @@ export default function Regressions({ build }: { build: string | null }) {
       }));
       // Fixtures with no files yet, to bless their hikes: their region (for
       // the file's name) from routes' regions.json.
-      const regions = await fetch(regionsUrl(routesBuild)).then((r) => r.json() as Promise<{ countries: { states: { name: string; areas: { id: string; ids?: string[] }[] }[] }[] }>).catch(() => null);
+      const regions = await fetch(regionsUrl(routesBuild)).then((r) => r.json() as Promise<{ countries: { states: { name: string; areas: { id: string; ids?: string[]; name: string }[] }[] }[] }>).catch(() => null);
       const stateOf: Record<string, string> = {};
-      for (const c of regions?.countries ?? []) for (const st of c.states) for (const a of st.areas) for (const id of [a.id, ...(a.ids ?? [])]) stateOf[id] = st.name;
+      const byName: Record<string, string[]> = {};
+      for (const c of regions?.countries ?? []) for (const st of c.states) for (const a of st.areas) {
+        for (const id of [a.id, ...(a.ids ?? [])]) stateOf[id] = st.name;
+        (byName[a.name] ??= []).push(a.id);
+      }
       for (const f of fixtures) {
-        const id = String(f.id ?? '');
+        // Older fixtures name their park without an id: by name, if only one park has it.
+        const id = String(f.id ?? (byName[f.park]?.length === 1 ? byName[f.park][0] : ''));
         if (!id || !stateOf[id] || files.some((x) => x.park_id === id)) continue;
         const st = `${slug(stateOf[id])}-${slug(f.park)}`;
         if (!files.some((x) => x.stem === st)) files.push({ stem: st, park: f.park, park_id: id, region: stateOf[id], proposals: [], entries: [], bbox: f.bbox });
