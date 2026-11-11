@@ -39,6 +39,9 @@ export interface Route {
   landcover: [string, number][];
   // [kind, names]: the passes, peaks, lakes... it goes by.
   passes: [string, string[]][];
+  // [kind, name, km, [lon, lat]]: what it passes, in order (from the
+  // routes builds after hikeratlas/routes#170).
+  along?: [string, string, number, [number, number]][];
   // Campsites along it, at km from its start.
   stopovers: { name: string; km: number; at: [number, number] }[];
   via: string[];
@@ -181,9 +184,10 @@ export function hikeEntries(doc: ParkDoc): HikeEntry[] {
   };
   const out: HikeEntry[] = [];
   days.forEach((h, i) => {
-    const title = named(h, `${h.dest} from ${h.from}`);
-    const short = !h.name && unique(h.dest) ? h.dest : title;
-    out.push({ id: `${park}/day/${i}`, title, slug: claim(slugify(short) || 'hike'), km: h.route.km, gain: h.route.gain, type: 'Day hike' });
+    // Titled by its destination alone too, where that's unique: the sheet
+    // says where it starts.
+    const title = !h.name && unique(h.dest) ? h.dest : named(h, `${h.dest} from ${h.from}`);
+    out.push({ id: `${park}/day/${i}`, title, slug: claim(slugify(title) || 'hike'), km: h.route.km, gain: h.route.gain, type: 'Day hike' });
   });
   // Stops (hikeratlas/routes#70): slugged by the sight, after the day hikes,
   // so a day hike to the same place keeps the plain slug.

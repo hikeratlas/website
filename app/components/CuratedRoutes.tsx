@@ -10,16 +10,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
 import { TILES_ROOT, tilesUrl } from '~/build';
-import { loadRegions, nearbyParks, parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
-import RouteReportsList from './RouteReports';
+import { hikeEntries, loadRegions, nearbyParks, parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
 import AppLink from './AppLink';
 import { profile, type Profile } from '~/routing/elevation';
 import { trailGeometry, type TrailGeometry } from '~/routing/trail';
 import { CoalescingSource, type Source } from '~/routing/source';
 import { withZstd, type Decompress } from '~/zstd';
-import { ElevationChart, type Mark } from './RoutePlanner';
+import { ElevationChart } from './RoutePlanner';
 import ParkSheet, { type NearbyPark } from './ParkSheet';
-import { isSmall } from '~/park';
+import { isSmall, trailhead } from '~/park';
+import HikeSheet, { alongOf } from './HikeSheet';
 
 declare const pmtiles: {
   FetchSource: new (url: string) => Source;
@@ -109,7 +109,12 @@ interface Selected {
   why?: [string, number][];
   base?: BaseCamp; // the base camp, for its walk in and day hikes from camp
   baseIndex?: number;
+  // Where it starts ("from the Lake Louise lakeshore"), and its shape.
+  from?: string;
+  shape: 'loop' | 'out-and-back' | 'one-way';
 }
+
+const shapeOf = (kind: string): Selected['shape'] => (kind === 'loop' ? 'loop' : kind === 'out-and-back' ? 'out-and-back' : 'one-way');
 
 const KIND: Record<string, string> = { 'out-and-back': 'out and back', loop: 'loop', 'point-to-point': 'point to point (needs a shuttle)' };
 
@@ -127,22 +132,22 @@ function lookup(doc: ParkDoc, id: string): Selected | null | undefined {
   const [, type, i, j] = id.split('/');
   if (type === 'day') {
     const h = doc.day_hikes[+i];
-    return h && { id, title: named(h, `${h.dest} from ${h.from}`), label: `Day hike · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why };
+    return h && { id, title: named(h, `${h.dest} from ${h.from}`), label: `Day hike · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why, from: h.from, shape: shapeOf(h.kind) };
   }
   if (type === 'stop') {
     const h = doc.stops?.[+i];
-    return h && { id, title: h.dest, label: `Stop · ${walk(h)}`, route: h.route, why: h.why };
+    return h && { id, title: h.dest, label: `Stop · ${walk(h)}`, route: h.route, why: h.why, from: h.from, shape: 'out-and-back' };
   }
   if (type === 'base') {
     const b = doc.base_camps[+i];
     if (!b) return null;
-    if (j === undefined) return { id, title: `${b.camp}`, label: `Base camp · walk in from ${b.from}`, route: b.approach, base: b, baseIndex: +i };
+    if (j === undefined) return { id, title: `${b.camp}`, label: `Base camp · walk in from ${b.from}`, route: b.approach, base: b, baseIndex: +i, from: b.from, shape: 'one-way' };
     const h = b.hikes[+j];
-    return h && { id, title: named(h, `${h.dest} from ${b.camp}`), label: `Day hike from base camp · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why, base: b, baseIndex: +i };
+    return h && { id, title: named(h, `${h.dest} from ${b.camp}`), label: `Day hike from base camp · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why, base: b, baseIndex: +i, from: b.camp, shape: shapeOf(h.kind) };
   }
   if (type === 'multi') {
     const t = doc.point_to_points[+i];
-    return t && { id, title: named(t, `${t.from} to ${t.to}`), label: `Multi-day · ${KIND['point-to-point']}`, route: t.route };
+    return t && { id, title: named(t, `${t.from} to ${t.to}`), label: `Multi-day · ${KIND[t.kind] ?? KIND['point-to-point']}`, route: t.route, from: t.from, shape: shapeOf(t.kind) };
   }
   return null;
 }
@@ -367,8 +372,14 @@ export default function CuratedRoutes(props: Props) {
     map.addLayer({ id: 'curated-sel-casing', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
     map.addLayer({ id: 'curated-sel', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } });
     map.addLayer({
-      id: 'curated-stops', type: 'circle', source: 'curated-sel', filter: ['==', ['geometry-type'], 'Point'],
+      id: 'curated-stops', type: 'circle', source: 'curated-sel', filter: ['all', ['==', ['geometry-type'], 'Point'], ['!', ['has', 'n']]],
       paint: { 'circle-radius': 6, 'circle-color': '#16a34a', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 },
+    });
+    map.addLayer({ id: 'curated-feat', type: 'circle', source: 'curated-sel', filter: ['has', 'n'], paint: { 'circle-radius': 9, 'circle-color': '#a21caf', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+    map.addLayer({
+      id: 'curated-feat-n', type: 'symbol', source: 'curated-sel', filter: ['has', 'n'],
+      layout: { 'text-field': ['get', 'n'], 'text-font': ['Metropolis Semi Bold'], 'text-size': 11, 'text-allow-overlap': true, 'text-ignore-placement': true },
+      paint: { 'text-color': '#ffffff' },
     });
     map.addLayer({ id: 'curated-hover', type: 'circle', source: 'curated-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
   }, [props.map]);
@@ -383,6 +394,8 @@ export default function CuratedRoutes(props: Props) {
       const doc = await parkRoutes(build, park);
       const s = lookup(doc, id);
       if (!s) { setError('That route is no longer available.'); return; }
+      // As its page and breadcrumbs title it.
+      s.title = hikeEntries(doc).find((e) => e.id === id)?.title ?? s.title;
       // A day hike from a base camp starts at the camp; don't list it as a stop.
       if (s.base && id.split('/').length === 4) s.route = { ...s.route, stopovers: s.route.stopovers.filter((c) => c.name !== s.base!.camp) };
       addLayers();
@@ -393,6 +406,8 @@ export default function CuratedRoutes(props: Props) {
         features: [
           { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: s.route.line } },
           ...s.route.stopovers.map((c): GeoJSON.Feature => ({ type: 'Feature', properties: { name: c.name }, geometry: { type: 'Point', coordinates: c.at } })),
+          // What it passes, numbered as in the sheet's "Along the way".
+          ...alongOf(s.route).filter((f) => f.at).map((f): GeoJSON.Feature => ({ type: 'Feature', properties: { n: String(f.n) }, geometry: { type: 'Point', coordinates: f.at! } })),
         ],
       });
       if (window.matchMedia(PHONE).matches) fitAbove(map!, s.route.line, PEEK_PX);
@@ -685,8 +700,8 @@ export default function CuratedRoutes(props: Props) {
             [trailInfo.focus.park, trailInfo.focus.state].filter((x) => x).join(', ') || null].filter((x) => x).join(' · ')}</div>
         </>}
         {mode === 'list' && list?.about && <About about={list.about} />}
-        {mode === 'detail' && sel && <div className='font-semibold text-base'>{sel.title}</div>}
-        {mode === 'detail' && sel && <div className='text-gray-600'>{sel.label}</div>}
+        {mode === 'detail' && sel && <h1 className='font-display text-[26px] font-extrabold leading-tight tracking-tight text-stone-900'>{sel.title}</h1>}
+        {mode === 'detail' && sel && <div className='text-sm text-stone-700'>{sel.label}{sel.from && !sel.label.includes(sel.from) && !sel.title.includes(sel.from) ? ` · from ${trailhead(sel.from)}` : ''}</div>}
         {error && <div className='text-red-700'>{error}</div>}
         {note && <div className='text-gray-600'>{note}</div>}
       </div>
@@ -709,45 +724,22 @@ export default function CuratedRoutes(props: Props) {
         <div className='text-gray-500 text-xs'>{c.meta}</div>
       </li>)}
     </ul>}
-    {mode === 'detail' && r && <>
-      <div className='mt-1'>
-        {r.km} km · ↑ {Math.round(r.gain).toLocaleString()} m · high point {Math.round(r.max_ele).toLocaleString()} m
-      </div>
-      {(r.max_sac ?? 0) >= 4 && <div className='mt-1 rounded bg-amber-50 border border-amber-200 px-2 py-1 text-amber-900 text-xs'>
-        Includes scrambling (SAC T4, alpine hiking): expect to use your hands on rock, exposed sections, and possibly snow. Some sections may need route-finding.
-      </div>}
-      {prof
-        ? <ElevationChart
-            points={prof.points}
-            lo={Math.min(...prof.points.map(([, e]) => e))}
-            hi={Math.max(...prof.points.map(([, e]) => e))}
-            marks={r.stopovers.map((c): Mark => ({ at: c.km * 1000, label: c.name }))}
-            onHover={(i) => setData('curated-hover', i === null ? EMPTY : { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: prof.coords[i] } })}
-          />
-        : <div className='h-[120px] text-gray-400 flex items-center'>Measuring elevation…</div>}
-      {r.stopovers.length > 0 && <Row label={sel?.base && !sel.id.split('/')[3] ? 'Camp' : 'Campsites'}>
-        {r.stopovers.map((c) => `${c.name} (${c.km} km)`).join(', ')}
-      </Row>}
-      {r.via.length > 0 && <Row label='Via'>{r.via.slice(0, 6).join(', ')}{r.via.length > 6 ? '…' : ''}</Row>}
-      {r.passes.length > 0 && <Row label='Passes'>{r.passes.map(([, names]) => `${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`).join('; ')}</Row>}
-      {r.landcover.length > 0 && <Row label='Terrain'>{r.landcover.filter(([, s]) => s >= 0.05).map(([k, s]) => `${k} ${Math.round(s * 100)}%`).join(', ')}</Row>}
-      {sel?.base && <div className='mt-2'>
-        <div className='text-gray-600'>From {sel.base.camp}:</div>
-        <ul className='ml-1'>
-          {sel.base.hikes.map((h, j) => <li key={j}>
-            <button className='text-blue-700 hover:underline text-left' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}/${j}`)}>
+    {mode === 'detail' && r && sel && <HikeSheet title={sel.title} route={r} shape={sel.shape} why={sel.why} prof={prof}
+      reports={reps?.id === sel.id ? reps.reports : null} dest={reps?.id === sel.id ? reps.dest : undefined}
+      campLabel={sel.base && !sel.id.split('/')[3] ? 'Camp' : 'Campsites along it'}
+      onHover={(c) => setData('curated-hover', c ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } } : EMPTY)}>
+      {sel.base && <section>
+        <h2 className='font-display text-base font-bold'>From {sel.base.camp}</h2>
+        <ul className='mt-1'>
+          {sel.base.hikes.map((h, j) => <li key={j} className='border-b border-stone-100 py-2 text-sm'>
+            <button className='tap text-left font-semibold text-blue-700 hover:underline' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}/${j}`)}>
               {named(h, h.dest)}
-            </button> <span className='text-gray-500'>{h.route.km} km · ↑ {Math.round(h.route.gain)} m{(h.route.max_sac ?? 0) >= 4 ? ' · scramble' : ''}</span>
+            </button> <span className='text-stone-600'>{h.route.km.toFixed(1)} km · ↑ {Math.round(h.route.gain)} m{(h.route.max_sac ?? 0) >= 4 ? ' · scramble' : ''}</span>
           </li>)}
-          <li><button className='text-blue-700 hover:underline' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}`)}>The walk in</button></li>
+          <li className='py-2 text-sm'><button className='tap font-semibold text-blue-700 hover:underline' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}`)}>The walk in</button></li>
         </ul>
-      </div>}
-      {sel && reps?.id === sel.id && <RouteReportsList reports={reps.reports} dest={reps.dest} />}
-      {sel?.why && <details className='mt-2 text-gray-500'>
-        <summary className='cursor-pointer'>Why this route</summary>
-        <div className='mt-1'>{sel.why.map(([k, v]) => `${k.replace(/_/g, ' ')} ${v > 0 ? '+' : ''}${v}`).join(' · ')}</div>
-      </details>}
-    </>}
+      </section>}
+    </HikeSheet>}
   </Sheet>;
 }
 
@@ -907,8 +899,4 @@ function Sheet({ phone, snap, setSnap, children }: { phone: boolean; snap: Snap;
     <div className='px-3 pb-3' {...(peek ? { 'data-drag': '' } : {})}
       style={{ overflowY: peek ? 'hidden' : 'auto', overscrollBehavior: 'contain', touchAction: peek ? 'none' : 'pan-y' }}>{children}</div>
   </div>;
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className='mt-1'><span className='text-gray-500'>{label}: </span>{children}</div>;
 }

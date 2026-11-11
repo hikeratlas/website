@@ -189,3 +189,49 @@ export function thumb(line: [number, number][], size = 56, pad = 6): string {
   const dx = (size - (x1 - x0) * sc) / 2, dy = (size - (y1 - y0) * sc) / 2;
   return xs.map((x, i) => `${((x - x0) * sc + dx).toFixed(1)},${((ys[i] - y0) * sc + dy).toFixed(1)}`).join(' ');
 }
+
+// What a route passes, in words: "lakes, a waterfall and a summit".
+const KIND_WORDS: Record<string, [string, string]> = {
+  lake: ['a lake', 'lakes'], peak: ['a summit', 'summits'], waterfall: ['a waterfall', 'waterfalls'],
+  glacier: ['a glacier', 'glaciers'], pass: ['a pass', 'passes'], viewpoint: ['a viewpoint', 'viewpoints'],
+  hut: ['a hut', 'huts'], cave: ['a cave', 'caves'], arch: ['an arch', 'arches'],
+};
+export function featureWords(passes: [string, string[]][]): string {
+  const parts = passes.filter(([k]) => KIND_WORDS[k]).map(([k, n]) => KIND_WORDS[k][n.length > 1 ? 1 : 0]);
+  if (!parts.length) return '';
+  const s = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  return s[0].toUpperCase() + s.slice(1);
+}
+
+// Why a route made the list, in words, from its score's parts
+// (hikeratlas/routes' curate.rs score: each part is its weight times a
+// measure from 0 to 1): the parts that counted for it, each past a bar,
+// best first. Its destination's appeal, which every hike has, says nothing.
+const WHY_BARS: Record<string, [number, (r: Route) => string]> = {
+  feature_kinds: [1.08, (r) => featureWords(r.passes)], // 3+ kinds of thing (of 0.6 × 3)
+  popularity: [0.6, () => 'Popular'], // of 1.5
+  loop: [0.5, () => 'A loop: no retracing your steps'],
+  known_route: [0.4, () => 'Follows a named hiking route'], // a fifth of it, of 2.0
+  open_high: [0.5, () => 'Open and high: above the trees'], // of 2.5
+  lc_variety: [0.7, () => 'Varied terrain'], // of 1.4
+};
+export function whyWords(why: [string, number][] | undefined, r: Route): string[] {
+  return (why ?? [])
+    .filter(([k, v]) => WHY_BARS[k] && v >= WHY_BARS[k][0])
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => WHY_BARS[k][1](r))
+    .filter(Boolean);
+}
+
+// A route as GPX, for a GPS or phone app.
+export function gpx(name: string, line: [number, number][]): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const pts = line.map(([x, y]) => `<trkpt lat="${y.toFixed(6)}" lon="${x.toFixed(6)}"/>`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Hiker Atlas" xmlns="http://www.topografix.com/GPX/1/1">
+<trk><name>${esc(name)}</name><trkseg>
+${pts}
+</trkseg></trk>
+</gpx>
+`;
+}

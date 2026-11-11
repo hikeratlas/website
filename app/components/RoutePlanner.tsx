@@ -103,7 +103,9 @@ function RouteSummary({ r, onHover }: { r: Result; onHover: (p: LngLat | null) =
 // Marks are places along the route (e.g. campsites), at metres from its start.
 export interface Mark { at: number; label: string }
 
-export function ElevationChart({ points, lo, hi, onHover, marks = [] }: { points: [number, number][]; lo: number; hi: number; onHover: (i: number | null) => void; marks?: Mark[] }) {
+// pins: numbered features along the route (a hike's lakes, peaks...), on
+// the profile at their distance.
+export function ElevationChart({ points, lo, hi, onHover, marks = [], pins = [] }: { points: [number, number][]; lo: number; hi: number; onHover: (i: number | null) => void; marks?: Mark[]; pins?: { at: number; n: number }[] }) {
   // Drawn at the SVG's own width in px (measured), so its 10 px text is 10 px
   // on a phone too; a fixed box scaled to the panel shrank it to ~5 px.
   const ref = useRef<SVGSVGElement>(null);
@@ -170,6 +172,15 @@ export function ElevationChart({ points, lo, hi, onHover, marks = [] }: { points
       return <g key={i} pointerEvents='none'>
         <line x1={x(m.at)} x2={x(m.at)} y1={T} y2={H - B} stroke='#16a34a' strokeDasharray='2 3' />
         {labelled[i] && <text x={Math.min(x(m.at) + 3, W - 70)} y={H - B - 4} fontSize='10' fill='#15803d'>⛺ {m.label.length > 14 ? m.label.slice(0, 13) + '…' : m.label}</text>}
+      </g>;
+    })}
+    {pins.map((p) => {
+      // The profile's elevation there: samples are evenly spaced.
+      const e = points[Math.min(points.length - 1, Math.max(0, Math.round((p.at / total) * (points.length - 1))))][1];
+      const cy = Math.max(T + 9, y(e) - 12);
+      return <g key={p.n} pointerEvents='none'>
+        <circle cx={x(p.at)} cy={cy} r='8' fill='#a21caf' stroke='#ffffff' strokeWidth='1.5' />
+        <text x={x(p.at)} y={cy + 3.5} textAnchor='middle' fontSize='10' fontWeight='700' fill='#ffffff'>{p.n}</text>
       </g>;
     })}
     {hp && <g pointerEvents='none'>
