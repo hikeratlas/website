@@ -1,0 +1,8 @@
+{
+  "name": "Hiker Atlas",
+  "short_name": "Hiker Atlas",
+  "start_url": "/map",
+  "display": "browser",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }],
+  "related_applications": [{ "platform": "play", "id": "com.hikeratlas.android" }]
+}

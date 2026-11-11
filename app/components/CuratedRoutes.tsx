@@ -12,6 +12,7 @@ import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJ
 import { TILES_ROOT, tilesUrl } from '~/build';
 import { parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
 import RouteReportsList from './RouteReports';
+import AppLink from './AppLink';
 import { profile, type Profile } from '~/routing/elevation';
 import { trailGeometry, type TrailGeometry } from '~/routing/trail';
 import { CoalescingSource, type Source } from '~/routing/source';
@@ -587,7 +588,10 @@ export default function CuratedRoutes(props: Props) {
           {trail}
           <h2 className='font-semibold text-base'>{region.heading}</h2>
         </div>
-        <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={() => onNavigate?.('/map')}>×</button>
+        <div className='flex items-center gap-2'>
+          {trail && <AppLink />}
+          <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={() => onNavigate?.('/map')}>×</button>
+        </div>
       </div>
       {note && <div className='text-gray-600 mt-1'>{note}</div>}
       <ul className='mt-1'>
@@ -620,7 +624,11 @@ export default function CuratedRoutes(props: Props) {
         {error && <div className='text-red-700'>{error}</div>}
         {note && <div className='text-gray-600'>{note}</div>}
       </div>
-      <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
+      <div className='flex items-center gap-2'>
+        {/* A /hikes page (it has breadcrumbs): the Android app can open it. */}
+        {trail && <AppLink />}
+        <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
+      </div>
     </div>
     {mode === 'list' && list && list.items.length === 0 && <div className='mt-1 text-gray-500'>No curated hikes here yet.</div>}
     {mode === 'trail' && trailInfo && <TrailBody trail={trailInfo} onHover={(c) => setData('curated-hover', c ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } } : EMPTY)}

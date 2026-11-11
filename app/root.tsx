@@ -20,6 +20,8 @@ export const links: LinksFunction = () => [
   { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
   { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
   { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+  // Names the Android app, so a hike page can tell it's installed (AppLink).
+  { rel: "manifest", href: "/manifest.webmanifest" },
 ];
 
 export default function App() {
