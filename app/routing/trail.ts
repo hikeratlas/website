@@ -2,9 +2,12 @@
 // picked in search is drawn with, and measured along.
 //
 // The trail's ways are the "path" features with its name in the tiles that
-// cover its box. Tiles cut lines at their edges, adding a vertex there in
-// each tile; the two copies can land a unit or two apart, so vertices on a
-// tile edge that close together are one (as in graph.ts). If the ways chain
+// cover its box. Tiles carry a buffer past their edges, so a way crossing
+// from one tile to the next is in both, overlapping: each tile's copy is
+// clipped to the tile's own bounds, so the two meet at its edge. Their edge
+// vertices can land a unit or two apart, so vertices on a tile edge that
+// close together are one (as in graph.ts). (Without the clipping, the copies
+// don't meet, and most long trails came out in pieces, with no profile.) If the ways chain
 // end to end into one line (no branches, one piece), it's returned in order
 // as `single`, which can be profiled end to end. A branched trail in one piece
 // (a lollipop: a stem into a loop, like Killarney's Granite Ridge Trail) has
@@ -29,6 +32,36 @@ export interface TrailGeometry {
 export const MAX_TILES = 256;
 
 const SNAP = 4; // tile units: edge vertices this close are one
+
+type Pt = [number, number];
+
+// A tile line's pieces inside the tile (0..ext both ways), cut where it
+// leaves; each copy of a way that crosses an edge then ends on the edge.
+export function clip(line: { x: number; y: number }[], ext: number): Pt[][] {
+  const out: Pt[][] = [];
+  let cur: Pt[] = [];
+  const end = () => { if (cur.length > 1) out.push(cur); cur = []; };
+  for (let k = 1; k < line.length; k++) {
+    const a = line[k - 1], b = line[k];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    // Liang-Barsky.
+    let t0 = 0, t1 = 1, inside = true;
+    for (const [p, q] of [[-dx, a.x], [dx, ext - a.x], [-dy, a.y], [dy, ext - a.y]]) {
+      if (p === 0) { if (q < 0) inside = false; continue; }
+      const r = q / p;
+      if (p < 0) { if (r > t1) inside = false; else if (r > t0) t0 = r; } else if (r < t0) inside = false; else if (r < t1) t1 = r;
+    }
+    if (!inside || t0 > t1) { end(); continue; }
+    const s: Pt = [a.x + t0 * dx, a.y + t0 * dy];
+    const e: Pt = [a.x + t1 * dx, a.y + t1 * dy];
+    const last = cur[cur.length - 1];
+    if (!last || last[0] !== s[0] || last[1] !== s[1]) { end(); cur.push(s); }
+    cur.push(e);
+    if (t1 < 1) end(); // it leaves the tile here
+  }
+  end();
+  return out;
+}
 
 export function tilesFor(box: [number, number, number, number]): [number, number][] | null {
   // lngLatToTile is fractional (a point within its tile): whole tiles here.
@@ -65,12 +98,12 @@ export async function trailGeometry(source: TileSource, name: string, box: [numb
     for (let f = 0; f < layer.length; f++) {
       const feature = layer.feature(f);
       if (feature.type !== 2 || String(feature.properties.name ?? '').trim().toLowerCase() !== want) continue;
-      for (const part of feature.loadGeometry()) {
+      for (const piece of feature.loadGeometry().flatMap((part) => clip(part, ext))) {
         const line: LngLat[] = [];
         let prev: string | null = null;
-        for (const p of part) {
-          const wx = tx * ext + p.x, wy = ty * ext + p.y;
-          const onEdge = p.x <= 0 || p.x >= ext || p.y <= 0 || p.y >= ext;
+        for (const [px, py] of piece) {
+          const wx = tx * ext + px, wy = ty * ext + py;
+          const onEdge = px <= 0 || px >= ext || py <= 0 || py >= ext;
           const key = onEdge ? `e${Math.round(wx / SNAP)},${Math.round(wy / SNAP)}` : `${wx},${wy}`;
           if (!at.has(key)) at.set(key, toLngLat(wx, wy));
           line.push(at.get(key)!);
