@@ -151,11 +151,33 @@ export function fixtureFor(f: ParkFile, bbox: [number, number, number, number]) 
 // An entry in fixtures/expect/ (routes' expectations.py): a trail entry, or
 // a dest entry (a route to `dest` from near `start`).
 export interface Entry {
-  kind?: 'trail' | 'dest'; name: string; park: string; park_id: string; issue: string;
+  kind?: 'trail' | 'dest'; name: string; park: string; park_id: string; issue?: string;
   km?: number; km_tolerance?: number; trail?: string; aka?: string[]; source?: string; why?: string;
   trace?: LngLat[]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_end_m?: number | null; trace_note?: string;
   dest?: string; start?: LngLat; start_within_m?: number; max_km?: number;
+  // A hike routes offered, kept as it was (see blessedEntry).
+  blessed?: Blessed;
   [k: string]: unknown;
+}
+export interface Blessed { key: string; km: number; date?: string; build?: string }
+
+// A file's name for a park: <region>-<park>, slugged, as routes' expectations.slug.
+export const slug = (s: string) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// What the site calls a hike, as routes' expect.py does (its title()): its
+// name, else "<dest> from <where it starts>". A blessed entry is named this.
+export function hikeTitle(name: string | null | undefined, dest: string, from: string): string {
+  return name || `${dest} from ${from}`;
+}
+
+// The entry that keeps a hike routes offers now as it is (routes' expect.py,
+// "blessed"): named as the site calls it, its length, its line as the trace,
+// and which route it was.
+export function blessedEntry(park: { park: string; park_id: string }, h: { title: string; key: string; km: number; line: LngLat[] }, build: string): Entry {
+  return {
+    kind: 'trail', park: park.park, park_id: park.park_id, name: h.title, km: h.km, trace: simplify(h.line),
+    blessed: { key: h.key, km: h.km, date: new Date().toISOString().slice(0, 10), build },
+  };
 }
 export const entryKey = (e: Pick<Entry, 'kind' | 'name'>) => `${e.kind ?? 'dest'}|${e.name}`;
 
@@ -170,7 +192,8 @@ export function norm(s: string | null | undefined): string {
   return (s ?? '').toLowerCase().replace(/['\u2019]/g, '').replace(/[^0-9a-z]+/g, ' ').split(' ').filter((w) => w && w !== 'the' && w !== 'trail').join(' ');
 }
 
-// Whether a hike offered under `label` (its name) passes a trail entry with a
+// Whether a hike offered under `label` (its name; for a blessed entry, its
+// title, hikeTitle) passes a trail entry with a
 // trace, as routes' expect.py checks it: offered under the name, within
 // km_tolerance of km or within 0.85-1.4 times the trace's own length (a
 // trace says which hike is meant better than a park's rounded figure; it cuts
@@ -180,12 +203,14 @@ export function norm(s: string | null | undefined): string {
 // checked), and within
 // trace_within_m of trace_cover of the trace's points.
 export const TRACE_KM: [number, number] = [0.85, 1.4];
+export const BLESSED_TOLERANCE = 0.15;
 export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; end: boolean | null; endOff: number | null; follows: number; ok: boolean } {
   const names = new Set([e.name, e.trail, ...(e.aka ?? [])].filter(Boolean).map((n) => norm(n as string)));
   const name = label !== null && names.has(norm(label));
-  const tol = e.km_tolerance ?? 0.3;
+  // A blessed entry: within 15% of its own km, not by the trace.
+  const tol = e.km_tolerance ?? (e.blessed ? BLESSED_TOLERANCE : 0.3);
   const byPark = e.km !== undefined && km >= e.km * (1 - tol) && km <= e.km * (1 + tol);
-  const tk = e.trace?.length ? lineKm(e.trace) : 0;
+  const tk = e.trace?.length && !e.blessed ? lineKm(e.trace) : 0;
   const byTrace = !byPark && tk > 0 && km >= tk * TRACE_KM[0] && km <= tk * TRACE_KM[1];
   const length = byPark || byTrace;
   const follows = e.trace?.length ? walks([e.trace], line, e.trace_within_m ?? 50) : 0;
