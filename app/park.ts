@@ -167,10 +167,12 @@ export function summary(hikes: ParkHike[]): string {
   const flat = hikes.every((h) => h.route.gain < 100);
   const loops = hikes.every((h) => h.loop);
   const noun = loops ? (n === 1 ? 'loop' : 'loops') : n === 1 ? 'hike' : 'hikes';
-  const adj = [short ? 'short' : '', flat ? 'nearly flat' : ''].filter(Boolean).join(', ');
+  const easy = hikes.every((h) => h.diff === 'Easy');
+  const adj = [short ? 'short' : '', flat ? 'nearly flat' : easy ? 'easy' : ''].filter(Boolean).join(', ');
   const longest = Math.max(...hikes.map((h) => h.hours));
   const when = longest < 1 ? (n === 1 ? ', under an hour' : ', each under an hour')
-    : longest <= 2 ? (n === 1 ? ', under two hours' : ', each under two hours') : '';
+    : longest <= 2 ? (n === 1 ? ', under two hours' : ', each under two hours')
+    : n === 1 ? `, about ${longest} hours` : `, the longest about ${longest} hours`;
   return `${count} ${adj ? `${adj} ` : ''}${noun}${when}.`;
 }
 
