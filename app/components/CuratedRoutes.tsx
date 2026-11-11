@@ -61,6 +61,16 @@ async function fetchPark(build: string, park: string): Promise<ParkDoc> {
   return JSON.parse(text);
 }
 
+// Starts loading a route's park and its elevation profile's terrain tiles,
+// for a page opened at a hike: these don't need the map, so they needn't
+// wait for it to load (select() then finds both cached).
+export function prefetchRoute(build: string, park: string, id: string) {
+  parkRoutes(build, park).then((doc) => {
+    const s = lookup(doc, id);
+    if (s) profile(s.route.line).catch(() => {});
+  }).catch(() => {});
+}
+
 const parks = new Map<string, Promise<ParkDoc>>();
 export function parkRoutes(build: string, park: string): Promise<ParkDoc> {
   const key = `${build}/${park}`;
