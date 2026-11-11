@@ -9,6 +9,7 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './map.css';
 import { withZstd, type Decompress } from '~/zstd';
+import { WORLDCOVER_ATTRIBUTION } from '~/park';
 
 // pmtiles is loaded as a global <script> (see routes/map.tsx); declare the
 // parts we use.
@@ -129,7 +130,7 @@ export default function Map(props: Props) {
       maxZoom: props.maxZoom,
       // An (i) that expands, rather than two lines of credits across the
       // bottom of a phone screen.
-      attributionControl: { compact: true, customAttribution: NL_DEM_ATTRIBUTION },
+      attributionControl: { compact: true, customAttribution: [NL_DEM_ATTRIBUTION, WORLDCOVER_ATTRIBUTION] },
     });
     m.showTileBoundaries = !!props.showTileBoundaries;
 

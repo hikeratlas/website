@@ -54,10 +54,21 @@ export const DIFF_COLORS: Record<Difficulty, string> = {
   Scramble: 'bg-red-100 text-red-900',
 };
 
+// CSS backgrounds. "other" (hikeratlas/routes: what no class covers, i.e.
+// unmapped, or farmland, a town) is striped, as unknown rather than a kind of
+// ground; routes lists it last.
 export const TERRAIN_COLORS: Record<string, string> = {
   forest: '#2f6f4e', 'alpine rock': '#a8a29e', meadow: '#a3c97a', scrub: '#c9b38a',
   glacier: '#9fd3ef', water: '#5ab4e6', wetland: '#7fb8a4', sand: '#e4cf9a',
+  other: 'repeating-linear-gradient(135deg, #e7e5e4 0 3px, #d6d3d1 3px 6px)',
 };
+export const TERRAIN_TITLES: Record<string, string> = {
+  other: 'Not mapped, or farmland, towns and the like',
+};
+// Routes' land cover is OSM's, and ESA WorldCover's where OSM has none
+// (hikeratlas/basemap#167).
+export const WORLDCOVER_ATTRIBUTION =
+  "<a href='https://esa-worldcover.org/'>Land cover: ESA WorldCover 2021 (CC BY 4.0)</a>";
 
 // A day hike in the park sheet.
 export interface ParkHike {
