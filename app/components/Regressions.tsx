@@ -6,7 +6,9 @@
 //
 // A proposal: accept one of those hikes, or draw the hike meant, and it
 // becomes a trail entry with a trace; or reject it. An entry: redraw or
-// re-pick its trace, change the length it expects, or delete it.
+// re-pick its trace, change the length it expects, or delete it. A hike
+// routes offers (Hikes): bless it, to keep it as it is (a blessed entry,
+// routes' expect.py).
 // Changes are kept in this browser until committed: one commit to a working
 // branch in routes, and a pull request from it, so routes' CI checks them.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -16,6 +18,7 @@ import Map from '~/components/Map';
 import OsmLink from '~/components/OsmLink';
 import Search, { type Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
+import { regionsUrl } from '~/hikes';
 import { parkRoutes } from '~/components/CuratedRoutes';
 import { LABEL_FONT, endFeatures, useWaypoints } from '~/components/useWaypoints';
 import { trailGeometry } from '~/routing/trail';
@@ -25,7 +28,7 @@ import type { LngLat } from '~/routing/graph';
 import type { ParkDoc, Route } from '~/hikes';
 import { GitHub, REPO } from '~/regressions/github';
 import {
-  entryFor, entryKey, fixtureFor, key, norm, parseJsonl, passes, simplify, toJsonl, walks, withFields,
+  blessedEntry, entryFor, entryKey, fixtureFor, hikeTitle, key, norm, parseJsonl, passes, simplify, slug, toJsonl, walks, withFields,
   type Decision, type Entry, type EntryEdit, type ParkFile, type Proposal,
 } from '~/regressions/model';
 
@@ -43,17 +46,20 @@ const TOKEN_KEY = 'regressions:github-token';
 const SETTINGS_KEY = 'regressions:settings';
 const DECISIONS_KEY = 'regressions:decisions';
 const EDITS_KEY = 'regressions:entry-edits';
+const BLESS_KEY = 'regressions:blessings';
 
 interface Settings { branch: string; base: string }
 type Box = [number, number, number, number];
 // A park: its proposals and its entries (either may be empty), by the file
 // stem both directories name it by.
 interface Park extends ParkFile { entries: Entry[]; bbox?: Box }
-interface Offered { label: string; name: string | null; km: number; line: LngLat[]; share: number; check?: ReturnType<typeof passes> }
+interface Offered { label: string; name: string | null; title: string; key: string | null; km: number; line: LngLat[]; share: number; check?: ReturnType<typeof passes> }
 type Decisions = Record<string, Record<string, Decision>>;   // stem -> proposal key -> decision
 type Edits = Record<string, Record<string, EntryEdit>>;      // stem -> entry key -> edit
-// What's selected: a proposal or an entry, by index in its park's list.
-type Subject = { type: 'proposal'; i: number } | { type: 'entry'; i: number };
+type Blessings = Record<string, Record<string, Entry>>;      // stem -> route key -> blessed entry
+// What's selected: a proposal, an entry or an offered hike, by index in its list.
+type Subject = { type: 'proposal'; i: number } | { type: 'entry'; i: number } | { type: 'hike'; i: number };
+type Tab = 'proposals' | 'entries' | 'hikes';
 
 function stored<T>(k: string, fallback: T): T {
   try { const v = localStorage.getItem(k); return v ? JSON.parse(v) as T : fallback; } catch { return fallback; }
@@ -67,16 +73,19 @@ function bounds(lines: LngLat[][]): [[number, number], [number, number]] {
 }
 const pad = (b: [[number, number], [number, number]], d: number): Box => [b[0][0] - d, b[0][1] - d, b[1][0] + d, b[1][1] + d];
 
-// Every hike routes offers in a park, with a label as the site shows it and
-// the name it's offered under, if any (what routes' expect.py matches).
-function offeredIn(doc: ParkDoc): { label: string; name: string | null; route: Route }[] {
+// Every hike routes offers in a park, with a label as the site shows it,
+// the name it's offered under, if any (what routes' expect.py matches), its
+// title (what a blessed entry is named, hikeTitle) and its route key.
+function offeredIn(doc: ParkDoc): { label: string; name: string | null; title: string; key: string | null; route: Route }[] {
   const n = (r: { name?: string | null }) => (r.name ? r.name : null);
   return [
-    ...doc.day_hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${h.from}`, name: n(h), route: h.route })),
-    ...doc.base_camps.flatMap((b) => b.hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${b.camp}`, name: n(h), route: h.route }))),
-    ...doc.point_to_points.map((t) => ({ label: `${n(t) ?? `${t.from} to ${t.to}`} (multi-day)`, name: n(t), route: t.route })),
+    ...doc.day_hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${h.from}`, name: n(h), title: hikeTitle(n(h), h.dest, h.from), key: h.key ?? null, route: h.route })),
+    ...doc.base_camps.flatMap((b) => b.hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${b.camp}`, name: n(h), title: hikeTitle(n(h), h.dest, b.camp), key: h.key ?? null, route: h.route }))),
+    ...doc.point_to_points.map((t) => ({ label: `${n(t) ?? `${t.from} to ${t.to}`} (multi-day)`, name: n(t), title: hikeTitle(n(t), t.to, t.from), key: t.key ?? null, route: t.route })),
   ];
 }
+// An entry blessing route `k`, if the park has one.
+const blessedBy = (entries: Entry[], k: string | null) => (k ? entries.find((e) => e.blessed?.key === k) : undefined);
 
 const mergeEdits = <T,>(all: Record<string, Record<string, T>>, stem: string, k: string, v: T | null) => {
   const next = { ...all, [stem]: { ...(all[stem] ?? {}) } };
@@ -100,7 +109,7 @@ export default function Regressions({ build }: { build: string | null }) {
   const [pull, setPull] = useState<{ number: number; html_url: string } | null>(null);
   const [loadMsg, setLoadMsg] = useState<string>('Loading…');
   const [stem, setStem] = useState<string>('');
-  const [tab, setTab] = useState<'proposals' | 'entries'>('proposals');
+  const [tab, setTab] = useState<Tab>('proposals');
   const [subject, setSubject] = useState<Subject | null>(null);
   const [filter, setFilter] = useState<'open' | 'all'>('open');
   // What the URL names (?park=<file stem>&tab=entries&item=<name>[&km=<km>]),
@@ -114,6 +123,9 @@ export default function Regressions({ build }: { build: string | null }) {
   }
   const [decisions, setDecisions] = useState<Decisions>({});
   const [edits, setEdits] = useState<Edits>({});
+  const [blessings, setBlessings] = useState<Blessings>({});
+  // The hikes routes offers in the park open (Hikes), by its stem.
+  const [hikes, setHikes] = useState<{ stem: string; list: Offered[] } | null>(null);
   const [trail, setTrail] = useState<LngLat[][] | null>(null);
   const [offered, setOffered] = useState<Offered[]>([]);
   const [pick, setPick] = useState<number | null>(null);
@@ -130,6 +142,7 @@ export default function Regressions({ build }: { build: string | null }) {
     setSettings(stored(SETTINGS_KEY, { branch: 'regressions', base: 'main' }));
     setDecisions(stored(DECISIONS_KEY, {}));
     setEdits(stored(EDITS_KEY, {}));
+    setBlessings(stored(BLESS_KEY, {}));
   }, []);
   const gh = useMemo(() => new GitHub(token || null), [token]);
   useEffect(() => { gh.user().then(setLogin).catch(() => setLogin(null)); }, [gh]);
@@ -162,6 +175,22 @@ export default function Regressions({ build }: { build: string | null }) {
         const fx = fixtures.find((f) => String(f.id ?? '') === park_id || (!f.id && f.park === park));
         return { stem: st, park, park_id, region: ps[0]?.region ?? '', proposals: ps, entries: es, bbox: ps[0]?.park_bbox ?? fx?.bbox };
       }));
+      // Fixtures with no files yet, to bless their hikes: their region (for
+      // the file's name) from routes' regions.json.
+      const regions = await fetch(regionsUrl(routesBuild)).then((r) => r.json() as Promise<{ countries: { states: { name: string; areas: { id: string; ids?: string[]; name: string }[] }[] }[] }>).catch(() => null);
+      const stateOf: Record<string, string> = {};
+      const byName: Record<string, string[]> = {};
+      for (const c of regions?.countries ?? []) for (const st of c.states) for (const a of st.areas) {
+        for (const id of [a.id, ...(a.ids ?? [])]) stateOf[id] = st.name;
+        (byName[a.name] ??= []).push(a.id);
+      }
+      for (const f of fixtures) {
+        // Older fixtures name their park without an id: by name, if only one park has it.
+        const id = String(f.id ?? (byName[f.park]?.length === 1 ? byName[f.park][0] : ''));
+        if (!id || !stateOf[id] || files.some((x) => x.park_id === id)) continue;
+        const st = `${slug(stateOf[id])}-${slug(f.park)}`;
+        if (!files.some((x) => x.stem === st)) files.push({ stem: st, park: f.park, park_id: id, region: stateOf[id], proposals: [], entries: [], bbox: f.bbox });
+      }
       files.sort((a, b) => a.park.localeCompare(b.park));
       setParks(files);
       setReadFrom(ref === branch ? branch : `${branch} @ ${ref.slice(0, 7)}`);
@@ -171,7 +200,7 @@ export default function Regressions({ build }: { build: string | null }) {
     } catch (e) {
       setLoadMsg(`Couldn’t load: ${(e as Error).message}. Without a token GitHub allows 60 reads an hour; add one in Settings.`);
     }
-  }, [gh, settings.branch, settings.base]);
+  }, [gh, settings.branch, settings.base, routesBuild]);
   useEffect(() => { load(); }, [load]);
 
   const park = parks.find((p) => p.stem === stem) ?? null;
@@ -182,6 +211,22 @@ export default function Regressions({ build }: { build: string | null }) {
   const entryProp = entry && park ? park.proposals.find((p) => p.name === entry.name) ?? null : null;
   const dec = park && prop ? decisions[park.stem]?.[key(prop)] : undefined;
   const edit = park && entry ? edits[park.stem]?.[entryKey(entry)] : undefined;
+  const parkHikes = park && hikes?.stem === park.stem ? hikes.list : null;
+  const hike = park && subject?.type === 'hike' ? parkHikes?.[subject.i] ?? null : null;
+  const blessing = park && hike?.key ? blessings[park.stem]?.[hike.key] : undefined;
+  const hikeEntry = park && hike ? blessedBy(park.entries, hike.key) : undefined;
+
+  // The park's hikes, for Hikes: every one routes offers, best known first.
+  useEffect(() => {
+    if (!park) return;
+    let live = true;
+    parkRoutes(routesBuild, park.park_id).then((doc) => {
+      if (!live) return;
+      const list: Offered[] = doc ? offeredIn(doc).map((o) => ({ label: o.label, name: o.name, title: o.title, key: o.key, km: o.route.km, line: o.route.line as LngLat[], share: 0 })) : [];
+      setHikes({ stem: park.stem, list });
+    }).catch(() => { if (live) setHikes({ stem: park.stem, list: [] }); });
+    return () => { live = false; };
+  }, [park?.stem, routesBuild]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pick something sensible when the park or tab changes: what the URL
   // names, the first time, else the first in the list.
@@ -189,12 +234,18 @@ export default function Regressions({ build }: { build: string | null }) {
     if (!park) return;
     const l = linked.current;
     if (l?.park === park.stem) {
-      const t = l.tab === 'entries' || l.tab === 'proposals' ? l.tab : tab;
+      const t = l.tab === 'entries' || l.tab === 'proposals' || l.tab === 'hikes' ? l.tab : tab;
       if (t !== tab) { setTab(t); return; }  // this runs again for the tab
-      linked.current = { park: '' };
+      if (!(l.item && t === 'hikes' && !parkHikes)) linked.current = { park: '' };
       if (l.item && t === 'entries') {
         const i = park.entries.findIndex((e) => e.name === l.item);
         if (i >= 0) { setSubject({ type: 'entry', i }); return; }
+      }
+      if (l.item && t === 'hikes') {
+        if (!parkHikes) return;  // this runs again when they've loaded
+        const i = parkHikes.findIndex((h) => h.title === l.item);
+        linked.current = { park: '' };
+        if (i >= 0) { setSubject({ type: 'hike', i }); return; }
       }
       if (l.item && t === 'proposals') {
         const i = park.proposals.findIndex((p) => p.name === l.item && (l.km === undefined || p.km === l.km));
@@ -206,9 +257,14 @@ export default function Regressions({ build }: { build: string | null }) {
       }
     }
     if (tab === 'proposals') setSubject(proposals.length ? { type: 'proposal', i: proposals[0].i } : null);
-    else setSubject(park.entries.length ? { type: 'entry', i: 0 } : null);
-  }, [park?.stem, tab]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (park && !park.proposals.length && park.entries.length) setTab('entries'); }, [park?.stem]); // eslint-disable-line react-hooks/exhaustive-deps
+    else if (tab === 'entries') setSubject(park.entries.length ? { type: 'entry', i: 0 } : null);
+    else setSubject(parkHikes?.length ? { type: 'hike', i: 0 } : null);
+  // (Again when the park's hikes load, but only on Hikes: elsewhere that
+  // would undo a pick.)
+  }, [park?.stem, tab, tab === 'hikes' ? parkHikes : null]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (park && !park.proposals.length) setTab(park.entries.length ? 'entries' : 'hikes');
+  }, [park?.stem]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The URL follows what's open (replacing, not adding, history entries).
   // Other parameters (?build=) and the map's #position are kept.
@@ -217,18 +273,23 @@ export default function Regressions({ build }: { build: string | null }) {
     const q = new URLSearchParams(window.location.search);
     q.set('park', park.stem);
     q.set('tab', tab);
-    const name = prop?.name ?? entry?.name;
+    const name = prop?.name ?? entry?.name ?? hike?.title;
     if (name) q.set('item', name); else q.delete('item');
     // A park can list one name twice (two options): the length tells them apart.
     if (prop && park.proposals.filter((p) => p.name === prop.name).length > 1) q.set('km', String(prop.km)); else q.delete('km');
     const url = `${window.location.pathname}?${q.toString()}${window.location.hash}`;
     if (url !== `${window.location.pathname}${window.location.search}${window.location.hash}`) window.history.replaceState(window.history.state, '', url);
-  }, [park, tab, prop, entry]);
+  }, [park, tab, prop, entry, hike]);
 
   const setDecision = (d: Decision | null) => {
     if (!park || !prop) return;
     const next = mergeEdits(decisions, park.stem, key(prop), d);
     setDecisions(next); store(DECISIONS_KEY, next);
+  };
+  const setBlessing = (e: Entry | null) => {
+    if (!park || !hike?.key) return;
+    const next = mergeEdits(blessings, park.stem, hike.key, e);
+    setBlessings(next); store(BLESS_KEY, next);
   };
   const setEdit = (x: EntryEdit | null) => {
     if (!park || !entry) return;
@@ -294,9 +355,9 @@ export default function Regressions({ build }: { build: string | null }) {
         const line = o.route.line as LngLat[];
         // An entry with a trace: how much of it each hike follows, as routes'
         // expect.py checks it. Otherwise how much of the OSM trail it walks.
-        const check = entry && trace ? passes(entry, o.name, o.route.km, line) : undefined;
+        const check = entry && trace ? passes(entry, entry.blessed ? o.title : o.name, o.route.km, line) : undefined;
         const share = check ? check.follows : lines ? walks(lines, line) : (norm(o.label).includes(want) || o.route.via.some((v) => norm(v) === want) ? 1 : 0);
-        return { label: o.label, name: o.name, km: o.route.km, line, share, check };
+        return { label: o.label, name: o.name, title: o.title, key: o.key, km: o.route.km, line, share, check };
       });
       const near = all.filter((o) => o.share >= 0.3);
       const target = prop?.km ?? entry?.km ?? 0;
@@ -306,18 +367,29 @@ export default function Regressions({ build }: { build: string | null }) {
     return () => { live = false; };
   }, [map, park?.stem, subject, readFrom]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A hike to bless: it alone, picked, and the trace of its blessed entry if
+  // it has one.
+  useEffect(() => {
+    if (!map || !hike || !map.getSource('rg-trace')) return;
+    setTrail(null); setDrawing(false); draw.clear();
+    setOffered([hike]); setPick(0);
+    const trace = hikeEntry?.trace;
+    map.getSource<GeoJSONSource>('rg-trace')!.setData(trace ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: trace } } : EMPTY);
+    map.fitBounds(bounds([hike.line]), { padding: 70, maxZoom: 15, duration: 0 });
+  }, [map, hike]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The start and end of the entry's trace (or a dest entry's trailhead),
   // and of the hike picked, labelled.
   useEffect(() => {
     if (!map || !map.getSource('rg-ends')) return;
-    const trace = entry?.trace ?? null;
+    const trace = entry?.trace ?? hikeEntry?.trace ?? null;
     const features = [
       ...(trace ? endFeatures(trace, 'Trace', { of: 'trace' })
         : entry?.start ? endFeatures([entry.start], 'Trailhead', { of: 'trace' }).map((f) => ({ ...f, properties: { ...f.properties, label: 'Trailhead' } })) : []),
       ...(pick !== null && offered[pick] ? endFeatures(offered[pick].line, 'Hike', { of: 'hike' }) : []),
     ];
     map.getSource<GeoJSONSource>('rg-ends')!.setData({ type: 'FeatureCollection', features });
-  }, [map, entry, pick, offered]);
+  }, [map, entry, hikeEntry, pick, offered]);
 
   // A line as a few points to drag: its start, its end, and the turns that
   // keep its shape within ~100 m or more, at most a dozen. Dragging re-routes
@@ -379,7 +451,7 @@ export default function Regressions({ build }: { build: string | null }) {
     setDrawing(false);
   };
 
-  const nChanges = Object.values(decisions).reduce((s, d) => s + Object.keys(d).length, 0) + Object.values(edits).reduce((s, d) => s + Object.keys(d).length, 0);
+  const nChanges = [decisions, edits, blessings].reduce((n, all) => n + Object.values(all).reduce((s, d) => s + Object.keys(d).length, 0), 0);
 
   // Commit every change: proposals' statuses, the entries accepted ones
   // become, edited and deleted entries, and a fixture for each park that
@@ -394,8 +466,9 @@ export default function Regressions({ build }: { build: string | null }) {
       if (!base) throw new Error(`no branch ${settings.base}`);
       const files: Record<string, string> = {};
       const fixtures = JSON.parse(await gh.read('fixtures/parks.json', base) ?? '[]') as { key: string; id?: string; park: string; bbox: number[] }[];
-      let addedFixtures = 0, accepted = 0, rejected = 0, updated = 0, deleted = 0;
-      for (const st of new Set([...Object.keys(decisions), ...Object.keys(edits)])) {
+      let addedFixtures = 0, accepted = 0, rejected = 0, updated = 0, deleted = 0, blessed = 0;
+      const stems = [...new Set([...Object.keys(decisions), ...Object.keys(edits), ...Object.keys(blessings)])];
+      for (const st of stems) {
         const pText = await gh.read(`fixtures/proposals/${st}.jsonl`, base);
         const pf = parseJsonl<Proposal>(pText);
         let entries = parseJsonl<Entry>(await gh.read(`fixtures/expect/${st}.jsonl`, base));
@@ -429,10 +502,17 @@ export default function Regressions({ build }: { build: string | null }) {
           entries[at] = e;
           updated++;
         }
+        // Blessed: in place of the entry blessing the same route, or of one
+        // of the same name, else added.
+        for (const e of Object.values(blessings[st] ?? {})) {
+          const at = entries.findIndex((x) => x.blessed?.key === e.blessed!.key || entryKey(x) === entryKey(e));
+          if (at >= 0) entries[at] = e; else entries.push(e);
+          blessed++;
+        }
         if (pText !== null && toJsonl(pf) !== toJsonl(parseJsonl(pText))) files[`fixtures/proposals/${st}.jsonl`] = toJsonl(pf);
         if (toJsonl(entries) !== before) files[`fixtures/expect/${st}.jsonl`] = entries.length ? toJsonl(entries) : '';
         const pk = parks.find((x) => x.stem === st);
-        const bbox = pf[0]?.park_bbox;
+        const bbox = pf[0]?.park_bbox ?? pk?.bbox;
         // Older fixtures name their park without an id.
         if (pk && bbox && entries.length && !fixtures.some((f) => String(f.id ?? '') === pk.park_id || (!f.id && f.park === pk.park))) {
           const fx = fixtureFor(pk, bbox);
@@ -441,14 +521,15 @@ export default function Regressions({ build }: { build: string | null }) {
         }
       }
       if (addedFixtures) files['fixtures/parks.json'] = JSON.stringify(fixtures, null, 2) + '\n';
-      const parkNames = [...new Set([...Object.keys(decisions), ...Object.keys(edits)])].map((st) => parks.find((x) => x.stem === st)?.park ?? st);
-      const what = [accepted && `${accepted} accepted`, rejected && `${rejected} rejected`, updated && `${updated} entr${updated === 1 ? 'y' : 'ies'} edited`, deleted && `${deleted} deleted`].filter(Boolean).join(', ');
+      const parkNames = stems.map((st) => parks.find((x) => x.stem === st)?.park ?? st);
+      const what = [accepted && `${accepted} accepted`, rejected && `${rejected} rejected`, updated && `${updated} entr${updated === 1 ? 'y' : 'ies'} edited`, deleted && `${deleted} deleted`, blessed && `${blessed} blessed`].filter(Boolean).join(', ');
       const msg = `Named regressions: ${what} (${parkNames.join(', ')})\n\nFrom the website's /dev/regressions page${login ? `, by ${login}` : ''}.` +
         (addedFixtures ? ` ${addedFixtures} park(s) added to fixtures/parks.json.` : '');
       await gh.commit(settings.branch, base, files, msg);
       const pr = open ?? await gh.createPull(settings.branch, 'Named regressions from the regressions page',
-        'Proposals accepted (as trail entries with traces) or rejected, and entries edited, on the website\'s /dev/regressions page (routes#95). Each commit says what it changed.');
+        'Proposals accepted (as trail entries with traces) or rejected, entries edited, and hikes blessed, on the website\'s /dev/regressions page (routes#95). Each commit says what it changed.');
       setDecisions({}); store(DECISIONS_KEY, {});
+      setBlessings({}); store(BLESS_KEY, {});
       setEdits({}); store(EDITS_KEY, {});
       setCommitting(`Committed to ${settings.branch}: pull request #${pr.number}.`);
       setPull(pr);
@@ -462,8 +543,8 @@ export default function Regressions({ build }: { build: string | null }) {
   const chip = (on: boolean) => `tap px-2.5 py-0.5 rounded-full border text-xs ${on ? 'bg-emerald-800 border-emerald-800 text-white' : 'border-gray-300 bg-white text-gray-800'}`;
   const counts = (pf: Park) => {
     const open = pf.proposals.filter((p) => p.status === 'open').length;
-    const changed = Object.keys(decisions[pf.stem] ?? {}).length + Object.keys(edits[pf.stem] ?? {}).length;
-    return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ');
+    const changed = Object.keys(decisions[pf.stem] ?? {}).length + Object.keys(edits[pf.stem] ?? {}).length + Object.keys(blessings[pf.stem] ?? {}).length;
+    return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'fixture';
   };
   const t = newTrace();
   const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `new trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
@@ -514,6 +595,7 @@ export default function Regressions({ build }: { build: string | null }) {
           <div className='flex gap-1.5 text-xs items-center'>
             <button type='button' className={chip(tab === 'proposals')} disabled={!park?.proposals.length} onClick={() => setTab('proposals')}>Proposals ({park?.proposals.length ?? 0})</button>
             <button type='button' className={chip(tab === 'entries')} disabled={!park?.entries.length} onClick={() => setTab('entries')}>Entries ({park?.entries.length ?? 0})</button>
+            <button type='button' className={chip(tab === 'hikes')} disabled={!parkHikes?.length} onClick={() => setTab('hikes')}>Hikes ({parkHikes?.length ?? '…'})</button>
             {tab === 'proposals' && <span className='ml-auto flex gap-1'>
               {(['open', 'all'] as const).map((f) => <button key={f} type='button' onClick={() => setFilter(f)} className={`tap px-2 rounded border ${filter === f ? 'border-gray-500' : 'border-transparent text-gray-500'}`}>{f === 'open' ? 'Open' : 'All'}</button>)}
             </span>}
@@ -525,7 +607,11 @@ export default function Regressions({ build }: { build: string | null }) {
             {tab === 'proposals' && !proposals.length && <span className='text-xs text-gray-500'>Nothing open in this park.</span>}
             {tab === 'entries' && park?.entries.map((e, i) => { const x = edits[park.stem]?.[entryKey(e)]; return <button key={entryKey(e)} type='button' onClick={() => setSubject({ type: 'entry', i })} className={chip(subject?.type === 'entry' && subject.i === i)}>
               <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${x ? (x.action === 'delete' ? 'bg-red-500' : 'bg-amber-500') : 'bg-gray-300'}`} />
-              {e.name}{(e.kind ?? 'dest') === 'dest' ? ' (dest)' : ''}</button>; })}
+              {e.name}{(e.kind ?? 'dest') === 'dest' ? ' (dest)' : e.blessed ? ' (blessed)' : ''}</button>; })}
+            {tab === 'hikes' && park && parkHikes?.map((h, i) => { const b = h.key && blessings[park.stem]?.[h.key]; const has = blessedBy(park.entries, h.key); return <button key={`${h.key ?? h.label}|${i}`} type='button' onClick={() => setSubject({ type: 'hike', i })} className={chip(subject?.type === 'hike' && subject.i === i)}>
+              <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${b ? 'bg-emerald-500' : has ? 'bg-emerald-700' : 'bg-gray-300'}`} />
+              {h.label} · {h.km} km</button>; })}
+            {tab === 'hikes' && parkHikes && !parkHikes.length && <span className='text-xs text-gray-500'>Routes offers nothing in this park.</span>}
           </div>
         </>}
         {prop && <div className='flex flex-col gap-1.5'>
@@ -537,14 +623,20 @@ export default function Regressions({ build }: { build: string | null }) {
           {prop.suggest_why && <div className='text-xs bg-amber-50 text-amber-800 rounded px-2 py-1'>{prop.suggest_why}</div>}
         </div>}
         {entry && <div className='flex flex-col gap-1.5'>
-          <div className='font-semibold text-base'>{entry.name} <span className='font-normal text-gray-500 text-xs'>{entry.kind ?? 'dest'} entry · {entry.issue}</span></div>
+          <div className='font-semibold text-base'>{entry.name} <span className='font-normal text-gray-500 text-xs'>{entry.blessed ? `blessed ${entry.blessed.date ?? ''} (${entry.blessed.build ?? 'routes'})` : `${entry.kind ?? 'dest'} entry · ${entry.issue ?? ''}`}</span></div>
           {(entry.kind ?? 'dest') === 'trail'
-            ? <div>Expects <b>{entry.km} km</b> (±{Math.round((entry.km_tolerance ?? 0.3) * 100)}%){entry.trace ? `, following its trace (${entry.trace.length} points, dashed, its start and end labelled; to move them, press Edit the trace and drag)` : entry.trail ? `, walking the OSM trail ${entry.trail}` : ', walking the OSM trail of its name'}. {entry.why}</div>
+            ? <div>Expects <b>{entry.km} km</b> (±{Math.round((entry.km_tolerance ?? (entry.blessed ? 0.15 : 0.3)) * 100)}%){entry.trace ? `, following its trace (${entry.trace.length} points, dashed, its start and end labelled; to move them, press Edit the trace and drag)` : entry.trail ? `, walking the OSM trail ${entry.trail}` : ', walking the OSM trail of its name'}. {entry.why}</div>
             : <div>Expects a route to <b>{entry.dest}</b> from within {entry.start_within_m ?? '?'} m of the dot, at most {entry.max_km} km, named {entry.name}. {entry.why}</div>}
           {entry.trace_note && <div className='text-xs text-gray-600'>Note: {entry.trace_note}</div>}
           {(entry.source || entryProp?.source) && <a className='text-emerald-800 underline text-xs break-all' href={entry.source ?? entryProp!.source} target='_blank' rel='noreferrer'>{(entry.source ?? entryProp!.source).replace(/^https?:\/\/(www\.)?/, '')}</a>}
           {entryProp?.quote && <blockquote className='border-l-2 border-gray-300 pl-2 text-xs text-gray-700 break-words'>{entryProp.quote}</blockquote>}
           {(entry.kind ?? 'dest') === 'dest' && <div className='text-xs text-gray-500'>This page edits trail entries; a dest entry can only be deleted here.</div>}
+        </div>}
+        {hike && <div className='flex flex-col gap-1.5'>
+          <div className='font-semibold text-base'>{hike.label} <span className='font-normal text-gray-500 text-xs'>{hike.km} km</span></div>
+          <div>Bless it to keep it as routes offers it now: an entry named <b>{hike.title}</b>, its line the trace, expecting {hike.km} km (±15%). The checks then flag it if it’s renamed, gets longer or shorter, starts or ends elsewhere, takes another line, or goes.</div>
+          {hike.key ? <div className='text-xs text-gray-500 break-all'>Route key: {hike.key}</div> : <div className='text-xs text-amber-800 bg-amber-50 rounded px-2 py-1'>This build has no route keys, so it can’t be blessed.</div>}
+          {hikeEntry && <div className='text-xs text-gray-600'>Blessed already{hikeEntry.blessed?.date ? ` on ${hikeEntry.blessed.date}` : ''}, as {hikeEntry.name} ({hikeEntry.km} km): blessing it again replaces that.</div>}
         </div>}
         {(prop || entry) && <>
           <div className='flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600'>
@@ -579,7 +671,7 @@ export default function Regressions({ build }: { build: string | null }) {
           </div>}
         </>}
       </div>
-      {(prop || entry) && <div className='mt-auto md:sticky md:bottom-0 bg-white border-t border-gray-200 p-2 md:p-3 flex flex-col gap-1.5'>
+      {(prop || entry || hike) && <div className='mt-auto md:sticky md:bottom-0 bg-white border-t border-gray-200 p-2 md:p-3 flex flex-col gap-1.5'>
         {(prop || (entry?.kind ?? 'dest') === 'trail') && <div className='flex items-center gap-2'>
           <label className='text-xs text-gray-600 flex items-center gap-1'>Expect <input type='number' step='0.1' min='0' className='border border-gray-300 rounded px-1.5 py-0.5 w-20' value={km} onChange={(e) => setKm(e.target.value)} /> km</label>
           <input className='border border-gray-300 rounded px-2 py-0.5 text-sm flex-1 min-w-0' placeholder='Note (optional)' value={note} onChange={(e) => setNote(e.target.value)} />
@@ -600,6 +692,14 @@ export default function Regressions({ build }: { build: string | null }) {
             {edit && <button type='button' className={btn} onClick={() => setEdit(null)}>Undo</button>}
           </div>
           <div className='text-xs text-gray-600'>{edit ? <>Changed: <b>{editSummary(edit)}</b>{edit.note ? ` · ${edit.note}` : ''}</> : 'Unchanged.'}</div>
+        </>}
+        {hike && park && <>
+          <div className='flex gap-1.5'>
+            <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={!hike.key || !hike.line.length}
+              onClick={() => setBlessing(blessedEntry(park, { title: hike.title, key: hike.key!, km: hike.km, line: hike.line }, routesBuild))}>{hikeEntry ? 'Bless it again' : 'Bless this hike'}</button>
+            {blessing && <button type='button' className={btn} onClick={() => setBlessing(null)}>Undo</button>}
+          </div>
+          <div className='text-xs text-gray-600'>{blessing ? <>To bless: <b>{blessing.name}, {blessing.km} km</b></> : 'Not blessed.'}</div>
         </>}
         <div className='flex items-center gap-2 border-t border-gray-100 pt-1.5'>
           <button type='button' className={btn} disabled={!nChanges || !!committing?.startsWith('Committing')} onClick={commit}>Commit {nChanges} change{nChanges === 1 ? '' : 's'}</button>
