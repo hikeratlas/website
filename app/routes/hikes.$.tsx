@@ -197,7 +197,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   }
   hikeTrail.push({ name: e.title, path: `${parkPath}/${e.slug}` });
   const { key, dest } = reportsKey(doc!, e.id);
-  const reports = (await parkReports(routesBuild, index, area.id).catch(() => null))?.[key] ?? null;
+  // By the routes document's park id: a park mapped twice (Cape Breton
+  // Highlands is 4855583 and 17879029) has its routes, and reports, under one.
+  const reports = (await parkReports(routesBuild, index, String(doc!.park?.id ?? area.id)).catch(() => null))?.[key] ?? null;
   const kind = e.type === 'Multi-day' ? 'multi-day hike' : e.type === 'Base camp' ? 'walk to a base camp' : e.type === 'Stop' ? 'short walk' : 'day hike';
   const stats = `${e.km.toFixed(e.km < 10 ? 1 : 0)} km · ↑ ${Math.round(e.gain).toLocaleString('en-US')} m`;
   return page({

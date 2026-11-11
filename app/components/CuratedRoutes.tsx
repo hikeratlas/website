@@ -530,8 +530,11 @@ export default function CuratedRoutes(props: Props) {
     if (!sel) return;
     let live = true;
     const park = sel.id.split('/')[0];
-    Promise.all([parkRoutes(build, park), reportsFor(build, park)])
-      .then(([doc, all]) => {
+    // Filed under the routes document's park id (a park mapped twice has its
+    // routes under one of its ids).
+    parkRoutes(build, park)
+      .then(async (doc) => {
+        const all = await reportsFor(build, String(doc.park?.id ?? park));
         const { key, dest } = reportsKey(doc, sel.id);
         if (live) setReps({ id: sel.id, reports: all?.[key] ?? null, dest });
       })
