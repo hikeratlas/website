@@ -42,10 +42,9 @@ export const SHOWCASE = [
   'united-states/maine/acadia-national-park',
 ];
 
-// The featured hike: an easy or moderate one scoring this share of the
-// park's best, and a loop over the best of those if it scores LOOP_WITHIN.
+// The featured hike: the best easy or moderate one, if it scores this share
+// of the park's best.
 const APPROACHABLE_WITHIN = 0.7;
-const LOOP_WITHIN = 0.85;
 
 // A showcase park this close (km, centre to centre) counts as near.
 const NEAR_KM = 500;
@@ -157,16 +156,10 @@ export async function featured(build: string, at: [number, number] | null, day: 
   ]);
   if (!doc || !doc.day_hikes.length) return null;
   const hikes = parkHikes(doc, reports);
-  // An approachable hike (easy or moderate) that's among the park's good
-  // ones (APPROACHABLE_WITHIN of its best), else any; the best of those, or
-  // a loop of them if one scores LOOP_WITHIN of it: a loop's shape on the
-  // map says more than an out-and-back's. Acadia: the Beehive loop (9.07)
-  // over Champlain Mountain and back (9.34); Banff: Lake Louise's loop.
+  // The best approachable hike (easy or moderate) that's among the park's
+  // good ones (APPROACHABLE_WITHIN of its best), else the best.
   const byScore = [...hikes].sort((a, b) => b.score - a.score);
-  const easy = byScore.filter((x) => (x.diff === 'Easy' || x.diff === 'Moderate') && x.score >= APPROACHABLE_WITHIN * byScore[0].score);
-  const pool = easy.length ? easy : byScore;
-  const loop = pool.find((x) => x.loop);
-  const h = loop && loop.score >= LOOP_WITHIN * pool[0].score ? loop : pool[0];
+  const h = byScore.find((x) => (x.diff === 'Easy' || x.diff === 'Moderate') && x.score >= APPROACHABLE_WITHIN * byScore[0].score) ?? byScore[0];
   const entry = hikeEntries(doc).find((e) => e.id === h.id);
   const parkPath = hikesPath(pick.path.split('/'));
   const top = [...doc.day_hikes].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 60);
