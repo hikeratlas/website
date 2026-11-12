@@ -1,6 +1,6 @@
 // The server's response for a page: the app rendered as a stream, or all of
 // it at once for bots (so crawlers get the whole page).
-import { ServerRouter, type AppLoadContext, type EntryContext } from "react-router";
+import { ServerRouter, type EntryContext, type RouterContextProvider } from "react-router";
 import { isbot } from "isbot";
 import { renderToReadableStream } from "react-dom/server";
 
@@ -10,7 +10,7 @@ export default async function handleRequest(
   responseHeaders: Headers,
   routerContext: EntryContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  loadContext: AppLoadContext
+  loadContext: RouterContextProvider
 ) {
   let shellRendered = false;
   const body = await renderToReadableStream(
