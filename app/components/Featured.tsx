@@ -25,16 +25,30 @@ function Card({ href, eyebrow, children, art }: { href: string; eyebrow: string;
 
 const CTA = 'mt-auto inline-flex items-center gap-1.5 self-start rounded-xl bg-green-900 px-4 py-2 text-sm font-semibold text-white transition group-hover:bg-green-800';
 
-export default function Featured({ data, style }: { data: Data | null; style: string }) {
+export default function Featured({ data, style, search = '' }: { data: Data | null; style: string; search?: string }) {
   const hk = data?.hike;
   const overlay = useMemo(() => hk && ({ line: hk.coords, stops: hk.along.map((f) => ({ n: f.n, at: f.at })) }), [hk]);
   if (!data) return null;
   const { park, hike } = data;
   const days = park.counts.find(([, w]) => w === 'day hike')?.[0] ?? 0;
-  return <section aria-label='Featured' className='my-6 grid gap-4 md:grid-cols-2'>
+  const sc = data.showcase;
+  // ?showcase=N: a bar to step through the showcase parks, keeping the rest
+  // of the query (a preview's ?build=).
+  const step = (d: number) => {
+    const q = new URLSearchParams(search);
+    q.set('showcase', String(sc ? (sc.index + d + sc.count) % sc.count : 0));
+    return `?${q}`;
+  };
+  return <>
+  {sc && <nav aria-label='Showcase parks' className='mt-6 -mb-3 flex items-center gap-3 text-sm'>
+    <a href={step(-1)} className='rounded-lg border border-stone-300 px-3 py-1 !text-stone-900 !no-underline hover:bg-stone-50'>‹ Prev</a>
+    <span className='text-stone-600'>Showcase park {sc.index + 1} of {sc.count}: {park.name}</span>
+    <a href={step(1)} className='rounded-lg border border-stone-300 px-3 py-1 !text-stone-900 !no-underline hover:bg-stone-50'>Next ›</a>
+  </nav>}
+  <section aria-label='Featured' className='my-6 grid gap-4 md:grid-cols-2'>
     <Card href={park.path} eyebrow={`${data.near ? 'A park near you' : 'Featured park'} · ${park.region}`}
       art={<Suspense fallback={<div className='h-[220px] md:h-[260px]' />}>
-        <MiniMap style={style} bounds={park.bounds} parkId={park.id} label={`A map of ${park.name}`} className='h-[220px] md:h-[260px]' />
+        <MiniMap style={style} bounds={park.bounds} parkId={park.id} muted label={`A map of ${park.name}`} className='h-[220px] md:h-[260px]' />
       </Suspense>}>
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{park.name}</span>
       <span className='text-sm text-stone-700'>{park.counts.map(([n, w]) => plural(n, w)).join(' · ')}</span>
@@ -72,5 +86,6 @@ export default function Featured({ data, style }: { data: Data | null; style: st
       {hike.reports > 0 && <span className='text-sm text-stone-700'>{plural(hike.reports, 'trip report')} from hikers who&apos;ve done it</span>}
       <span className='mt-auto pt-3'><span className={CTA}>See the hike <span aria-hidden='true'>→</span></span></span>
     </Card>
-  </section>;
+  </section>
+  </>;
 }

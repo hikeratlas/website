@@ -51,6 +51,9 @@ const NEAR_KM = 500;
 
 export interface Featured {
   near: boolean;
+  // Which showcase park it is, when one was asked for (?showcase=N, for
+  // checking them one by one).
+  showcase: { index: number; count: number } | null;
   park: {
     name: string;
     region: string;
@@ -135,7 +138,9 @@ const thin = (line: [number, number][], n: number) => {
 
 // at: the visitor's [lon, lat], if known; day: which day it is, for the
 // rotation.
-export async function featured(build: string, at: [number, number] | null, day: number): Promise<Featured | null> {
+// showcase: which showcase park to feature (the homepage's ?showcase=N), else
+// null to choose.
+export async function featured(build: string, at: [number, number] | null, day: number, showcase: number | null = null): Promise<Featured | null> {
   const [regions, index] = await Promise.all([getJson<Regions>(regionsUrl(build)), getJson<BundleIndex>(indexUrl(build))]);
   if (!regions || !index) return null;
   const parks = SHOWCASE.flatMap((path) => {
@@ -148,7 +153,8 @@ export async function featured(build: string, at: [number, number] | null, day: 
   if (!parks.length) return null;
   const nearest = at ? parks.map((p) => ({ p, d: km(at, p.mid) })).sort((a, b) => a.d - b.d)[0] : null;
   const near = !!nearest && nearest.d <= NEAR_KM;
-  const pick = near ? nearest!.p : parks[((day % parks.length) + parks.length) % parks.length];
+  const wrap = (i: number) => ((i % parks.length) + parks.length) % parks.length;
+  const pick = showcase !== null ? parks[wrap(showcase)] : near ? nearest!.p : parks[wrap(day)];
 
   const [doc, reports] = await Promise.all([
     parkDoc(build, index, pick.area.id).catch(() => null),
@@ -170,7 +176,8 @@ export async function featured(build: string, at: [number, number] | null, day: 
     [(doc.stops ?? []).length, 'quick stop'],
   ] as [number, string][]).filter(([n]) => n > 0);
   return {
-    near,
+    near: showcase === null && near,
+    showcase: showcase !== null ? { index: wrap(showcase), count: parks.length } : null,
     park: {
       name: doc.park?.name ?? pick.area.name,
       region: pick.state,

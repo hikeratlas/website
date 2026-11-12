@@ -28,11 +28,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const lat = Number(cf?.latitude), lon = Number(cf?.longitude);
   const at: [number, number] | null = cf?.latitude && cf?.longitude && Number.isFinite(lat) && Number.isFinite(lon) ? [lon, lat] : null;
   const day = Math.floor(Date.now() / 86_400_000);
-  return json({ featured: await featured(build, at, day).catch(() => null), style: styleUrl(preview) });
+  // ?showcase=N: showcase park N, to check them one by one.
+  const n = Number(url.searchParams.get('showcase'));
+  const showcase = url.searchParams.has('showcase') && Number.isInteger(n) ? n : null;
+  return json({ featured: await featured(build, at, day, showcase).catch(() => null), style: styleUrl(preview), search: url.search });
 };
 
 export default function Index() {
-  const { featured: data, style } = useLoaderData<typeof loader>();
+  const { featured: data, style, search } = useLoaderData<typeof loader>();
   // home.mdx has the page's frame.
-  return <Home components={{ Featured: () => <Featured data={data} style={style} /> }} />;
+  return <Home components={{ Featured: () => <Featured data={data} style={style} search={search} /> }} />;
 }

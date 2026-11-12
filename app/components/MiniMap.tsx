@@ -28,6 +28,11 @@ export interface Overlay {
 }
 
 type Projected = { line: string; start: [number, number]; stops: { n: number; x: number; y: number }[] };
+// The park, over a muted map: its outline, as an SVG path.
+type ParkShape = { outline: string };
+
+type Ring = [number, number][];
+const pathOf = (rings: Ring[], close: boolean) => rings.map((r) => `M${r.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}${close ? 'Z' : ''}`).join('');
 
 export default function MiniMap({ style, bounds, parkId, overlay, muted, padding = 12, label, className }: {
   style: string;
@@ -42,6 +47,7 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
   const box = useRef<HTMLDivElement>(null);
   const [seen, setSeen] = useState(false);
   const [proj, setProj] = useState<Projected | null>(null);
+  const [park, setPark] = useState<ParkShape | null>(null);
 
   useEffect(() => {
     const el = box.current;
@@ -73,10 +79,26 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
         stops: overlay.stops.map((s) => { const [x, y] = p(s.at); return { n: s.n, x, y }; }),
       });
     };
+    // Over a muted map, the park's outline is drawn as SVG (the canvas's
+    // filter would mute it too): its lines from the tiles once they're in,
+    // projected. Not a fill: tiles' pieces of it overlap at their edges.
+    const drawPark = () => {
+      if (!parkId || !muted) return;
+      const id = ['==', ['to-string', ['get', 'osm_id']], parkId] as maplibregl.FilterSpecification;
+      const p = (c: number[]) => { const q = m.project([c[0], c[1]]); return [q.x, q.y] as [number, number]; };
+      const lines: Ring[] = [];
+      for (const f of m.querySourceFeatures('tiles1', { sourceLayer: 'park_outline', filter: id })) {
+        const g = f.geometry;
+        const all = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+        for (const line of all) lines.push(line.map(p));
+      }
+      setPark({ outline: pathOf(lines, false) });
+    };
     m.once('load', () => {
       // The credits start folded, behind their (i), as on the map page.
       m.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
-      if (parkId) {
+      if (parkId && muted) m.once('idle', drawPark);
+      else if (parkId) {
         const id = ['==', ['to-string', ['get', 'osm_id']], parkId] as maplibregl.FilterSpecification;
         const before = m.getStyle().layers.find((l) => l.type === 'symbol')?.id;
         m.addLayer({ id: 'feat-park-fill', type: 'fill', source: 'tiles1', 'source-layer': 'park', filter: id, paint: { 'fill-color': '#15803d', 'fill-opacity': 0.14 } }, before);
@@ -84,12 +106,16 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
       }
       project();
     });
-    m.on('resize', project);
+    m.on('resize', () => { project(); drawPark(); });
     return () => m.remove();
   }, [seen, style, bounds, parkId, overlay, muted, padding]);
 
   return <div role='img' aria-label={label} className={`relative overflow-hidden bg-[#eef2ea] ${className}`}>
     <div ref={box} className='absolute inset-0' />
+    {park && <svg className='pointer-events-none absolute inset-0 h-full w-full' aria-hidden='true'>
+      <path d={park.outline} fill='none' stroke='#ffffff' strokeWidth='4.5' strokeOpacity='0.8' strokeLinejoin='round' />
+      <path d={park.outline} fill='none' stroke='#14532d' strokeWidth='2.5' strokeLinejoin='round' />
+    </svg>}
     {proj && <svg className='pointer-events-none absolute inset-0 h-full w-full' aria-hidden='true'>
       <polyline points={proj.line} fill='none' stroke='#ffffff' strokeWidth='6' strokeLinejoin='round' strokeLinecap='round' />
       <polyline points={proj.line} fill='none' stroke='#c026d3' strokeWidth='3' strokeLinejoin='round' strokeLinecap='round' />
