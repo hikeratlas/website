@@ -1,6 +1,4 @@
-import { json } from "@remix-run/cloudflare";
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/cloudflare";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, type LoaderFunctionArgs, type MetaFunction } from "react-router";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import MapPage from '~/components/MapPage';
 import { buildFor } from '~/build';
@@ -28,7 +26,7 @@ export const meta: MetaFunction = () => {
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
-  return json({ build: buildFor(url), search: url.search });
+  return { build: buildFor(url), search: url.search };
 };
 
 export default function Index() {

@@ -1,22 +1,35 @@
-# Welcome to Remix!
+# Hiker Atlas website
 
-- [Remix Docs](https://remix.run/docs)
+[React Router](https://reactrouter.com/) (framework mode, with Vite), served by
+Cloudflare Pages.
+
+## Layout
+
+- `app/`: the site. `app/routes/` are its pages, named as files (`hikes.$.tsx`
+  is `/hikes/*`); the homepage and blog posts are MDX, a post's frontmatter
+  `meta` and `headers` becoming its route's (see `mdx-route-exports.ts`).
+- `static/`: files served as they are (favicons, images, Pages' `_headers` and
+  `_routes.json`).
+- `functions/[[path]].ts`: the Pages Function serving every other request from
+  the server build.
 
 ## Development
 
-You will be utilizing Wrangler for local development to emulate the Cloudflare runtime. This is already wired up in your package.json as the `dev` script:
-
 ```sh
-# start the remix dev server and wrangler
+# the Vite dev server, with Cloudflare's bindings (cloudflareDevProxy)
 npm run dev
 ```
 
-Open up [http://127.0.0.1:8788](http://127.0.0.1:8788) and you should be ready to go!
+To try the built site as Pages serves it:
+
+```sh
+npm run build
+npm start  # wrangler pages dev ./public, on http://127.0.0.1:8788
+```
 
 ## Deployment
 
-Cloudflare Pages are currently only deployable through their Git provider integrations.
-
-If you don't already have an account, then [create a Cloudflare account here](https://dash.cloudflare.com/sign-up/pages) and after verifying your email address with Cloudflare, go to your dashboard and follow the [Cloudflare Pages deployment guide](https://developers.cloudflare.com/pages/framework-guides/deploy-anything).
-
-Configure the "Build command" should be set to `npm run build`, and the "Build output directory" should be set to `public`.
+Cloudflare Pages builds each push from Git: the "Build command" is
+`npm run build` and the "Build output directory" is `public`. `npm run build`
+builds into `build/` (`build/client` and `build/server`) and copies the client
+half to `public/`; Pages bundles `functions/` with the server half.

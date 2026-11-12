@@ -3,7 +3,7 @@
 // its routes; the hike as an infographic, its shape and elevation profile
 // with what it passes numbered on both.
 import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
-import { Link } from '@remix-run/react';
+import { Link } from 'react-router';
 import type { Featured as Data } from '~/featured';
 import { DIFF_COLORS } from '~/park';
 import { TerrainBar } from './ParkSheet';
