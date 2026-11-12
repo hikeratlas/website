@@ -179,6 +179,10 @@ export default function Search(props: Props) {
     const pointerDown = React.useRef(false);
     // Where the shown results were searched from.
     const nearRef = React.useRef<LatLon | null>(null);
+    // The query the shown results answer, and whether the search failed: a
+    // search with no results says so rather than showing nothing (#111).
+    const [answered, setAnswered] = React.useState<string | null>(null);
+    const [failed, setFailed] = React.useState(false);
     const {
       isOpen,
       getMenuProps,
@@ -206,15 +210,21 @@ export default function Search(props: Props) {
           params.set('lat', near.lat.toFixed(3));
           params.set('lon', near.lon.toFixed(3));
         }
-        const response = await fetch(
-          `https://lono5me4vqwi2h6dmm66oldkie0hwewm.lambda-url.us-east-1.on.aws/?${params}`
-        );
-
-        const json = await response.json() as Item[];
+        let json: Item[] | null = null;
+        try {
+          const response = await fetch(
+            `https://lono5me4vqwi2h6dmm66oldkie0hwewm.lambda-url.us-east-1.on.aws/?${params}`
+          );
+          json = response.ok ? await response.json() as Item[] : null;
+        } catch {
+          json = null;
+        }
 
         if (seq === captured) {
           setRecent(false);
-          setItems(json);
+          setItems(json ?? []);
+          setFailed(json === null);
+          setAnswered(inputValue);
         }
       },
       onSelectedItemChange: (x) => {
@@ -228,6 +238,8 @@ export default function Search(props: Props) {
       },
     })
 
+    // Nothing to show for the query in the box: say so.
+    const nothing = !recent && !!inputValue && answered === inputValue && items.length === 0;
     return (
       <div className='autosuggest relative'>
         <div className="w-full flex flex-col gap-1">
@@ -254,10 +266,16 @@ export default function Search(props: Props) {
         </div>
         <ul
           className={`absolute w-full bg-white mt-1 shadow-md max-h-80 p-0 overflow-scroll z-10 ${
-            !(isOpen && items.length) && 'hidden'
+            !(isOpen && (items.length || nothing)) && 'hidden'
           }`}
           {...getMenuProps()}
         >
+          {isOpen && nothing &&
+            <li role="status" className="px-3 py-2.5 text-gray-700">
+              {failed
+                ? <>Search isn&apos;t working right now. Try again in a moment.</>
+                : <>No matches for &ldquo;{inputValue}&rdquo;. <span className="text-gray-500">Try a park, peak, lake, trail or town.</span></>}
+            </li>}
           {isOpen && recent && items.length > 0 &&
             <li className="px-3 pt-2 pb-1 text-xs uppercase tracking-wide text-gray-500">Recent</li>}
           {isOpen &&
