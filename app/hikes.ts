@@ -441,6 +441,7 @@ export function regionList(regions: Regions, r: Resolved): RegionListing {
 // (ids "trail-...") are trails.
 const KINDS: [RegExp, string][] = [
   [/ National Park and Preserve$/, 'National park and preserve'],
+  [/ National Park and National Historic Site$/, 'National park and historic site'],
   [/ National Park Reserve( of Canada)?$/, 'National park reserve'],
   [/ National Park( of Canada)?$/, 'National park'],
   [/ National Historic(al)? (Park|Site)( of Canada)?$/, 'National historic site'],
@@ -458,7 +459,8 @@ export function parkLabel(name: string, id?: string): { name: string; kind: stri
   if (id?.startsWith('trail-')) return { name: base, kind: 'Trail', near };
   for (const [re, kind] of KINDS) {
     const k = base.match(re);
-    if (k && k.index! > 0) {
+    // Not "Kejimkujik National Park and" for a kind it has a part of.
+    if (k && k.index! > 0 && !/ (and|&)$/.test(base.slice(0, k.index))) {
       const label = kind.replace(/\$(\d)/g, (_, i) => k[Number(i)] ?? '');
       return { name: base.slice(0, k.index), kind: label.charAt(0) + label.slice(1).toLowerCase(), near };
     }
