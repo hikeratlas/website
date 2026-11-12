@@ -35,7 +35,7 @@ type ParkShape = { area: string; label: [number, number] | null };
 type Ring = [number, number][];
 const pathOf = (rings: Ring[], close: boolean) => rings.map((r) => `M${r.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}${close ? 'Z' : ''}`).join('');
 
-export default function MiniMap({ style, bounds, parkIds, parkName, overlay, muted, padding = 12, label, className }: {
+export default function MiniMap({ style, bounds, parkIds, parkName, overlay, muted, padding = 12, label, className, credits = true }: {
   style: string;
   bounds: [number, number, number, number];
   // The park's OSM ids (any of them, a park mapped twice has several).
@@ -47,11 +47,17 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
   padding?: number;
   label: string;
   className: string;
+  // The map's credits control; off for the homepage's pictures of it, whose
+  // page credits the map in text.
+  credits?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [seen, setSeen] = useState(false);
   const [proj, setProj] = useState<Projected | null>(null);
   const [park, setPark] = useState<ParkShape | null>(null);
+  // Drawn: its tiles in and what's over them placed (data-ready, for
+  // bin/home-images.mjs to know when to picture it).
+  const [ready, setReady] = useState(false);
   const edge = `edge${useId().replace(/:/g, '')}`;
 
   useEffect(() => {
@@ -68,6 +74,7 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
     // A new box (another park): none of the last one's drawing.
     setProj(null);
     setPark(null);
+    setReady(false);
     const m = new maplibregl.Map({
       container: box.current,
       style,
@@ -75,7 +82,7 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
       fitBoundsOptions: { padding },
       interactive: false,
       transformRequest: demTransformRequest,
-      attributionControl: { compact: true },
+      attributionControl: credits ? { compact: true } : false,
     });
     if (muted) m.getCanvas().style.filter = 'saturate(0.25) brightness(1.08) contrast(0.92)';
     // What to frame: the given box, or once a park is measured, the park.
@@ -136,7 +143,7 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
           }
           const v = m.getBounds();
           const inView = w >= v.getWest() && e <= v.getEast() && s >= v.getSouth() && n <= v.getNorth();
-          if (!Number.isFinite(w) || inView || tries >= 4) { drawPark(); return; }
+          if (!Number.isFinite(w) || inView || tries >= 4) { drawPark(); setReady(true); return; }
           frame = [w, s, e, n];
           m.fitBounds(frame, { padding, duration: 0 });
           m.once('idle', () => fitPark(tries + 1));
@@ -150,14 +157,15 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
         m.addLayer({ id: 'feat-park-line', type: 'line', source: 'tiles1', 'source-layer': 'park_outline', filter: id, paint: { 'line-color': '#14532d', 'line-width': 2.5, 'line-opacity': 0.85 } }, before);
       }
       project();
+      if (!(parkIds && muted)) m.once('idle', () => setReady(true));
     });
     // The box again at the map's settled size (it can change after it's
     // made, as the page lays out), then what's drawn over it.
     m.on('resize', () => { m.fitBounds(frame, { padding, duration: 0 }); project(); drawPark(); });
     return () => m.remove();
-  }, [seen, style, bounds, parkIds, overlay, muted, padding]);
+  }, [seen, style, bounds, parkIds, overlay, muted, padding, credits]);
 
-  return <div role='img' aria-label={label} className={`relative overflow-hidden bg-[#eef2ea] ${className}`}>
+  return <div role='img' aria-label={label} data-ready={ready ? '' : undefined} className={`relative overflow-hidden bg-[#eef2ea] ${className}`}>
     <div ref={box} className='absolute inset-0' />
     {park && <svg className='pointer-events-none absolute inset-0 h-full w-full' aria-hidden='true'>
       <defs>

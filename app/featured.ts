@@ -3,6 +3,7 @@
 // they are) if one is close, else the day's; and that park's best moderate
 // hike. Read from the live routes build, as the hike pages are, so the
 // counts and routes are always the current ones.
+import { TILES_ROOT } from '~/build';
 import { hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, regionsUrl, type BundleIndex, type Regions, type Route } from '~/hikes';
 import { parkHikes, picks, timeLabel, type Difficulty } from '~/park';
 
@@ -51,11 +52,15 @@ const NEAR_KM = 500;
 
 export interface Featured {
   near: boolean;
+  // The cards' pictures, rendered for this build (BundleIndex.home), else
+  // null, and they're drawn live.
+  images: { park: string; hike: string } | null;
   // The showcase parks (their short names), which one this is, and whether
   // it was asked for (?showcase=N), for the homepage's park switcher.
   showcase: { index: number; names: string[]; asked: boolean };
   park: {
     name: string;
+    slug: string; // its regions.json slug, naming its pictures
     region: string;
     path: string;
     counts: [number, string][];
@@ -175,11 +180,15 @@ export async function featured(build: string, at: [number, number] | null, day: 
     [doc.point_to_points.length + (doc.see_also ?? []).length, 'multi-day trip'],
     [(doc.stops ?? []).length, 'quick stop'],
   ] as [number, string][]).filter(([n]) => n > 0);
+  const slug = pick.path.split('/').pop()!;
+  const home = index.home && /^[\w.-]+$/.test(index.home) ? `${TILES_ROOT}/routes/${build}/${index.home}/${slug}` : null;
   return {
     near: showcase === null && near,
+    images: home ? { park: `${home}-park.jpg`, hike: `${home}-hike.jpg` } : null,
     showcase: { index: parks.indexOf(pick), names: parks.map((x) => x.short), asked: showcase !== null },
     park: {
       name: doc.park?.name ?? pick.area.name,
+      slug,
       region: pick.state,
       path: parkPath,
       counts,

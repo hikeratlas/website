@@ -31,7 +31,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // ?showcase=N: showcase park N, to check them one by one.
   const n = Number(url.searchParams.get('showcase'));
   const showcase = url.searchParams.has('showcase') && Number.isInteger(n) ? n : null;
-  return json({ featured: await featured(build, at, day, showcase).catch(() => null), style: styleUrl(preview), search: url.search });
+  // ?shots: the cards drawn live, for basemap's bin/home-images.mjs to
+  // picture them.
+  const shots = url.searchParams.has('shots');
+  return json({ featured: await featured(build, at, day, showcase).catch(() => null), style: styleUrl(preview), search: url.search, shots });
 };
 
 // The featured cards, for home.mdx's <Featured />: one component for good,
@@ -39,8 +42,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // mounting a new one (an inline component remounted the park switcher, which
 // scrolled back to the start and then to the new park).
 function FeaturedSlot() {
-  const { featured: data, style, search } = useLoaderData<typeof loader>();
-  return <Featured data={data} style={style} search={search} />;
+  const { featured: data, style, search, shots } = useLoaderData<typeof loader>();
+  return <Featured data={data} style={style} search={search} shots={shots} />;
 }
 const components = { Featured: FeaturedSlot };
 
