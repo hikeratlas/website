@@ -660,15 +660,9 @@ export default function CuratedRoutes(props: Props) {
   // A list of states or parks (#55's index pages), when no route is open.
   if (mode === null && !error && region) {
     return <Sheet phone={phone} snap={snap} setSnap={setSnap}>
-      <div className='flex items-start justify-between gap-2' data-drag style={phone ? { touchAction: 'none' } : undefined}>
-        <div>
-          {trail}
-          <h2 className='font-semibold text-base'>{region.heading}</h2>
-        </div>
-        <div className='flex items-center gap-2'>
-          {trail && <AppLink />}
-          <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={() => onNavigate?.('/map')}>×</button>
-        </div>
+      <div data-drag style={phone ? { touchAction: 'none' } : undefined}>
+        <Toolbar left={trail} app={!!trail} onClose={() => onNavigate?.('/map')} />
+        <h2 className='font-semibold text-base'>{region.heading}</h2>
       </div>
       {note && <div className='text-gray-600 mt-1'>{note}</div>}
       <ul className='mt-1'>
@@ -687,10 +681,13 @@ export default function CuratedRoutes(props: Props) {
   const sheet = mode === 'list' && listPark && parkView?.id === listPark.id ? parkView : null;
   return <Sheet phone={phone} snap={snap} setSnap={setSnap}>
     {/* data-drag: on a phone, dragging the header row moves the sheet. */}
-    <div className='flex items-start justify-between gap-2' data-drag style={phone ? { touchAction: 'none' } : undefined}>
-      <div>
+    <div data-drag style={phone ? { touchAction: 'none' } : undefined}>
+      {/* A /hikes page (it has breadcrumbs): the Android app can open it. */}
+      <Toolbar app={!!trail} onClose={close} left={<>
         {trail}
-        {(!trail || !listPark) && mode === 'detail' && list && <button className='tap text-blue-700 hover:underline mb-1 text-left' onClick={() => setMode('list')}>← {list.heading}</button>}
+        {(!trail || !listPark) && mode === 'detail' && list && <button className='tap inline-flex items-center text-left text-sm text-blue-700 hover:underline' onClick={() => setMode('list')}>← {list.heading}</button>}
+      </>} />
+      <div>
         {mode === 'list' && list && (sheet
           ? <h1 className='font-display text-[28px] font-extrabold leading-tight tracking-tight text-stone-900'>{sheet.doc.park?.name ?? listPark!.name}</h1>
           : <div className='font-semibold text-base'>{list.heading}</div>)}
@@ -704,11 +701,6 @@ export default function CuratedRoutes(props: Props) {
         {mode === 'detail' && sel && <div className='text-sm text-stone-700'>{sel.label}{sel.from && !sel.label.includes(sel.from) && !sel.title.includes(sel.from) ? ` · from ${trailhead(sel.from)}` : ''}</div>}
         {error && <div className='text-red-700'>{error}</div>}
         {note && <div className='text-gray-600'>{note}</div>}
-      </div>
-      <div className='flex items-center gap-2'>
-        {/* A /hikes page (it has breadcrumbs): the Android app can open it. */}
-        {trail && <AppLink />}
-        <button className='tap text-gray-500 hover:text-gray-900 leading-none text-lg' aria-label='Close' title='Close' onClick={close}>×</button>
       </div>
     </div>
     {mode === 'list' && list && list.items.length === 0 && <div className='mt-1 text-gray-500'>No curated hikes here yet.</div>}
@@ -756,18 +748,38 @@ function Crumbs({ crumbs, phone, onNavigate }: { crumbs: Crumb[]; phone: boolean
   if (phone) {
     const parent = crumbs[crumbs.length - 2];
     if (!parent) return null;
-    return <a href={parent.href} onClick={go(parent)} className='tap text-blue-700 hover:underline text-sm block mb-0.5'>‹ {parent.name}</a>;
+    return <a href={parent.href} onClick={go(parent)} className='tap inline-flex max-w-full items-center truncate text-sm text-blue-700 hover:underline'>‹ {parent.name}</a>;
   }
-  return <nav aria-label='Breadcrumb' className='text-xs text-gray-600 mb-0.5'>
+  // The page itself is the heading below, so the trail stops at its parent
+  // (a hike's name repeated took a second line, basemap#289).
+  const up = crumbs.length > 1 ? crumbs.slice(0, -1) : crumbs;
+  return <nav aria-label='Breadcrumb' className='text-xs text-gray-600'>
     <ol className='flex flex-wrap gap-x-1'>
-      {crumbs.map((c, i) => <li key={c.path} className='flex gap-x-1'>
+      {up.map((c, i) => <li key={c.path} className='flex gap-x-1'>
         {i > 0 && <span aria-hidden='true'>›</span>}
-        {i < crumbs.length - 1
+        {crumbs.length > 1
           ? <a href={c.href} onClick={go(c)} className='text-blue-700 hover:underline'>{c.name}</a>
           : <span aria-current='page'>{c.name}</span>}
       </li>)}
     </ol>
   </nav>;
+}
+
+// A sheet's top row: breadcrumbs (or a way back) on the left; the app link
+// and close on the right, on one axis; the heading goes below it, the
+// sheet's full width (basemap#289: on phones the crumb sat above the pill
+// and ×, which squeezed the heading).
+function Toolbar({ left, app, onClose }: { left?: React.ReactNode; app: boolean; onClose: () => void }) {
+  return <div className='mb-1 flex min-h-8 items-center justify-between gap-2'>
+    <div className='min-w-0 flex-1'>{left}</div>
+    <div className='-mr-1.5 flex shrink-0 items-center gap-1'>
+      {app && <AppLink />}
+      <button type='button' aria-label='Close' title='Close' onClick={onClose}
+        className='tap flex h-8 w-8 items-center justify-center rounded-full text-stone-500 hover:bg-stone-100 hover:text-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600'>
+        <svg viewBox='0 0 16 16' width='16' height='16' aria-hidden='true'><path d='M4 4l8 8M12 4l-8 8' stroke='currentColor' strokeWidth='1.75' strokeLinecap='round' /></svg>
+      </button>
+    </div>
+  </div>;
 }
 
 const PHONE = '(max-width: 640px)';
