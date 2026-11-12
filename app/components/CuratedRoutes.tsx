@@ -18,7 +18,7 @@ import { CoalescingSource, type Source } from '~/routing/source';
 import { withZstd, type Decompress } from '~/zstd';
 import { ElevationChart } from './RoutePlanner';
 import ParkSheet, { type NearbyPark } from './ParkSheet';
-import { isSmall, trailhead } from '~/park';
+import { isSmall, shapeWords, trailhead } from '~/park';
 import HikeSheet, { alongOf } from './HikeSheet';
 
 declare const pmtiles: {
@@ -116,7 +116,10 @@ interface Selected {
 
 const shapeOf = (kind: string): Selected['shape'] => (kind === 'loop' ? 'loop' : kind === 'out-and-back' ? 'out-and-back' : 'one-way');
 
-const KIND: Record<string, string> = { 'out-and-back': 'out and back', loop: 'loop', 'point-to-point': 'point to point (needs a shuttle)' };
+const KIND: Record<string, string> = { 'out-and-back': 'out and back', loop: 'loop', 'one-way': 'one way', 'point-to-point': 'point to point (needs a shuttle)' };
+// A day hike's kind in words: a one-way hike (website#109) says how you come
+// back, where known ("one way, Blue Grouse Gondola down").
+const kindOf = (h: { kind: string; return_by?: string }) => (h.kind === 'one-way' ? shapeWords(h.kind, h.return_by) : KIND[h.kind] ?? h.kind);
 
 // A route that follows an OSM hiking route carries its name (hikeratlas/routes'
 // recall::name_routes): "Colchuck Lake Trail", not "Colchuck Lake from Stuart
@@ -132,7 +135,7 @@ function lookup(doc: ParkDoc, id: string): Selected | null | undefined {
   const [, type, i, j] = id.split('/');
   if (type === 'day') {
     const h = doc.day_hikes[+i];
-    return h && { id, title: named(h, `${h.dest} from ${h.from}`), label: `Day hike · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why, from: h.from, shape: shapeOf(h.kind) };
+    return h && { id, title: named(h, `${h.dest} from ${h.from}`), label: `Day hike · ${kindOf(h)}`, route: h.route, why: h.why, from: h.from, shape: shapeOf(h.kind) };
   }
   if (type === 'stop') {
     const h = doc.stops?.[+i];
@@ -143,7 +146,7 @@ function lookup(doc: ParkDoc, id: string): Selected | null | undefined {
     if (!b) return null;
     if (j === undefined) return { id, title: `${b.camp}`, label: `Base camp · walk in from ${b.from}`, route: b.approach, base: b, baseIndex: +i, from: b.from, shape: 'one-way' };
     const h = b.hikes[+j];
-    return h && { id, title: named(h, `${h.dest} from ${b.camp}`), label: `Day hike from base camp · ${KIND[h.kind] ?? h.kind}`, route: h.route, why: h.why, base: b, baseIndex: +i, from: b.camp, shape: shapeOf(h.kind) };
+    return h && { id, title: named(h, `${h.dest} from ${b.camp}`), label: `Day hike from base camp · ${kindOf(h)}`, route: h.route, why: h.why, base: b, baseIndex: +i, from: b.camp, shape: shapeOf(h.kind) };
   }
   if (type === 'multi') {
     const t = doc.point_to_points[+i];
