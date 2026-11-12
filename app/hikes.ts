@@ -128,6 +128,20 @@ export interface BundleIndex {
   // linked in basemap's routes build): a bundle of its own, located the same
   // way. Missing in builds without them.
   reports?: { bundle: string; parks: Record<string, [number, number]> };
+  // Each state's park cards (#110), "<country>/<state>" -> [offset, length]
+  // in the routes bundle. Missing in builds without them.
+  cards?: Record<string, [number, number]>;
+}
+
+// A park's card in its state's list (#110, basemap's bin/hike-paths.py): its
+// best hike's name, what its hikes pass most, and its outline as an SVG path
+// in a 100 x 100 box, filled nonzero.
+export interface Card { top?: string | null; tags?: string[]; outline?: string }
+
+// A state's park cards by area id, from the routes bundle; null when the
+// build has none.
+export async function stateCards(build: string, index: BundleIndex | null, key: string): Promise<Record<string, Card> | null> {
+  return index ? bundlePart<Record<string, Card>>(build, index.bundle, index.cards?.[key]) : null;
 }
 
 // A page on another site about a route: a trip report or trail guide that
@@ -381,26 +395,78 @@ const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString(
 
 // What an index page lists (#55): the countries, a country's states, or a
 // state's parks and trail areas, with paths and counts.
-export function regionList(regions: Regions, r: Resolved): { heading: string; items: { name: string; path: string; meta: string }[]; bbox: Bbox | null } {
+// A /hikes index page's entries: a state's parks (id: the park's), or a
+// country's states, or the countries (parks, and top: the one with most hikes
+// in it).
+export interface RegionItem { name: string; path: string; meta?: string; hikes?: number; id?: string; parks?: number; top?: string }
+
+// What a /hikes index page lists. cards: the state's key in the build's
+// cards (BundleIndex.cards), on a state's page.
+export interface RegionListing { heading: string; items: RegionItem[]; bbox: Bbox | null; cards?: string }
+
+export function regionList(regions: Regions, r: Resolved): RegionListing {
   if (r.state && r.country) {
     return {
       heading: `Hikes in ${r.state.name}`,
       bbox: r.state.bbox,
-      items: r.state.areas.map((a) => ({ name: a.name, path: hikesPath([r.country!.slug, r.state!.slug, a.slug]), meta: count(a.hikes, 'hike') })),
+      cards: `${r.country.slug}/${r.state.slug}`,
+      items: r.state.areas.map((a) => ({
+        name: a.name, path: hikesPath([r.country!.slug, r.state!.slug, a.slug]), meta: count(a.hikes, 'hike'), hikes: a.hikes, id: a.id,
+      })),
     };
   }
   if (r.country) {
     return {
       heading: `Hikes in ${r.country.name}`,
       bbox: r.country.bbox,
-      items: r.country.states.map((s) => ({ name: s.name, path: hikesPath([r.country!.slug, s.slug]), meta: `${count(s.parks, 'park')} · ${count(s.hikes, 'hike')}` })),
+      items: r.country.states.map((s) => ({
+        name: s.name, path: hikesPath([r.country!.slug, s.slug]), meta: `${count(s.parks, 'park')} · ${count(s.hikes, 'hike')}`,
+        hikes: s.hikes, parks: s.parks, top: s.areas[0]?.name,
+      })),
     };
   }
   return {
     heading: 'Hikes in North America',
     bbox: null,
-    items: regions.countries.map((c) => ({ name: c.name, path: hikesPath([c.slug]), meta: `${count(c.parks, 'park')} · ${count(c.hikes, 'hike')}` })),
+    items: regions.countries.map((c) => ({
+      name: c.name, path: hikesPath([c.slug]), meta: `${count(c.parks, 'park')} · ${count(c.hikes, 'hike')}`,
+      hikes: c.hikes, parks: c.parks, top: [...c.states].sort((a, b) => b.hikes - a.hikes)[0]?.name,
+    })),
   };
+}
+
+// A park's name as a card shows it: shorter, with what kind of park it is
+// above ("Algonquin" and "Provincial park"), and the town that tells it from
+// another of its name below (basemap#296's "(near Hamilton)"). Trail areas
+// (ids "trail-...") are trails.
+const KINDS: [RegExp, string][] = [
+  [/ National Park and Preserve$/, 'National park and preserve'],
+  [/ National Park and National Historic Site$/, 'National park and historic site'],
+  [/ National Park Reserve( of Canada)?$/, 'National park reserve'],
+  [/ National Park( of Canada)?$/, 'National park'],
+  [/ National Historic(al)? (Park|Site)( of Canada)?$/, 'National historic site'],
+  [/ National (Recreation Area|Monument|Seashore|Lakeshore|Forest|Grassland|Preserve)$/, 'National $1'],
+  [/ Provincial (Park|Nature Reserve|Wilderness Area)$/, 'Provincial $1'],
+  [/ State (Park|Forest|Recreation Area|Natural Area|Game Lands)$/, 'State $1'],
+  [/ (Regional|County|Metro|Metropolitan|Municipal) Park$/, '$1 park'],
+  [/ (Wilderness Area|Wilderness|Conservation Area|Nature Reserve|Nature Preserve|Ecological Reserve|Recreation Area|Wildlife Area|Wildlife Management Area|Preserve)$/, '$1'],
+];
+
+export function parkLabel(name: string, id?: string): { name: string; kind: string | null; near: string | null } {
+  const m = name.match(/^(.*) \((near [^)]+)\)$/);
+  const base = m ? m[1] : name;
+  const near = m ? m[2] : null;
+  if (id?.startsWith('trail-')) return { name: base, kind: 'Trail', near };
+  for (const [re, kind] of KINDS) {
+    const k = base.match(re);
+    // Not "Kejimkujik National Park and" for a kind it has a part of.
+    if (k && k.index! > 0 && !/ (and|&)$/.test(base.slice(0, k.index))) {
+      const label = kind.replace(/\$(\d)/g, (_, i) => k[Number(i)] ?? '');
+      return { name: base.slice(0, k.index), kind: label.charAt(0) + label.slice(1).toLowerCase(), near };
+    }
+  }
+  if (/^Parc national /.test(base)) return { name: base, kind: 'Parc national', near };
+  return { name: base, kind: null, near };
 }
 
 export function hikeCount(n: number): string {

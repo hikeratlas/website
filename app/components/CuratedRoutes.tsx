@@ -10,7 +10,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
 import { TILES_ROOT, tilesUrl } from '~/build';
-import { hikeEntries, loadRegions, nearbyParks, parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
+import RegionItems from '~/components/RegionItems';
+import { hikeEntries, loadRegions, nearbyParks, parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type RegionItem, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
 import AppLink from './AppLink';
 import { profile, type Profile } from '~/routing/elevation';
 import { trailGeometry, type TrailGeometry } from '~/routing/trail';
@@ -268,7 +269,7 @@ export type Showing =
 
 // A list of places to go to rather than routes: the states of a country, the
 // parks of a state (#55's index pages), shown when nothing else is open.
-export interface RegionList { heading: string; items: { name: string; path: string; meta: string }[] }
+export interface RegionList { heading: string; items: RegionItem[]; cards?: string }
 
 export interface Crumb { name: string; href: string; path: string }
 
@@ -665,15 +666,10 @@ export default function CuratedRoutes(props: Props) {
     return <Sheet phone={phone} snap={snap} setSnap={setSnap}>
       <div data-drag style={phone ? { touchAction: 'none' } : undefined}>
         <Toolbar left={trail} app={!!trail} onClose={() => onNavigate?.('/map')} />
-        <h2 className='font-semibold text-base'>{region.heading}</h2>
+        <h2 className='font-display text-[24px] font-extrabold leading-tight tracking-tight text-stone-900'>{region.heading}</h2>
       </div>
       {note && <div className='text-gray-600 mt-1'>{note}</div>}
-      <ul className='mt-1'>
-        {region.items.map((c) => <li key={c.path} className='py-0.5'>
-          <a href={c.path} className='tap-row text-blue-700 hover:underline' onClick={(e) => { if (onNavigate && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onNavigate(c.path); } }}>{c.name}</a>
-          <div className='text-gray-500 text-xs'>{c.meta}</div>
-        </li>)}
-      </ul>
+      <RegionItems items={region.items} build={build} cards={region.cards} onNavigate={onNavigate} />
     </Sheet>;
   }
 

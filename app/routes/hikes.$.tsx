@@ -10,9 +10,10 @@ import MapPage, { type Initial } from '~/components/MapPage';
 import { buildFor } from '~/build';
 import {
   type Bbox, type BundleIndex, findHike, hikeCount, hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, parsePath,
-  regionList, regionsUrl, reportsKey, resolve, suggest, type Regions, type RouteReports, type SeeAlso,
+  regionList, regionsUrl, reportsKey, resolve, suggest, type RegionItem, type Regions, type RouteReports, type SeeAlso,
 } from '~/hikes';
 import RouteReportsList from '~/components/RouteReports';
+import RegionItems from '~/components/RegionItems';
 
 export { handle } from './map';
 
@@ -28,7 +29,7 @@ interface Page {
   heading: string;
   crumbs: { name: string; path: string }[];
   // An index page's list, a park's hikes, or a hike's facts.
-  items: { name: string; path: string; meta: string }[];
+  items: RegionItem[];
   facts: string[];
   // A hike's pages on other sites (trip reports, hikeratlas/cc-crawler), and
   // its destination's name for "More about ...".
@@ -116,7 +117,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       crumbs: trail,
       items: l.items,
       facts: [],
-      initial: { crumbs: trail, region: { heading: l.heading, items: l.items }, bbox: l.bbox },
+      initial: { crumbs: trail, region: { heading: l.heading, items: l.items, cards: l.cards }, bbox: l.bbox },
     });
   }
 
@@ -258,7 +259,9 @@ export default function Hikes() {
     <h1 className='font-semibold text-base'>{data.heading}</h1>
     {data.facts.map((f) => <p key={f} className='text-gray-600'>{f}</p>)}
     <RouteReportsList reports={data.reports} dest={data.dest} />
-    {data.items.length > 0 && <ul className='mt-1'>
+    {data.initial.region && !data.initial.focus && data.items.length > 0
+      ? <RegionItems items={data.items} build={data.build ?? 'north-america'} cards={data.initial.region.cards} />
+      : data.items.length > 0 && <ul className='mt-1'>
       {data.items.map((c) => <li key={c.path} className='py-0.5'>
         <a href={href(c.path)} className='text-blue-700 hover:underline'>{c.name}</a>
         {c.meta && <div className='text-gray-500 text-xs'>{c.meta}</div>}

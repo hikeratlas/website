@@ -204,7 +204,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
       const r = resolve(regions, parts);
       const l = regionList(regions, r);
       setCloseAt(Date.now());
-      setRegion({ heading: l.heading, items: l.items });
+      setRegion({ heading: l.heading, items: l.items, cards: l.cards });
       setCrumbs(toCrumbs([
         { name: 'Hikes', path: '/hikes' },
         ...(r.country ? [{ name: r.country.name, path: hikesPath([r.country.slug]) }] : []),
