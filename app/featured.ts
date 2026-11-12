@@ -4,7 +4,7 @@
 // hike. Read from the live routes build, as the hike pages are, so the
 // counts and routes are always the current ones.
 import { hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, regionsUrl, type BundleIndex, type Regions } from '~/hikes';
-import { parkHikes, timeLabel, type Difficulty } from '~/park';
+import { parkHikes, picks, timeLabel, type Difficulty } from '~/park';
 
 // Well-known parks with plenty of hikes (25+), across both countries, as
 // regions.json's paths.
@@ -53,6 +53,7 @@ export interface Featured {
     path: string;
     counts: [number, string][];
     lines: string[]; // SVG points of its day hikes, in a 320x180 box
+    starts: { tag: string; title: string; km: number }[]; // its picks to start with
   };
   hike: {
     title: string;
@@ -68,6 +69,7 @@ export interface Featured {
     passes: string[];
     reports: number;
     line: string; // SVG points, in a 320x180 box
+    around: string[]; // the park's other day hikes, in the same box
   };
 }
 
@@ -87,13 +89,20 @@ function km(a: [number, number], b: [number, number]): number {
 }
 
 // Lines scaled together into a w x h box (longitude scaled by latitude), as
-// SVG points, each thinned to about `n` points.
-export function fit(lines: [number, number][][], w: number, h: number, pad = 12, n = 60): string[] {
-  const all = lines.flat();
-  if (!all.length) return [];
-  const k = Math.cos((all[0][1] * Math.PI) / 180);
-  const xs = all.map(([x]) => x * k), ys = all.map(([, y]) => -y);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+// SVG points, each thinned to about `n` points. The box fits `frame`'s
+// points (default: all of them) between the `trim` and 1 - `trim` quantiles,
+// grown by `grow` on each side: a park's outlying parcels (Acadia's Schoodic
+// and islands) run off the edge instead of shrinking the rest to a corner.
+export function fit(lines: [number, number][][], w: number, h: number, opts: { pad?: number; n?: number; trim?: number; frame?: [number, number][][]; grow?: number } = {}): string[] {
+  const { pad = 12, n = 60, trim = 0, grow = 0 } = opts;
+  const pts = (opts.frame ?? lines).flat();
+  if (!pts.length) return [];
+  const k = Math.cos((pts[0][1] * Math.PI) / 180);
+  const q = (v: number[], f: number) => { const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.max(0, Math.round(f * (s.length - 1))))]; };
+  const xs = pts.map(([x]) => x * k), ys = pts.map(([, y]) => -y);
+  let x0 = q(xs, trim), x1 = q(xs, 1 - trim), y0 = q(ys, trim), y1 = q(ys, 1 - trim);
+  const gx = (x1 - x0) * grow, gy = (y1 - y0) * grow;
+  x0 -= gx; x1 += gx; y0 -= gy; y1 += gy;
   const sc = Math.min((w - 2 * pad) / Math.max(x1 - x0, 1e-9), (h - 2 * pad) / Math.max(y1 - y0, 1e-9));
   const dx = (w - (x1 - x0) * sc) / 2, dy = (h - (y1 - y0) * sc) / 2;
   return lines.map((line) => {
@@ -147,7 +156,8 @@ export async function featured(build: string, at: [number, number] | null, day: 
       region: pick.state,
       path: parkPath,
       counts,
-      lines: fit(top.map((x) => x.route.line), 320, 180, 12, 40),
+      lines: fit(top.map((x) => x.route.line), 320, 180, { n: 40, trim: 0.04, grow: 0.06 }),
+      starts: picks(hikes).map((p) => ({ tag: p.tag, title: hikeEntries(doc).find((e) => e.id === p.hike.id)?.title ?? p.hike.title, km: p.hike.route.km })),
     },
     hike: {
       title: entry?.title ?? h.title,
@@ -162,7 +172,9 @@ export async function featured(build: string, at: [number, number] | null, day: 
       landcover: h.route.landcover,
       passes: h.features,
       reports: h.reports,
-      line: fit([h.route.line], 320, 180, 16, 200)[0] ?? '',
+      line: fit([h.route.line], 320, 180, { pad: 16, n: 200, grow: 0.15 })[0] ?? '',
+      around: fit(doc.day_hikes.filter((_, i) => `${String(doc.park?.id ?? '')}/day/${i}` !== h.id).map((x) => x.route.line), 320, 180,
+        { pad: 16, n: 60, frame: [h.route.line], grow: 0.15 }),
     },
   };
 }
