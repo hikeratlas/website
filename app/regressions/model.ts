@@ -193,7 +193,8 @@ export function norm(s: string | null | undefined): string {
 }
 
 // Whether a hike offered under `label` (its name; for a blessed entry, its
-// title, hikeTitle) passes a trail entry with a
+// title, hikeTitle) or, unless blessed, going to `dest` (its destination, as
+// the site titles it: routes#177) passes a trail entry with a
 // trace, as routes' expect.py checks it: offered under the name, within
 // km_tolerance of km or within 0.85-1.4 times the trace's own length (a
 // trace says which hike is meant better than a park's rounded figure; it cuts
@@ -204,9 +205,9 @@ export function norm(s: string | null | undefined): string {
 // trace_within_m of trace_cover of the trace's points.
 export const TRACE_KM: [number, number] = [0.85, 1.4];
 export const BLESSED_TOLERANCE = 0.15;
-export function passes(e: Entry, label: string | null, km: number, line: LngLat[]): { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; end: boolean | null; endOff: number | null; follows: number; ok: boolean } {
+export function passes(e: Entry, label: string | null, km: number, line: LngLat[], dest: string | null = null): { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; end: boolean | null; endOff: number | null; follows: number; ok: boolean } {
   const names = new Set([e.name, e.trail, ...(e.aka ?? [])].filter(Boolean).map((n) => norm(n as string)));
-  const name = label !== null && names.has(norm(label));
+  const name = (label !== null && names.has(norm(label))) || (!e.blessed && dest !== null && names.has(norm(dest)));
   // A blessed entry: within 15% of its own km, not by the trace.
   const tol = e.km_tolerance ?? (e.blessed ? BLESSED_TOLERANCE : 0.3);
   const byPark = e.km !== undefined && km >= e.km * (1 - tol) && km <= e.km * (1 + tol);

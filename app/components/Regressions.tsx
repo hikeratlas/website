@@ -76,12 +76,12 @@ const pad = (b: [[number, number], [number, number]], d: number): Box => [b[0][0
 // Every hike routes offers in a park, with a label as the site shows it,
 // the name it's offered under, if any (what routes' expect.py matches), its
 // title (what a blessed entry is named, hikeTitle) and its route key.
-function offeredIn(doc: ParkDoc): { label: string; name: string | null; title: string; key: string | null; route: Route }[] {
+function offeredIn(doc: ParkDoc): { label: string; name: string | null; dest: string | null; title: string; key: string | null; route: Route }[] {
   const n = (r: { name?: string | null }) => (r.name ? r.name : null);
   return [
-    ...doc.day_hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${h.from}`, name: n(h), title: hikeTitle(n(h), h.dest, h.from), key: h.key ?? null, route: h.route })),
-    ...doc.base_camps.flatMap((b) => b.hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${b.camp}`, name: n(h), title: hikeTitle(n(h), h.dest, b.camp), key: h.key ?? null, route: h.route }))),
-    ...doc.point_to_points.map((t) => ({ label: `${n(t) ?? `${t.from} to ${t.to}`} (multi-day)`, name: n(t), title: hikeTitle(n(t), t.to, t.from), key: t.key ?? null, route: t.route })),
+    ...doc.day_hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${h.from}`, name: n(h), dest: h.dest ?? null, title: hikeTitle(n(h), h.dest, h.from), key: h.key ?? null, route: h.route })),
+    ...doc.base_camps.flatMap((b) => b.hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${b.camp}`, name: n(h), dest: h.dest ?? null, title: hikeTitle(n(h), h.dest, b.camp), key: h.key ?? null, route: h.route }))),
+    ...doc.point_to_points.map((t) => ({ label: `${n(t) ?? `${t.from} to ${t.to}`} (multi-day)`, name: n(t), dest: t.to ?? null, title: hikeTitle(n(t), t.to, t.from), key: t.key ?? null, route: t.route })),
   ];
 }
 // An entry blessing route `k`, if the park has one.
@@ -355,7 +355,7 @@ export default function Regressions({ build }: { build: string | null }) {
         const line = o.route.line as LngLat[];
         // An entry with a trace: how much of it each hike follows, as routes'
         // expect.py checks it. Otherwise how much of the OSM trail it walks.
-        const check = entry && trace ? passes(entry, entry.blessed ? o.title : o.name, o.route.km, line) : undefined;
+        const check = entry && trace ? passes(entry, entry.blessed ? o.title : o.name, o.route.km, line, o.dest) : undefined;
         const share = check ? check.follows : lines ? walks(lines, line) : (norm(o.label).includes(want) || o.route.via.some((v) => norm(v) === want) ? 1 : 0);
         return { label: o.label, name: o.name, title: o.title, key: o.key, km: o.route.km, line, share, check };
       });
