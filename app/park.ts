@@ -70,6 +70,17 @@ export const TERRAIN_TITLES: Record<string, string> = {
 export const WORLDCOVER_ATTRIBUTION =
   "<a href='https://esa-worldcover.org/'>Land cover: ESA WorldCover 2021 (CC BY 4.0)</a>";
 
+// A route's shape in words: "loop", "out & back", or for a one-way hike
+// (one you may only walk one way, website#109: the Grouse Grind is up only)
+// "one way", with how you come back where known ("one way, Blue Grouse
+// Gondola down").
+export function shapeWords(kind: string, returnBy?: string | null): string {
+  if (kind === 'loop') return 'loop';
+  if (kind === 'out-and-back') return 'out & back';
+  if (kind === 'point-to-point') return 'point to point';
+  return returnBy ? `one way, ${returnBy} down` : 'one way';
+}
+
 // A day hike in the park sheet.
 export interface ParkHike {
   id: string; // as CuratedRoutes' lookup takes: <park>/day/<i>
@@ -79,6 +90,7 @@ export interface ParkHike {
   diff: Difficulty;
   hours: number;
   loop: boolean;
+  shape: string; // shapeWords
   lake: boolean;
   summit: boolean;
   features: string[]; // the lakes, peaks, waterfalls... it goes by
@@ -110,6 +122,7 @@ export function parkHikes(doc: ParkDoc, reports: ParkReports | null): ParkHike[]
       diff: difficulty(r),
       hours: hours(r),
       loop: h.kind === 'loop',
+      shape: shapeWords(h.kind, h.return_by),
       lake: h.dest_kind === 'lake' || kinds.has('lake'),
       summit: h.dest_kind === 'peak',
       features: [...new Set(features)].slice(0, 3),

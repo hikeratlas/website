@@ -70,7 +70,7 @@ export interface Featured {
     km: number;
     gain: number;
     time: string;
-    loop: boolean;
+    shape: string; // in words (shapeWords)
     diff: Difficulty;
     sac: number;
     landcover: [string, number][];
@@ -196,7 +196,7 @@ export async function featured(build: string, at: [number, number] | null, day: 
       km: h.route.km,
       gain: h.route.gain,
       time: timeLabel(h.hours, h.route),
-      loop: h.loop,
+      shape: h.shape,
       diff: h.diff,
       sac: h.route.max_sac ?? 0,
       landcover: h.route.landcover,

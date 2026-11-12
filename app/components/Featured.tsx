@@ -93,7 +93,7 @@ export default function Featured({ data, style, search = '' }: { data: Data | nu
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{hike.title}</span>
       <span className='text-sm text-stone-700'>
         <span className={`mr-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${DIFF_COLORS[hike.diff]}`}>{hike.diff}</span>
-        {hike.km.toFixed(1)} km · ↑ {Math.round(hike.gain).toLocaleString('en-US')} m · {hike.time} · {hike.loop ? 'loop' : 'out & back'} · from {hike.from}
+        {hike.km.toFixed(1)} km · ↑ {Math.round(hike.gain).toLocaleString('en-US')} m · {hike.time} · {hike.shape} · from {hike.from}
       </span>
       <TerrainBar landcover={hike.landcover} className='h-[5px] w-40' />
       {hike.along.length > 0

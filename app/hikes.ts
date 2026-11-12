@@ -53,7 +53,11 @@ export interface Route {
 export interface Hike {
   from: string;
   dest: string;
+  // loop, out-and-back, or one-way (walked one way only, e.g. the Grouse
+  // Grind, coming back by return_by: hikeratlas/routes#165).
   kind: string;
+  // How a one-way hike comes back: a lift's name ("Blue Grouse Gondola").
+  return_by?: string;
   name?: string | null;
   // Stays the same across routes builds, unlike the id (hikeratlas/routes#153);
   // missing in builds from before it.

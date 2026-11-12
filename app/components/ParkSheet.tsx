@@ -53,7 +53,7 @@ export function TerrainBar({ landcover, className = 'h-[5px] w-36' }: { landcove
 }
 
 function stats(h: ParkHike): string {
-  return `${km1(h.route.km)} · ↑ ${m(h.route.gain)} · ${timeLabel(h.hours, h.route)} · ${h.loop ? 'loop' : 'out & back'}`;
+  return `${km1(h.route.km)} · ↑ ${m(h.route.gain)} · ${timeLabel(h.hours, h.route)} · ${h.shape}`;
 }
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
