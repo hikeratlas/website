@@ -5,8 +5,11 @@ import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from '@remix-r
 import { useLoaderData } from '@remix-run/react';
 import Home from '~/content/home.mdx';
 import Featured from '~/components/Featured';
-import { buildFor } from '~/build';
+import { buildFor, styleUrl } from '~/build';
 import { featured } from '~/featured';
+
+// The map's PMTiles script, for the featured park's map.
+export { handle } from './map';
 
 export const meta: MetaFunction = () => [
   { title: 'Hiker Atlas' },
@@ -18,17 +21,18 @@ export const headers: HeadersFunction = () => ({ 'Cache-Control': 'no-cache' });
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
-  const build = buildFor(url) ?? 'north-america';
+  const preview = buildFor(url);
+  const build = preview ?? 'north-america';
   // Cloudflare's guess at where the visitor is, from their IP.
   const cf = (request as Request & { cf?: { latitude?: string; longitude?: string } }).cf;
   const lat = Number(cf?.latitude), lon = Number(cf?.longitude);
   const at: [number, number] | null = cf?.latitude && cf?.longitude && Number.isFinite(lat) && Number.isFinite(lon) ? [lon, lat] : null;
   const day = Math.floor(Date.now() / 86_400_000);
-  return json({ featured: await featured(build, at, day).catch(() => null) });
+  return json({ featured: await featured(build, at, day).catch(() => null), style: styleUrl(preview) });
 };
 
 export default function Index() {
-  const { featured: data } = useLoaderData<typeof loader>();
+  const { featured: data, style } = useLoaderData<typeof loader>();
   // home.mdx has the page's frame.
-  return <Home components={{ Featured: () => <Featured data={data} /> }} />;
+  return <Home components={{ Featured: () => <Featured data={data} style={style} /> }} />;
 }

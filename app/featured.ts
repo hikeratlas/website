@@ -3,7 +3,7 @@
 // they are) if one is close, else the day's; and that park's best moderate
 // hike. Read from the live routes build, as the hike pages are, so the
 // counts and routes are always the current ones.
-import { hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, regionsUrl, type BundleIndex, type Regions } from '~/hikes';
+import { hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, regionsUrl, type BundleIndex, type Regions, type Route } from '~/hikes';
 import { parkHikes, picks, timeLabel, type Difficulty } from '~/park';
 
 // Well-known parks with plenty of hikes (25+), across both countries, as
@@ -52,8 +52,10 @@ export interface Featured {
     region: string;
     path: string;
     counts: [number, string][];
-    lines: string[]; // SVG points of its day hikes, in a 320x180 box
     starts: { tag: string; title: string; km: number }[]; // its picks to start with
+    id: string; // its OSM id, for its outline on the map
+    bounds: [number, number, number, number]; // most of its routes (w, s, e, n)
+    routes: [number, number][][]; // its day hikes, thinned, for the map
   };
   hike: {
     title: string;
@@ -68,8 +70,11 @@ export interface Featured {
     landcover: [string, number][];
     passes: string[];
     reports: number;
-    line: string; // SVG points, in a 320x180 box
-    around: string[]; // the park's other day hikes, in the same box
+    line: string; // SVG points, in a 120x120 box (HikeGraphic's inset)
+    coords: [number, number][]; // its line, thinned, for its elevation profile
+    km_total: number;
+    // What it passes, in order, numbered, with where in the line's box.
+    along: { n: number; name: string; kind: string; km: number; x: number; y: number }[];
   };
 }
 
@@ -111,6 +116,19 @@ export function fit(lines: [number, number][][], w: number, h: number, opts: { p
       .map(([x, y]) => `${((x * k - x0) * sc + dx).toFixed(1)},${((-y - y0) * sc + dy).toFixed(1)}`).join(' ');
   });
 }
+
+// The box around most of the points (between the trim and 1 - trim
+// quantiles), as [w, s, e, n].
+function trimmedBox(pts: [number, number][], trim: number): [number, number, number, number] {
+  const q = (v: number[], f: number) => { const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.max(0, Math.round(f * (s.length - 1))))]; };
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  return [q(xs, trim), q(ys, trim), q(xs, 1 - trim), q(ys, 1 - trim)];
+}
+
+const thin = (line: [number, number][], n: number) => {
+  const step = Math.max(1, Math.floor(line.length / n));
+  return line.filter((_, i) => i % step === 0 || i === line.length - 1);
+};
 
 // at: the visitor's [lon, lat], if known; day: which day it is, for the
 // rotation.
@@ -156,7 +174,9 @@ export async function featured(build: string, at: [number, number] | null, day: 
       region: pick.state,
       path: parkPath,
       counts,
-      lines: fit(top.map((x) => x.route.line), 320, 180, { n: 40, trim: 0.04, grow: 0.06 }),
+      id: String(doc.park?.id ?? pick.area.id),
+      bounds: trimmedBox(top.flatMap((x) => x.route.line), 0.04),
+      routes: top.map((x) => thin(x.route.line, 40)),
       starts: picks(hikes).map((p) => ({ tag: p.tag, title: hikeEntries(doc).find((e) => e.id === p.hike.id)?.title ?? p.hike.title, km: p.hike.route.km })),
     },
     hike: {
@@ -172,9 +192,24 @@ export async function featured(build: string, at: [number, number] | null, day: 
       landcover: h.route.landcover,
       passes: h.features,
       reports: h.reports,
-      line: fit([h.route.line], 320, 180, { pad: 16, n: 200, grow: 0.15 })[0] ?? '',
-      around: fit(doc.day_hikes.filter((_, i) => `${String(doc.park?.id ?? '')}/day/${i}` !== h.id).map((x) => x.route.line), 320, 180,
-        { pad: 16, n: 60, frame: [h.route.line], grow: 0.15 }),
+      line: fit([h.route.line], 120, 120, { pad: 10, n: 200 })[0] ?? '',
+      coords: thin(h.route.line, 300),
+      km_total: h.route.km,
+      along: alongPoints(h.route),
     },
   };
+}
+
+// A route's numbered features (routes' "along", from builds after
+// hikeratlas/routes#170), placed in the same box as fit([line], 120, 120,
+// { pad: 10 }) puts its line: at most 6, unnamed ones left out.
+function alongPoints(r: Route): Featured['hike']['along'] {
+  const seen = new Set<string>();
+  const items = (r.along ?? []).filter(([, n]) => n && !/^unnamed$/i.test(n) && !seen.has(n) && !!seen.add(n)).slice(0, 6);
+  if (!items.length) return [];
+  const pts = fit([r.line, ...items.map(([, , , at]) => [at, at] as [number, number][])], 120, 120, { pad: 10, n: 1e9, frame: [r.line] });
+  return items.map(([kind, name, km], i) => {
+    const [x, y] = pts[i + 1].split(' ')[0].split(',').map(Number);
+    return { n: i + 1, name, kind, km, x, y };
+  });
 }
