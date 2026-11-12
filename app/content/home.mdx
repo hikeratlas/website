@@ -1,11 +1,4 @@
----
-meta:
-  - title: Hiker Atlas
-  - name: description
-    content: Explore hiking trails and plan your next trip, plus notes about the development of Hiker Atlas and open-source cartography in general.
-headers:
-  Cache-Control: no-cache
----
+{/* The homepage (app/routes/_index.tsx renders it; Featured is its featured park and hike). */}
 
 <div className="frame">
 # Hiker Atlas
@@ -17,6 +10,8 @@ Hiker Atlas picks the hikes worth doing in more than 7,600 parks across Canada a
 <div className="my-4 flex flex-wrap gap-3">
   <a href="/map" className="!no-underline inline-flex items-center rounded-xl bg-green-900 px-5 py-2.5 font-semibold !text-white hover:bg-green-800">Open the map</a>
 </div>
+
+<Featured />
 
 <div className="mb-6 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
   <div><p className="!pb-0.5 font-semibold">Hikes picked for you</p><p className="text-stone-700">Each park's best hikes, with picks to start with. Filter by length, difficulty, lakes, summits and loops.</p></div>
