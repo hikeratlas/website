@@ -8,7 +8,7 @@ import type { Featured } from '~/featured';
 type Hike = Featured['hike'];
 
 const W = 200, H = 180;
-const PX = 34, PW = W - PX - 8, PT = 26, PB = 150;
+const PX = 34, PW = W - PX - 8, PT = 40, PB = 150;
 
 export default function HikeGraphic({ hike }: { hike: Hike }) {
   const [prof, setProf] = useState<[number, number][] | null>(null);
@@ -42,7 +42,7 @@ export default function HikeGraphic({ hike }: { hike: Hike }) {
       <text x={PX + PW} y={PB + 14} fontSize='10' fill='#78716c' textAnchor='end'>{hike.km_total.toFixed(1)} km</text>
       <text x={PX - 4} y={y(hi) + 3} fontSize='10' fill='#78716c' textAnchor='end'>{Math.round(hi).toLocaleString('en-US')}</text>
       <text x={PX - 4} y={y(lo) + 3} fontSize='10' fill='#78716c' textAnchor='end'>{Math.round(lo).toLocaleString('en-US')}</text>
-      <text x={PX - 4} y={PT - 12} fontSize='9' fill='#a8a29e' textAnchor='end'>m</text>
+      <text x={PX - 4} y={PT - 18} fontSize='9' fill='#a8a29e' textAnchor='end'>m</text>
       <polygon points={`${x(0)},${PB} ${line} ${x(total)},${PB}`} fill='#c026d3' fillOpacity='0.12' />
       <polyline points={line} fill='none' stroke='#a21caf' strokeWidth='2' strokeLinejoin='round' />
       {marks.map(({ f, cx, cy }) => <g key={f.n}>

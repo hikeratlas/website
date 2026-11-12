@@ -6,7 +6,7 @@
 // it's scrolled into view, so the homepage doesn't load the map until it's
 // seen. The tiles are set up as Map does (its zstd PMTiles, contours and
 // Newfoundland DEM protocols).
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { registerContours, zstdProtocol } from './Map';
@@ -28,8 +28,8 @@ export interface Overlay {
 }
 
 type Projected = { line: string; start: [number, number]; stops: { n: number; x: number; y: number }[] };
-// The park, over a muted map: its outline, as an SVG path.
-type ParkShape = { outline: string };
+// The park, over a muted map: its area, as one SVG path of its tiles' pieces.
+type ParkShape = { area: string };
 
 type Ring = [number, number][];
 const pathOf = (rings: Ring[], close: boolean) => rings.map((r) => `M${r.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}${close ? 'Z' : ''}`).join('');
@@ -48,6 +48,7 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
   const [seen, setSeen] = useState(false);
   const [proj, setProj] = useState<Projected | null>(null);
   const [park, setPark] = useState<ParkShape | null>(null);
+  const edge = `edge${useId().replace(/:/g, '')}`;
 
   useEffect(() => {
     const el = box.current;
@@ -79,20 +80,24 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
         stops: overlay.stops.map((s) => { const [x, y] = p(s.at); return { n: s.n, x, y }; }),
       });
     };
-    // Over a muted map, the park's outline is drawn as SVG (the canvas's
-    // filter would mute it too): its lines from the tiles once they're in,
-    // projected. Not a fill: tiles' pieces of it overlap at their edges.
+    // Over a muted map, the park is drawn as SVG (the canvas's filter would
+    // mute it too): its polygon pieces from the tiles once they're in,
+    // projected, as one path. Filled nonzero, overlapping pieces (tiles
+    // overlap at their edges) are one area; its outline is traced from that
+    // area (an SVG filter), so tile seams never show. The park_outline layer
+    // would avoid seams too, but it starts at z9, and a big park's map is
+    // further out (Banff's, z7).
     const drawPark = () => {
       if (!parkId || !muted) return;
       const id = ['==', ['to-string', ['get', 'osm_id']], parkId] as maplibregl.FilterSpecification;
       const p = (c: number[]) => { const q = m.project([c[0], c[1]]); return [q.x, q.y] as [number, number]; };
-      const lines: Ring[] = [];
-      for (const f of m.querySourceFeatures('tiles1', { sourceLayer: 'park_outline', filter: id })) {
+      const rings: Ring[] = [];
+      for (const f of m.querySourceFeatures('tiles1', { sourceLayer: 'park', filter: id })) {
         const g = f.geometry;
-        const all = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
-        for (const line of all) lines.push(line.map(p));
+        const all = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+        for (const poly of all) for (const ring of poly) rings.push(ring.map(p));
       }
-      setPark({ outline: pathOf(lines, false) });
+      setPark({ area: pathOf(rings, true) });
     };
     m.once('load', () => {
       // The credits start folded, behind their (i), as on the map page.
@@ -106,15 +111,26 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
       }
       project();
     });
-    m.on('resize', () => { project(); drawPark(); });
+    // The box again at the map's settled size (it can change after it's
+    // made, as the page lays out), then what's drawn over it.
+    m.on('resize', () => { m.fitBounds(bounds, { padding, duration: 0 }); project(); drawPark(); });
     return () => m.remove();
   }, [seen, style, bounds, parkId, overlay, muted, padding]);
 
   return <div role='img' aria-label={label} className={`relative overflow-hidden bg-[#eef2ea] ${className}`}>
     <div ref={box} className='absolute inset-0' />
     {park && <svg className='pointer-events-none absolute inset-0 h-full w-full' aria-hidden='true'>
-      <path d={park.outline} fill='none' stroke='#ffffff' strokeWidth='4.5' strokeOpacity='0.8' strokeLinejoin='round' />
-      <path d={park.outline} fill='none' stroke='#14532d' strokeWidth='2.5' strokeLinejoin='round' />
+      <defs>
+        {/* The area's edge: the area grown by 2 px, less the area. */}
+        <filter id={edge} x='-5%' y='-5%' width='110%' height='110%'>
+          <feMorphology in='SourceAlpha' operator='dilate' radius='2' result='grown' />
+          <feComposite in='grown' in2='SourceAlpha' operator='out' result='ring' />
+          <feFlood floodColor='#14532d' />
+          <feComposite in2='ring' operator='in' />
+        </filter>
+      </defs>
+      <path d={park.area} fill='#15803d' fillOpacity='0.15' fillRule='nonzero' />
+      <path d={park.area} fill='#000000' fillRule='nonzero' filter={`url(#${edge})`} />
     </svg>}
     {proj && <svg className='pointer-events-none absolute inset-0 h-full w-full' aria-hidden='true'>
       <polyline points={proj.line} fill='none' stroke='#ffffff' strokeWidth='6' strokeLinejoin='round' strokeLinecap='round' />
