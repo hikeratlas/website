@@ -61,7 +61,7 @@ export interface Featured {
     counts: [number, string][];
     starts: { tag: string; title: string; km: number }[]; // its picks to start with
     ids: string[]; // its OSM ids (a park mapped twice has several), for its outline on the map
-    bounds: [number, number, number, number]; // most of its routes (w, s, e, n)
+    bounds: [number, number, number, number]; // its box (w, s, e, n)
   };
   hike: {
     title: string;
@@ -168,7 +168,6 @@ export async function featured(build: string, at: [number, number] | null, day: 
   const h = byScore.find((x) => (x.diff === 'Easy' || x.diff === 'Moderate') && x.score >= APPROACHABLE_WITHIN * byScore[0].score) ?? byScore[0];
   const entry = hikeEntries(doc).find((e) => e.id === h.id);
   const parkPath = hikesPath(pick.path.split('/'));
-  const top = [...doc.day_hikes].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 60);
   const counts: [number, string][] = ([
     [doc.day_hikes.length, 'day hike'],
     [doc.base_camps.length, 'base camp'],
@@ -184,7 +183,9 @@ export async function featured(build: string, at: [number, number] | null, day: 
       path: parkPath,
       counts,
       ids: [...new Set([pick.area.id, ...(pick.area.ids ?? []), String(doc.park?.id ?? '')].filter(Boolean))],
-      bounds: trimmedBox(top.flatMap((x) => x.route.line), 0.04),
+      // The park's own box (regions.json's), so its outline is all in view:
+      // its routes' box left most of Algonquin out (they're along Highway 60).
+      bounds: pick.area.bbox!,
       starts: picks(hikes).map((p) => ({ tag: p.tag, title: hikeEntries(doc).find((e) => e.id === p.hike.id)?.title ?? p.hike.title, km: p.hike.route.km })),
     },
     hike: {

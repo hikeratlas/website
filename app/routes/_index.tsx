@@ -34,8 +34,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return json({ featured: await featured(build, at, day, showcase).catch(() => null), style: styleUrl(preview), search: url.search });
 };
 
-export default function Index() {
+// The featured cards, for home.mdx's <Featured />: one component for good,
+// reading the loader's data, so switching parks re-renders it rather than
+// mounting a new one (an inline component remounted the park switcher, which
+// scrolled back to the start and then to the new park).
+function FeaturedSlot() {
   const { featured: data, style, search } = useLoaderData<typeof loader>();
+  return <Featured data={data} style={style} search={search} />;
+}
+const components = { Featured: FeaturedSlot };
+
+export default function Index() {
   // home.mdx has the page's frame.
-  return <Home components={{ Featured: () => <Featured data={data} style={style} search={search} /> }} />;
+  return <Home components={components} />;
 }

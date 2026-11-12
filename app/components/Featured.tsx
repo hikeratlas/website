@@ -38,10 +38,14 @@ function ParkSwitcher({ showcase, search }: { showcase: Data['showcase']; search
     q.set('showcase', String((i + names.length) % names.length));
     return `?${q}`;
   };
-  // The featured park in view in the line.
+  // The featured park in view in the line: centred, only if it isn't all
+  // in view already (a click on a park in view leaves the line be).
   useEffect(() => {
-    const el = row.current?.querySelector<HTMLElement>('[aria-current]');
-    if (el && row.current) row.current.scrollTo({ left: el.offsetLeft - row.current.clientWidth / 2 + el.clientWidth / 2, behavior: 'smooth' });
+    const r = row.current, el = r?.querySelector<HTMLElement>('[aria-current]');
+    if (!r || !el) return;
+    const left = el.offsetLeft - r.offsetLeft, right = left + el.offsetWidth;
+    if (left >= r.scrollLeft && right <= r.scrollLeft + r.clientWidth) return;
+    r.scrollTo({ left: left - r.clientWidth / 2 + el.offsetWidth / 2, behavior: 'smooth' });
   }, [index]);
   const arrow = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-300 !text-stone-700 !no-underline hover:bg-stone-100';
   return <nav aria-label='Showcase parks' className='mt-6 -mb-3 flex items-center gap-2'>
