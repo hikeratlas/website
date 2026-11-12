@@ -48,7 +48,7 @@ export default function Featured({ data, style, search = '' }: { data: Data | nu
   <section aria-label='Featured' className='my-6 grid gap-4 md:grid-cols-2'>
     <Card href={park.path} eyebrow={`${data.near ? 'A park near you' : 'Featured park'} · ${park.region}`}
       art={<Suspense fallback={<div className='h-[220px] md:h-[260px]' />}>
-        <MiniMap style={style} bounds={park.bounds} parkId={park.id} muted label={`A map of ${park.name}`} className='h-[220px] md:h-[260px]' />
+        <MiniMap style={style} bounds={park.bounds} parkId={park.id} parkName={park.name} muted label={`A map of ${park.name}`} className='h-[220px] md:h-[260px]' />
       </Suspense>}>
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{park.name}</span>
       <span className='text-sm text-stone-700'>{park.counts.map(([n, w]) => plural(n, w)).join(' · ')}</span>

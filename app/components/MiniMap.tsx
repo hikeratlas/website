@@ -28,16 +28,19 @@ export interface Overlay {
 }
 
 type Projected = { line: string; start: [number, number]; stops: { n: number; x: number; y: number }[] };
-// The park, over a muted map: its area, as one SVG path of its tiles' pieces.
-type ParkShape = { area: string };
+// The park, over a muted map: its area, as one SVG path of its tiles' pieces,
+// and where its name goes (the middle of its part in view).
+type ParkShape = { area: string; label: [number, number] | null };
 
 type Ring = [number, number][];
 const pathOf = (rings: Ring[], close: boolean) => rings.map((r) => `M${r.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}${close ? 'Z' : ''}`).join('');
 
-export default function MiniMap({ style, bounds, parkId, overlay, muted, padding = 12, label, className }: {
+export default function MiniMap({ style, bounds, parkId, parkName, overlay, muted, padding = 12, label, className }: {
   style: string;
   bounds: [number, number, number, number];
   parkId?: string;
+  // Shown as the map's only label, over a muted map with a park.
+  parkName?: string;
   overlay?: Overlay;
   muted?: boolean;
   padding?: number;
@@ -97,7 +100,13 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
         const all = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
         for (const poly of all) for (const ring of poly) rings.push(ring.map(p));
       }
-      setPark({ area: pathOf(rings, true) });
+      // Its name at the middle of its part in view.
+      const { width: w, height: h } = m.getContainer().getBoundingClientRect();
+      const inView = rings.flat().filter(([x, y]) => x >= 0 && x <= w && y >= 0 && y <= h);
+      const label: [number, number] | null = inView.length
+        ? [(Math.min(...inView.map((q) => q[0])) + Math.max(...inView.map((q) => q[0]))) / 2, (Math.min(...inView.map((q) => q[1])) + Math.max(...inView.map((q) => q[1]))) / 2]
+        : null;
+      setPark({ area: pathOf(rings, true), label });
     };
     m.once('load', () => {
       // The box again: the style's own camera can win over the constructor's.
@@ -105,7 +114,11 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
       m.fitBounds(bounds, { padding, duration: 0 });
       // The credits start folded, behind their (i), as on the map page.
       m.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
-      if (parkId && muted) m.once('idle', drawPark);
+      if (parkId && muted) {
+        // Only the park's name (drawn over the map, below): no other labels.
+        for (const l of m.getStyle().layers) if (l.type === 'symbol') m.setLayoutProperty(l.id, 'visibility', 'none');
+        m.once('idle', drawPark);
+      }
       else if (parkId) {
         const id = ['==', ['to-string', ['get', 'osm_id']], parkId] as maplibregl.FilterSpecification;
         const before = m.getStyle().layers.find((l) => l.type === 'symbol')?.id;
@@ -134,6 +147,9 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
       </defs>
       <path d={park.area} fill='#15803d' fillOpacity='0.15' fillRule='nonzero' />
       <path d={park.area} fill='#000000' fillRule='nonzero' filter={`url(#${edge})`} />
+      {parkName && park.label && <text x={park.label[0]} y={park.label[1]} textAnchor='middle' dominantBaseline='middle'
+        fontSize='15' fontWeight='800' fill='#14532d' stroke='#ffffff' strokeWidth='4' strokeLinejoin='round' paintOrder='stroke'
+        style={{ fontFamily: '"Hubot Sans", system-ui, sans-serif' }}>{parkName}</text>}
     </svg>}
     {proj && <svg className='pointer-events-none absolute inset-0 h-full w-full' aria-hidden='true'>
       <polyline points={proj.line} fill='none' stroke='#ffffff' strokeWidth='6' strokeLinejoin='round' strokeLinecap='round' />
