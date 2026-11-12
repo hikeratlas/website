@@ -50,6 +50,8 @@ export default function MiniMap({ style, bounds, routes, parkId, label }: {
       attributionControl: { compact: true },
     });
     m.once('load', () => {
+      // The credits start folded, behind their (i), as on the map page.
+      m.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
       const id = ['==', ['to-string', ['get', 'osm_id']], parkId] as maplibregl.FilterSpecification;
       const before = m.getStyle().layers.find((l) => l.type === 'symbol')?.id;
       // The park, tinted and outlined, whichever of its layers has its id.
@@ -62,5 +64,5 @@ export default function MiniMap({ style, bounds, routes, parkId, label }: {
     return () => m.remove();
   }, [seen, style, bounds, routes, parkId]);
 
-  return <div ref={box} role='img' aria-label={label} className='relative h-[180px] w-full bg-[#eef2ea] sm:h-[200px]' />;
+  return <div ref={box} role='img' aria-label={label} className='relative h-[220px] w-full bg-[#eef2ea] md:h-[260px]' />;
 }

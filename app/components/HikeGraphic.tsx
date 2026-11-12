@@ -44,9 +44,16 @@ export default function HikeGraphic({ hike }: { hike: Hike }) {
       <text x={PX - 3} y={y(lo) + 3} fontSize='10' fill='#78716c' textAnchor='end'>{Math.round(lo).toLocaleString('en-US')}</text>
       <polygon points={`${x(0)},${PB} ${line} ${x(total)},${PB}`} fill='#c026d3' fillOpacity='0.12' />
       <polyline points={line} fill='none' stroke='#a21caf' strokeWidth='2' strokeLinejoin='round' />
-      {hike.along.map((f) => {
-        const m = Math.min(f.km * 1000, total);
-        const cy = Math.max(PT - 8, y(eAt(m)) - 12);
+      {(() => {
+        // Markers closer than a marker's width step up, so none hides another.
+        let lastX = -Infinity, lift = 0;
+        return hike.along.map((f) => {
+          const m = Math.min(f.km * 1000, total);
+          lift = x(m) - lastX < 15 ? lift + 15 : 0;
+          lastX = x(m);
+          return { f, m, cy: Math.max(PT - 8, y(eAt(m)) - 12 - lift) };
+        });
+      })().map(({ f, m, cy }) => {
         return <g key={f.n}>
           <circle cx={x(m)} cy={cy} r='7' fill='#a21caf' stroke='#ffffff' strokeWidth='1.5' />
           <text x={x(m)} y={cy + 3.5} textAnchor='middle' fontSize='9' fontWeight='700' fill='#ffffff'>{f.n}</text>
