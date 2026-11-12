@@ -29,7 +29,7 @@ declare const pmtiles: {
 // default (gzip-only) decompress function. Make them with zstd support
 // instead. (pmtiles v4 has no option for this: Protocol looks archives up in
 // `tiles`, and only makes its own if that comes back empty.)
-function zstdProtocol() {
+export function zstdProtocol() {
   // pmtiles.js doesn't export its default decompress function, so borrow it
   // from an instance. Constructing one doesn't fetch anything.
   const decompress = withZstd(new pmtiles.PMTiles("").decompress);
@@ -58,7 +58,7 @@ function zstdProtocol() {
 // via its "contours" source URL. Registered once per page load, before any
 // map asks for tiles.
 let contoursRegistered = false;
-function registerContours() {
+export function registerContours() {
   if (contoursRegistered) return;
   contoursRegistered = true;
   // Mapterhorn 404s below its coverage (z12 in Banff); fill those from the

@@ -1,0 +1,53 @@
+{/* The homepage (app/routes/_index.tsx renders it; Featured is its featured park and hike). */}
+
+<div className="frame">
+# Hiker Atlas
+
+<p className="!pb-1 text-xl font-semibold text-stone-900">Like AllTrails, but worse.</p>
+
+Hey! I'm [Colin](https://cldellow.com/). This is a free hobby project, so set your expectations accordingly. It's built on open data, mostly [OpenStreetMap](https://www.openstreetmap.org/), and it's open source: see [hikeratlas on GitHub](https://github.com/hikeratlas/), where you can also [tell me what's wrong](https://github.com/hikeratlas/basemap/issues).
+
+_Disclosure: this is 99% vibe-coded slop. But at least it's not enshittified!_
+
+<div className="my-4 flex flex-wrap gap-3">
+  <a href="/map" className="!no-underline inline-flex items-center rounded-xl bg-green-900 px-5 py-2.5 font-semibold !text-white hover:bg-green-800">Open the map</a>
+</div>
+
+<Featured />
+
+<div className="mb-6 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+  <div><p className="!pb-0.5 font-semibold">Hikes picked for you</p><p className="text-stone-700">Each park's best hikes, with picks to start with. Filter by length, difficulty, lakes, summits and loops.</p></div>
+  <div><p className="!pb-0.5 font-semibold">Know before you go</p><p className="text-stone-700">Distance, climb, walking time and difficulty in plain words. See the elevation profile, the terrain, and the lakes, peaks and waterfalls you'll pass.</p></div>
+  <div><p className="!pb-0.5 font-semibold">From people who've been</p><p className="text-stone-700">Links to trip reports and trail guides from hikers' own blogs, for the hikes they write about.</p></div>
+  <div><p className="!pb-0.5 font-semibold">A map made for hiking</p><p className="text-stone-700">Trails, contours, shaded relief and aerial imagery. Search for parks, peaks, lakes and trails.</p></div>
+  <div><p className="!pb-0.5 font-semibold">Plan your own route</p><p className="text-stone-700">Click points on the map and Hiker Atlas routes you between them along trails and roads, with the distance, climb and elevation profile.</p></div>
+  <div><p className="!pb-0.5 font-semibold">Take it with you</p><p className="text-stone-700">Download a hike's GPX, get directions to the trailhead, or try the [Android app](https://github.com/hikeratlas/android/releases/latest) (in preview).</p></div>
+</div>
+
+## Blog
+
+Anger and hubris. Like most good things, these two emotions drove me to build Hiker Atlas.
+
+**Anger**: despite being a paying AllTrails subscriber, I somehow got my paid account on their WAF blacklist. It's been fixed, but at the time, it felt absurd. The data is mostly open source or crowd-sourced. I'm _paying them_ for this privilege, and yet they block me?
+
+**Hubris**: hey, they're just showing open source information, how hard could it be?
+
+Turns out, it's a little involved. This blog documents my journey as I learn about open-source cartography, circa 2024. Hope it's helpful to someone!
+
+- 2026-11-03: [lake centrelines](/blog/lake-centrelines): labels that follow the lake
+- 2026-11-02: GitHub Actions: [ARM runners are 1.5x faster](/blog/arm-runners) for tilemaker
+- 2026-10-31: the AIpocalypse - [impact of Claude Code](/blog/claude-code)
+- 2024-10-06: tilemaker: [`node_keys` and `way_keys`](/blog/tilemaker-node-keys-and-way-keys)
+- 2024-10-05: [tile-smush](/blog/tile-smush), a faster tile-join for MBTiles files
+- 2024-02-03: cartographic generalization: [ranking features with qrank](/blog/cartographic-generalization-qrank)
+- 2024-01-28: automating builds with [GitHub Actions](/blog/github-actions)
+- 2024-01-21: tilemaker: [build an autosuggest index](/blog/tilemaker-autosuggest-index)
+- 2024-01-18: Lua tricks: [let multiple threads write to a file safely](/blog/lua-atomic-file-append)
+- 2024-01-14: [30,000 foot overview](/blog/mapping-overview) of how mapping works
+- 2024-01-14: [Glossary of web mapping terms](/blog/glossary)
+
+{/*
+- MapBox vector tile factories: [Planetiler, OpenMapTiles (PostGIS), Tilemaker](/blog/planetiler-vs-openmaptiles-postgis-vs-tilemaker)
+- Output formats: [raw files, mbtiles, pmtiles](/blog/mbtiles-vs-pmtiles)
+    */}
+</div>
