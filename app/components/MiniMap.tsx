@@ -78,6 +78,8 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
       attributionControl: { compact: true },
     });
     if (muted) m.getCanvas().style.filter = 'saturate(0.25) brightness(1.08) contrast(0.92)';
+    // What to frame: the given box, or once a park is measured, the park.
+    let frame: [number, number, number, number] = bounds;
     const project = () => {
       if (!overlay) return;
       const p = (c: [number, number]) => { const q = m.project(c); return [q.x, q.y] as [number, number]; };
@@ -115,13 +117,31 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
     m.once('load', () => {
       // The box again: the style's own camera can win over the constructor's.
       m.resize();
-      m.fitBounds(bounds, { padding, duration: 0 });
+      m.fitBounds(frame, { padding, duration: 0 });
       // The credits start folded, behind their (i), as on the map page.
       m.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
       if (parkIds && muted) {
         // Only the park's name (drawn over the map, below): no other labels.
         for (const l of m.getStyle().layers) if (l.type === 'symbol') m.setLayoutProperty(l.id, 'visibility', 'none');
-        m.once('idle', drawPark);
+        // The park all in view: the box given is its hikes' (regions.json
+        // has no other), which left most of Algonquin out. Its extent from
+        // the tiles in, refitting while more of it shows, then drawn.
+        const fitPark = (tries: number) => {
+          const id = ['in', ['to-string', ['get', 'osm_id']], ['literal', parkIds]] as maplibregl.FilterSpecification;
+          let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+          for (const f of m.querySourceFeatures('tiles1', { sourceLayer: 'park', filter: id })) {
+            const g = f.geometry;
+            const all = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+            for (const poly of all) for (const [x, y] of poly[0] ?? []) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+          }
+          const v = m.getBounds();
+          const inView = w >= v.getWest() && e <= v.getEast() && s >= v.getSouth() && n <= v.getNorth();
+          if (!Number.isFinite(w) || inView || tries >= 4) { drawPark(); return; }
+          frame = [w, s, e, n];
+          m.fitBounds(frame, { padding, duration: 0 });
+          m.once('idle', () => fitPark(tries + 1));
+        };
+        m.once('idle', () => fitPark(0));
       }
       else if (parkIds) {
         const id = ['in', ['to-string', ['get', 'osm_id']], ['literal', parkIds]] as maplibregl.FilterSpecification;
@@ -133,7 +153,7 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
     });
     // The box again at the map's settled size (it can change after it's
     // made, as the page lays out), then what's drawn over it.
-    m.on('resize', () => { m.fitBounds(bounds, { padding, duration: 0 }); project(); drawPark(); });
+    m.on('resize', () => { m.fitBounds(frame, { padding, duration: 0 }); project(); drawPark(); });
     return () => m.remove();
   }, [seen, style, bounds, parkIds, overlay, muted, padding]);
 
