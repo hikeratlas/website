@@ -666,7 +666,7 @@ export default function CuratedRoutes(props: Props) {
     return <Sheet phone={phone} snap={snap} setSnap={setSnap}>
       <div data-drag style={phone ? { touchAction: 'none' } : undefined}>
         <Toolbar left={trail} app={!!trail} onClose={() => onNavigate?.('/map')} />
-        <h2 className='font-semibold text-base'>{region.heading}</h2>
+        <h2 className='font-display text-[24px] font-extrabold leading-tight tracking-tight text-stone-900'>{region.heading}</h2>
       </div>
       {note && <div className='text-gray-600 mt-1'>{note}</div>}
       <RegionItems items={region.items} build={build} cards={region.cards} onNavigate={onNavigate} />
