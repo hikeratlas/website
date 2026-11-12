@@ -212,7 +212,7 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
     map.getSource<GeoJSONSource>(`${id}-line`)?.setData(coords.length
       ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } } : EMPTY);
     map.getSource<GeoJSONSource>(`${id}-points`)?.setData(pointsData(points));
-  }, [map, id, points, coords]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, id, points, coords]);  
 
   // The clicks still being routed, from the route's last point.
   useEffect(() => {
@@ -266,7 +266,7 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
       finally { setBusy(false); commit(); }
     });
     return queue.current;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   const add = useCallback((p: LngLat) => {
     setPending((ps) => [...ps, p]);
@@ -384,7 +384,7 @@ export function useWaypoints(map: MaplibreMap | null, tiles: string, opts: { id:
       map.off('mouseenter', hit, over); map.off('mouseleave', hit, out);
       if (dragging !== null) map.dragPan.enable();
     };
-  }, [map, id, active, move, exactEnds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, id, active, move, exactEnds]);  
 
   return { points, coords, metres, busy, error, undo, clear, set, move };
 }
