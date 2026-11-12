@@ -151,10 +151,13 @@ export function fixtureFor(f: ParkFile, bbox: [number, number, number, number]) 
 // An entry in fixtures/expect/ (routes' expectations.py): a trail entry, or
 // a dest entry (a route to `dest` from near `start`).
 export interface Entry {
-  kind?: 'trail' | 'dest'; name: string; park: string; park_id: string; issue?: string;
+  kind?: 'trail' | 'dest' | 'featured'; name: string; park: string; park_id: string; issue?: string;
   km?: number; km_tolerance?: number; trail?: string; aka?: string[]; source?: string; why?: string;
   trace?: LngLat[]; traces?: LngLat[][]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_end_m?: number | null; trace_note?: string;
   dest?: string; start?: LngLat; start_within_m?: number; max_km?: number;
+  // A featured entry: names the homepage's featured hike mustn't be, or
+  // should be one of.
+  not?: string[]; one_of?: string[];
   // A hike routes offered, kept as it was (see blessedEntry).
   blessed?: Blessed;
   [k: string]: unknown;
