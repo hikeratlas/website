@@ -28,8 +28,9 @@ export default function Featured({ data }: { data: Data | null }) {
       <span className='text-sm text-stone-700'>{park.counts.map(([n, w]) => plural(n, w)).join(' · ')}</span>
       {park.starts.length > 0 && <span className='mt-1 flex flex-col gap-0.5 text-sm'>
         <span className='text-stone-500'>Start with</span>
-        {park.starts.map((st) => <span key={st.tag} className='text-stone-800'>
-          <span className='inline-block w-16 text-xs font-semibold uppercase tracking-wide text-stone-500'>{st.tag}</span>{st.title} <span className='text-stone-500'>· {st.km.toFixed(1)} km</span>
+        {park.starts.map((st) => <span key={st.tag} className='grid grid-cols-[4.5rem_1fr] items-baseline text-stone-800'>
+          <span className='text-xs font-semibold uppercase tracking-wide text-stone-500'>{st.tag}</span>
+          <span>{st.title} <span className='text-stone-500'>· {st.km.toFixed(1)} km</span></span>
         </span>)}
       </span>}
       <span className='mt-auto pt-2 text-sm font-semibold text-green-900 group-hover:underline'>See its hikes on the map →</span>
