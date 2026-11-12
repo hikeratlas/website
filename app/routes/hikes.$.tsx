@@ -215,7 +215,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   });
 };
 
-export const meta: MetaFunction<typeof loader> = ({ data }) => {
+export const meta: MetaFunction<typeof loader> = ({ loaderData: data }) => {
   if (!data) return [{ title: 'Hiker Atlas' }];
   return [
     { title: data.title },

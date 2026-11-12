@@ -16,7 +16,7 @@ Cloudflare Pages.
 ## Development
 
 ```sh
-# the Vite dev server, with Cloudflare's bindings (cloudflareDevProxy)
+# the Vite dev server (in Node; the site uses no Cloudflare bindings)
 npm run dev
 ```
 

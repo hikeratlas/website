@@ -1,6 +1,5 @@
 import mdx from "@mdx-js/rollup";
 import { reactRouter } from "@react-router/dev/vite";
-import { cloudflareDevProxy } from "@react-router/dev/vite/cloudflare";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkMdxFrontmatter from "remark-mdx-frontmatter";
 import { fileURLToPath } from "node:url";
@@ -12,7 +11,6 @@ export default defineConfig(({ isSsrBuild }) => ({
   // served as they are. public/ is the built site (npm run build).
   publicDir: "static",
   plugins: [
-    cloudflareDevProxy(),
     // The homepage and blog posts (app/content/home.mdx, app/routes/blog.*.mdx).
     { enforce: "pre", ...mdx({ remarkPlugins: [remarkFrontmatter, remarkMdxFrontmatter, remarkRouteExports] }) },
     reactRouter(),
