@@ -153,8 +153,10 @@ def near_score(h, near):
 # results only ever shrink as you type: "panorama ridge", "panorama ridge
 # g" and "panorama ridge gar" are each a subset of the one before.
 #
-# Results naming more of the query come first ("lake ontario" is the lake
-# before lakes in Ontario), then by QRank, or by distance with near.
+# A park named without its kind, or with it shortened, matches as well as the
+# whole query ("killarney park" and "killarney pp" are Killarney Provincial
+# Park). Results naming more of the query come first ("lake ontario" is the
+# lake before lakes in Ontario), then by QRank, or by distance with near.
 
 # A typed word as FTS tokens: "o'hara" -> o, hara.
 TOKEN = re.compile(r'[a-z0-9]+')
@@ -210,6 +212,43 @@ def search_split(name, place, db, limit):
     return rows
 
 
+# A park's name as people type it: "Killarney park" for Killarney Provincial
+# Park (website#128), the kind of park left out, or shortened as the site and
+# map shorten it (basemap's create-autosuggest-db.ts, slices/parks.lua):
+# "Killarney PP".
+PARK_KINDS = {'park': ('provincial', 'national', 'state', 'regional', 'county'),
+              'forest': ('national', 'state', 'provincial')}
+PARK_ABBREVIATIONS = {'np': ('national', 'park'), 'sp': ('state', 'park'),
+                      'pp': ('provincial', 'park'), 'nf': ('national', 'forest')}
+
+
+def park_phrases(words):
+    """FTS phrases for a query naming a park without its kind, or with its
+    kind shortened: "killarney park" is also "killarney provincial park",
+    "killarney national park"...; "killarney pp" is "killarney provincial
+    park". The last word stays a prefix ("killarney par"). None when the
+    query names no park."""
+    toks = tokens(words)
+    variants = [[]]
+    changed = False
+    for i, t in enumerate(toks):
+        last = i == len(toks) - 1
+        if i > 0 and t in PARK_ABBREVIATIONS:
+            variants = [v + list(PARK_ABBREVIATIONS[t]) for v in variants]
+            changed = True
+            continue
+        # "park", or as it's typed ("par"), after the park's own name.
+        kind = next((k for k in PARK_KINDS if t == k or (last and len(t) >= 3 and k.startswith(t))), None)
+        if i > 0 and kind:
+            variants = [v + extra + [t] for v in variants for extra in [[]] + [[k] for k in PARK_KINDS[kind]]]
+            changed = True
+            continue
+        variants = [v + [t] for v in variants]
+    if not changed:
+        return None
+    return ' OR '.join('"{}"*'.format(' '.join(v)) for v in variants[:50])
+
+
 def search(q, db=None, near=None):
     """Up to 10 items matching q, best first. near, a (lat, lon), re-ranks
     them by distance from it as well as QRank."""
@@ -223,6 +262,17 @@ def search(q, db=None, near=None):
         for h in search_names(fts_query(q), db, limit=NEAR_LOCAL, box=box_around(near, NEAR_BOX_KM)):
             hits.append(h)
     tier = {h['rowid']: len(words) for h in hits}
+    # A park named without its kind ("killarney park"), or with it shortened
+    # ("killarney pp"): as good a match as the whole query.
+    parks = park_phrases(words)
+    if parks:
+        found = search_names(parks, db, limit=NEAR_TOP)
+        if near:
+            found += search_names(parks, db, limit=NEAR_LOCAL, box=box_around(near, NEAR_BOX_KM))
+        for h in found:
+            if h['rowid'] not in tier:
+                hits.append(h)
+                tier[h['rowid']] = len(words)
     # Then the first k words as a name and the rest as a place.
     for k in range(len(words) - 1, 0, -1):
         place = tokens(words[k:])

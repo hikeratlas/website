@@ -1,0 +1,21 @@
+name: Search
+
+# The search's known searches (search/test_search.py) against north-america's
+# search DB, as the live search serves it, on changes to search/.
+on:
+  pull_request:
+    paths: [search/**, .github/workflows/search.yml]
+  push:
+    branches: [main]
+    paths: [search/**, .github/workflows/search.yml]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: north-america's search DB
+        run: curl -sSfL --retry 3 -o "$RUNNER_TEMP/autosuggest.db" https://public.hikeratlas.com/north-america.autosuggest.db
+      - name: Known searches
+        run: python3 search/test_search.py "$RUNNER_TEMP/autosuggest.db"
