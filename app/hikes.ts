@@ -154,6 +154,11 @@ export interface ReportPage {
   personal?: boolean;
   type?: string; // trip_report or trail_guide
   date?: string; // YYYY, YYYY-MM or YYYY-MM-DD
+  // A thumbnail of a photo on the page whose caption names the route's
+  // destination or trail (cc-crawler's page_images.py, made in basemap's
+  // routes build). In the bundle a path next to it ("thumbs/<hash>.webp");
+  // parkReports makes it a URL.
+  thumb?: string;
 }
 
 // A route's pages: reports follow the route; about pages are about its
@@ -372,7 +377,13 @@ export async function parkDoc(build: string, index: BundleIndex | null, park: st
 // build has none, or none for the park.
 export async function parkReports(build: string, index: BundleIndex | null, park: string): Promise<ParkReports | null> {
   const rep = index?.reports;
-  return rep ? bundlePart<ParkReports>(build, rep.bundle, rep.parks?.[park]) : null;
+  const out = rep ? await bundlePart<ParkReports>(build, rep.bundle, rep.parks?.[park]) : null;
+  for (const r of Object.values(out ?? {})) {
+    for (const p of [...(r.reports ?? []), ...(r.about ?? [])]) {
+      if (p.thumb && !/^https?:/.test(p.thumb)) p.thumb = `${TILES_ROOT}/routes/${build}/${p.thumb}`;
+    }
+  }
+  return out;
 }
 
 // What a route's pages are filed under (its key, else its id), and its

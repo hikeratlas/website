@@ -20,10 +20,17 @@ function Pages({ pages }: { pages: ReportPage[] }) {
       {/* noopener, not noreferrer: the sites see their readers came from
           Hiker Atlas (and browsers imply noopener for _blank anyway). */}
       {/* eslint-disable-next-line react/jsx-no-target-blank */}
-      <a href={p.url} target='_blank' rel='noopener' className='flex flex-col gap-0.5 rounded-xl border border-stone-200 px-3 py-2.5 hover:border-stone-400 hover:bg-stone-50'>
-        <span className='text-sm font-semibold text-blue-700'>{p.title || p.site}</span>
-        <span className='text-xs text-stone-600'>
-          {[p.site.replace(/^www\./, ''), when(p.date), p.type === 'trail_guide' ? 'trail guide' : p.type === 'trip_report' ? 'trip report' : ''].filter(Boolean).join(' · ')}
+      <a href={p.url} target='_blank' rel='noopener' className='flex items-center gap-3 rounded-xl border border-stone-200 px-3 py-2.5 hover:border-stone-400 hover:bg-stone-50'>
+        {/* A photo from the page whose caption names the place; empty
+            alt: the title next to it says what the link is. */}
+        {p.thumb && <img src={p.thumb} alt='' loading='lazy' decoding='async' width={72} height={54}
+          className='h-[54px] w-[72px] shrink-0 rounded-lg object-cover bg-stone-100'
+          onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+        <span className='flex min-w-0 flex-col gap-0.5'>
+          <span className='text-sm font-semibold text-blue-700'>{p.title || p.site}</span>
+          <span className='text-xs text-stone-600'>
+            {[p.site.replace(/^www\./, ''), when(p.date), p.type === 'trail_guide' ? 'trail guide' : p.type === 'trip_report' ? 'trip report' : ''].filter(Boolean).join(' · ')}
+          </span>
         </span>
       </a>
     </li>)}
