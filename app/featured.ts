@@ -143,7 +143,8 @@ const thin = (line: [number, number][], n: number) => {
 export async function featured(build: string, at: [number, number] | null, day: number, showcase: number | null = null): Promise<Featured | null> {
   const [regions, index] = await Promise.all([getJson<Regions>(regionsUrl(build)), getJson<BundleIndex>(indexUrl(build))]);
   if (!regions || !index) return null;
-  const parks = SHOWCASE.flatMap(([path, short]) => {
+  // Alphabetical, by short name, as the switcher lists them.
+  const parks = [...SHOWCASE].sort((a, b) => a[1].localeCompare(b[1])).flatMap(([path, short]) => {
     const [c, s, a] = path.split('/');
     const country = regions.countries.find((x) => x.slug === c);
     const state = country?.states.find((x) => x.slug === s);

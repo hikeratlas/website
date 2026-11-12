@@ -136,6 +136,7 @@ export default function MiniMap({ style, bounds, parkIds, parkName, overlay, mut
           }
           const v = m.getBounds();
           const inView = w >= v.getWest() && e <= v.getEast() && s >= v.getSouth() && n <= v.getNorth();
+          m.getContainer().dataset.fit = JSON.stringify({ tries, park: [w, s, e, n].map((q) => +q.toFixed(3)), view: [v.getWest(), v.getSouth(), v.getEast(), v.getNorth()].map((q) => +q.toFixed(3)), inView });
           if (!Number.isFinite(w) || inView || tries >= 4) { drawPark(); return; }
           frame = [w, s, e, n];
           m.fitBounds(frame, { padding, duration: 0 });
