@@ -3,9 +3,7 @@
 // (#55, #56): the map, opened at what the path names, with the page's title,
 // description, breadcrumbs and list rendered on the server, so a link
 // previews and reads without the map.
-import { json, redirect } from "@remix-run/cloudflare";
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/cloudflare";
-import { useLoaderData } from "@remix-run/react";
+import { data, redirect, useLoaderData, type LoaderFunctionArgs, type MetaFunction } from "react-router";
 import MapPage, { type Initial } from '~/components/MapPage';
 import { buildFor } from '~/build';
 import {
@@ -63,7 +61,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   if (url.pathname !== canonicalPath && params) throw redirect(`${canonicalPath}${url.search}${url.hash}`, 301);
 
   const page = (p: Omit<Page, 'build' | 'search' | 'canonical'>) =>
-    json<Page>({ ...p, build, search: url.search, canonical: `${SITE}${hikesPath(parts)}` }, { status: p.status });
+    data<Page>({ ...p, build, search: url.search, canonical: `${SITE}${hikesPath(parts)}` }, { status: p.status });
 
   const regions = await getJson<Regions>(regionsUrl(routesBuild));
   if (!regions) {

@@ -1,8 +1,6 @@
 // The named-regressions page for hikeratlas/routes (components/Regressions):
 // not linked from the site, and not for search engines.
-import { json } from "@remix-run/cloudflare";
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/cloudflare";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, type LoaderFunctionArgs, type MetaFunction } from "react-router";
 import { ExternalScriptsHandle } from "remix-utils/external-scripts";
 import Regressions from '~/components/Regressions';
 import { buildFor } from '~/build';
@@ -17,7 +15,7 @@ export const meta: MetaFunction = () => [
   { name: "robots", content: "noindex" },
 ];
 
-export const loader = async ({ request }: LoaderFunctionArgs) => json({ build: buildFor(new URL(request.url)) });
+export const loader = async ({ request }: LoaderFunctionArgs) => ({ build: buildFor(new URL(request.url)) });
 
 export default function RegressionsPage() {
   const { build } = useLoaderData<typeof loader>();

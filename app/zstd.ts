@@ -9,8 +9,8 @@
 // The WASM is only fetched once the map meets a zstd tile.
 
 // The package's `exports` doesn't list the .wasm file, so it's imported by
-// path. Remix's compiler copies it into public/build and gives us its URL.
-import wasmUrl from "../node_modules/@bokuweb/zstd-wasm/dist/web/zstd.wasm";
+// path. Vite copies it into the build's assets and gives us its URL (?url).
+import wasmUrl from "../node_modules/@bokuweb/zstd-wasm/dist/web/zstd.wasm?url";
 
 // pmtiles.js's Compression enum
 const ZSTD = 4;

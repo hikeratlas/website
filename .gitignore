@@ -1,14 +1,14 @@
 node_modules
 
 /.cache
-/functions/\[\[path\]\].js
-/functions/\[\[path\]\].js.map
-/functions/metafile.*
-/functions/version.txt
-/public/build
+# The site as built: react-router build's output, and its client half as
+# Cloudflare Pages serves it (npm run build).
+/build
+/public
+/.react-router
 .dev.vars
 /.wrangler
-/public/maplibre-gl-worker.mjs
+/static/maplibre-gl-worker.mjs
 
 # Python
 __pycache__/

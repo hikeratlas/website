@@ -1,8 +1,6 @@
 // The homepage: app/content/home.mdx, with the featured park and hike
 // (~/featured) for where the visitor is.
-import { json } from '@remix-run/cloudflare';
-import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from '@remix-run/cloudflare';
-import { useLoaderData } from '@remix-run/react';
+import { useLoaderData, type HeadersFunction, type LoaderFunctionArgs, type MetaFunction } from 'react-router';
 import Home from '~/content/home.mdx';
 import Featured from '~/components/Featured';
 import { buildFor, styleUrl } from '~/build';
@@ -34,7 +32,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // ?shots: the cards drawn live, for basemap's bin/home-images.mjs to
   // picture them.
   const shots = url.searchParams.has('shots');
-  return json({ featured: await featured(build, at, day, showcase).catch(() => null), style: styleUrl(preview), search: url.search, shots });
+  return { featured: await featured(build, at, day, showcase).catch(() => null), style: styleUrl(preview), search: url.search, shots };
 };
 
 // The featured cards, for home.mdx's <Featured />: one component for good,
