@@ -60,7 +60,7 @@ export interface Featured {
     path: string;
     counts: [number, string][];
     starts: { tag: string; title: string; km: number }[]; // its picks to start with
-    id: string; // its OSM id, for its outline on the map
+    ids: string[]; // its OSM ids (a park mapped twice has several), for its outline on the map
     bounds: [number, number, number, number]; // most of its routes (w, s, e, n)
   };
   hike: {
@@ -183,7 +183,7 @@ export async function featured(build: string, at: [number, number] | null, day: 
       region: pick.state,
       path: parkPath,
       counts,
-      id: String(doc.park?.id ?? pick.area.id),
+      ids: [...new Set([pick.area.id, ...(pick.area.ids ?? []), String(doc.park?.id ?? '')].filter(Boolean))],
       bounds: trimmedBox(top.flatMap((x) => x.route.line), 0.04),
       starts: picks(hikes).map((p) => ({ tag: p.tag, title: hikeEntries(doc).find((e) => e.id === p.hike.id)?.title ?? p.hike.title, km: p.hike.route.km })),
     },

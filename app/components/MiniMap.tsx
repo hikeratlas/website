@@ -35,10 +35,11 @@ type ParkShape = { area: string; label: [number, number] | null };
 type Ring = [number, number][];
 const pathOf = (rings: Ring[], close: boolean) => rings.map((r) => `M${r.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L')}${close ? 'Z' : ''}`).join('');
 
-export default function MiniMap({ style, bounds, parkId, parkName, overlay, muted, padding = 12, label, className }: {
+export default function MiniMap({ style, bounds, parkIds, parkName, overlay, muted, padding = 12, label, className }: {
   style: string;
   bounds: [number, number, number, number];
-  parkId?: string;
+  // The park's OSM ids (any of them, a park mapped twice has several).
+  parkIds?: string[];
   // Shown as the map's only label, over a muted map with a park.
   parkName?: string;
   overlay?: Overlay;
@@ -94,8 +95,8 @@ export default function MiniMap({ style, bounds, parkId, parkName, overlay, mute
     // would avoid seams too, but it starts at z9, and a big park's map is
     // further out (Banff's, z7).
     const drawPark = () => {
-      if (!parkId || !muted) return;
-      const id = ['==', ['to-string', ['get', 'osm_id']], parkId] as maplibregl.FilterSpecification;
+      if (!parkIds || !muted) return;
+      const id = ['in', ['to-string', ['get', 'osm_id']], ['literal', parkIds]] as maplibregl.FilterSpecification;
       const p = (c: number[]) => { const q = m.project([c[0], c[1]]); return [q.x, q.y] as [number, number]; };
       const rings: Ring[] = [];
       for (const f of m.querySourceFeatures('tiles1', { sourceLayer: 'park', filter: id })) {
@@ -117,13 +118,13 @@ export default function MiniMap({ style, bounds, parkId, parkName, overlay, mute
       m.fitBounds(bounds, { padding, duration: 0 });
       // The credits start folded, behind their (i), as on the map page.
       m.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
-      if (parkId && muted) {
+      if (parkIds && muted) {
         // Only the park's name (drawn over the map, below): no other labels.
         for (const l of m.getStyle().layers) if (l.type === 'symbol') m.setLayoutProperty(l.id, 'visibility', 'none');
         m.once('idle', drawPark);
       }
-      else if (parkId) {
-        const id = ['==', ['to-string', ['get', 'osm_id']], parkId] as maplibregl.FilterSpecification;
+      else if (parkIds) {
+        const id = ['in', ['to-string', ['get', 'osm_id']], ['literal', parkIds]] as maplibregl.FilterSpecification;
         const before = m.getStyle().layers.find((l) => l.type === 'symbol')?.id;
         m.addLayer({ id: 'feat-park-fill', type: 'fill', source: 'tiles1', 'source-layer': 'park', filter: id, paint: { 'fill-color': '#15803d', 'fill-opacity': 0.14 } }, before);
         m.addLayer({ id: 'feat-park-line', type: 'line', source: 'tiles1', 'source-layer': 'park_outline', filter: id, paint: { 'line-color': '#14532d', 'line-width': 2.5, 'line-opacity': 0.85 } }, before);
@@ -134,7 +135,7 @@ export default function MiniMap({ style, bounds, parkId, parkName, overlay, mute
     // made, as the page lays out), then what's drawn over it.
     m.on('resize', () => { m.fitBounds(bounds, { padding, duration: 0 }); project(); drawPark(); });
     return () => m.remove();
-  }, [seen, style, bounds, parkId, overlay, muted, padding]);
+  }, [seen, style, bounds, parkIds, overlay, muted, padding]);
 
   return <div role='img' aria-label={label} className={`relative overflow-hidden bg-[#eef2ea] ${className}`}>
     <div ref={box} className='absolute inset-0' />
