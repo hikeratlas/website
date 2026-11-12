@@ -131,6 +131,11 @@ export interface BundleIndex {
   // Each state's park cards (#110), "<country>/<state>" -> [offset, length]
   // in the routes bundle. Missing in builds without them.
   cards?: Record<string, [number, number]>;
+  // The homepage's featured cards as images (#116), a folder of this
+  // build's routes: <home>/<park slug>-park.jpg and -hike.jpg for each
+  // showcase park (basemap's bin/home-images.mjs). Missing in builds
+  // without them.
+  home?: string;
 }
 
 // A park's card in its state's list (#110, basemap's bin/hike-paths.py): its

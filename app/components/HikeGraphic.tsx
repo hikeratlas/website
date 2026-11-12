@@ -52,7 +52,7 @@ export default function HikeGraphic({ hike }: { hike: Hike }) {
     </>;
   }
 
-  return <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio='xMidYMid meet' className='block h-full w-full' role='img'
+  return <svg data-ready={prof ? '' : undefined} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio='xMidYMid meet' className='block h-full w-full' role='img'
     aria-label={`${hike.title}: its elevation profile${hike.along.length ? `, passing ${hike.along.map((f) => f.name).join(', ')}` : ''}`}>
     {chart}
   </svg>;

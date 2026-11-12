@@ -58,19 +58,48 @@ function ParkSwitcher({ showcase, search }: { showcase: Data['showcase']; search
   </nav>;
 }
 
-export default function Featured({ data, style, search = '' }: { data: Data | null; style: string; search?: string }) {
+// The cards' pictures are drawn at these sizes (CSS px; bin/home-images.mjs
+// takes them at 2x), and shown at the card's width in their proportions.
+const PARK_ART = { w: 480, h: 300 };
+const HIKE_ART = { w: 480, h: 220 };
+
+// shots: the cards drawn live at their pictures' sizes, without the map's
+// credits (the page has them), for basemap's bin/home-images.mjs, which
+// pictures them for each build (#116); otherwise those pictures where the
+// build has them, as two MapLibre maps and an elevation profile from the DEM
+// were heavy for a page's first look. Without them, live.
+export default function Featured({ data, style, search = '', shots = false }: { data: Data | null; style: string; search?: string; shots?: boolean }) {
   const hk = data?.hike;
   const overlay = useMemo(() => hk && ({ line: hk.coords, stops: hk.along.map((f) => ({ n: f.n, at: f.at })) }), [hk]);
   if (!data) return null;
   const { park, hike } = data;
   const days = park.counts.find(([, w]) => w === 'day hike')?.[0] ?? 0;
+  const images = shots ? null : data.images;
+  const parkArt = images
+    ? <img src={images.park} alt={`A map of ${park.name}`} width={PARK_ART.w} height={PARK_ART.h} className='block aspect-[8/5] w-full object-cover' />
+    : shots
+      ? <div data-shot='park' data-shot-name={park.slug} style={{ width: PARK_ART.w, height: PARK_ART.h }}>
+        <Suspense fallback={null}>
+          <MiniMap style={style} bounds={park.bounds} parkIds={park.ids} parkName={park.name} muted credits={false} label={`A map of ${park.name}`} className='h-full w-full' />
+        </Suspense>
+      </div>
+      : <Suspense fallback={<div className='h-[220px] md:h-[260px]' />}>
+        <MiniMap style={style} bounds={park.bounds} parkIds={park.ids} parkName={park.name} muted label={`A map of ${park.name}`} className='h-[220px] md:h-[260px]' />
+      </Suspense>;
+  const hikeArt = images
+    ? <img src={images.hike} alt={`A map of ${hike.title} and its elevation profile`} width={HIKE_ART.w} height={HIKE_ART.h} className='block aspect-[24/11] w-full bg-white object-cover' />
+    : <div data-shot={shots ? 'hike' : undefined} data-shot-name={shots ? park.slug : undefined}
+      className={`flex bg-white ${shots ? '' : 'h-[200px] md:h-[220px]'}`} style={shots ? { width: HIKE_ART.w, height: HIKE_ART.h } : undefined}>
+      <Suspense fallback={<div className='w-[48%]' />}>
+        <MiniMap style={style} bounds={hike.bounds} overlay={overlay} muted padding={22} credits={!shots} label={`A map of ${hike.title}`} className='w-[48%] shrink-0' />
+      </Suspense>
+      <div className='min-w-0 flex-1 px-1 py-2'><HikeGraphic hike={hike} /></div>
+    </div>;
   return <>
   <ParkSwitcher showcase={data.showcase} search={search} />
   <section aria-label='Featured' className='my-6 grid gap-4 md:grid-cols-2'>
     <Card href={park.path} eyebrow={`${data.near ? 'A park near you' : 'Featured park'} · ${park.region}`}
-      art={<Suspense fallback={<div className='h-[220px] md:h-[260px]' />}>
-        <MiniMap style={style} bounds={park.bounds} parkIds={park.ids} parkName={park.name} muted label={`A map of ${park.name}`} className='h-[220px] md:h-[260px]' />
-      </Suspense>}>
+      art={parkArt}>
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{park.name}</span>
       <span className='text-sm text-stone-700'>{park.counts.map(([n, w]) => plural(n, w)).join(' · ')}</span>
       {park.starts.length > 0 && <span className='mt-1 flex flex-col gap-0.5 text-sm'>
@@ -84,12 +113,7 @@ export default function Featured({ data, style, search = '' }: { data: Data | nu
     </Card>
 
     <Card href={hike.path} eyebrow={`Featured hike · ${park.name}`}
-      art={<div className='flex h-[200px] bg-white md:h-[220px]'>
-        <Suspense fallback={<div className='w-[48%]' />}>
-          <MiniMap style={style} bounds={hike.bounds} overlay={overlay} muted padding={22} label={`A map of ${hike.title}`} className='w-[48%] shrink-0' />
-        </Suspense>
-        <div className='min-w-0 flex-1 px-1 py-2'><HikeGraphic hike={hike} /></div>
-      </div>}>
+      art={hikeArt}>
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{hike.title}</span>
       <span className='text-sm text-stone-700'>
         <span className={`mr-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${DIFF_COLORS[hike.diff]}`}>{hike.diff}</span>
@@ -108,5 +132,9 @@ export default function Featured({ data, style, search = '' }: { data: Data | nu
       <span className='mt-auto pt-3'><span className={CTA}>See the hike <span aria-hidden='true'>→</span></span></span>
     </Card>
   </section>
+  {images && <p className='-mt-3 mb-6 text-xs text-stone-500'>
+    Maps © <a href='https://www.openstreetmap.org/copyright' className='!text-stone-500'>OpenStreetMap</a> contributors;
+    elevation from <a href='https://mapterhorn.com/attribution' className='!text-stone-500'>Mapterhorn</a>.
+  </p>}
   </>;
 }
