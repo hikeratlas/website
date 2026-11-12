@@ -6,40 +6,40 @@
 import { hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, regionsUrl, type BundleIndex, type Regions, type Route } from '~/hikes';
 import { parkHikes, picks, timeLabel, type Difficulty } from '~/park';
 
-// Well-known parks with plenty of hikes (25+), across both countries, as
-// regions.json's paths.
-export const SHOWCASE = [
-  'canada/alberta/banff-national-park',
-  'canada/alberta/jasper-national-park',
-  'canada/british-columbia/yoho-national-park',
-  'canada/british-columbia/kootenay-national-park',
-  'canada/british-columbia/garibaldi-provincial-park',
-  'canada/british-columbia/golden-ears-provincial-park',
-  'canada/british-columbia/e-c-manning-provincial-park',
-  'canada/british-columbia/strathcona-provincial-park',
-  'canada/british-columbia/mount-robson-provincial-park',
-  'canada/ontario/algonquin-provincial-park',
-  'canada/ontario/killarney-provincial-park',
-  'canada/quebec/parc-national-du-mont-tremblant',
-  'canada/new-brunswick/fundy-national-park',
-  'canada/nova-scotia/cape-breton-highlands-national-park',
-  'canada/newfoundland-and-labrador/gros-morne-national-park',
-  'united-states/washington/mount-rainier-national-park',
-  'united-states/washington/olympic-national-park',
-  'united-states/california/yosemite-national-park',
-  'united-states/california/sequoia-national-park',
-  'united-states/california/joshua-tree-national-park',
-  'united-states/utah/zion-national-park',
-  'united-states/utah/bryce-canyon-national-park',
-  'united-states/arizona/grand-canyon-national-park',
-  'united-states/wyoming/grand-teton-national-park',
-  'united-states/montana/waterton-glacier-international-peace-park',
-  'united-states/colorado/rocky-mountain-national-park',
-  'united-states/north-carolina/great-smoky-mountains-national-park',
-  'united-states/virginia/shenandoah-national-park',
-  'united-states/new-hampshire/white-mountain-national-forest',
-  'united-states/new-york/adirondack-park',
-  'united-states/maine/acadia-national-park',
+// Well-known parks with plenty of hikes (25+), across both countries: their
+// regions.json paths, and short names for the homepage's park switcher.
+export const SHOWCASE: [string, string][] = [
+  ['canada/alberta/banff-national-park', 'Banff'],
+  ['canada/alberta/jasper-national-park', 'Jasper'],
+  ['canada/british-columbia/yoho-national-park', 'Yoho'],
+  ['canada/british-columbia/kootenay-national-park', 'Kootenay'],
+  ['canada/british-columbia/garibaldi-provincial-park', 'Garibaldi'],
+  ['canada/british-columbia/golden-ears-provincial-park', 'Golden Ears'],
+  ['canada/british-columbia/e-c-manning-provincial-park', 'Manning'],
+  ['canada/british-columbia/strathcona-provincial-park', 'Strathcona'],
+  ['canada/british-columbia/mount-robson-provincial-park', 'Mount Robson'],
+  ['canada/ontario/algonquin-provincial-park', 'Algonquin'],
+  ['canada/ontario/killarney-provincial-park', 'Killarney'],
+  ['canada/quebec/parc-national-du-mont-tremblant', 'Mont-Tremblant'],
+  ['canada/new-brunswick/fundy-national-park', 'Fundy'],
+  ['canada/nova-scotia/cape-breton-highlands-national-park', 'Cape Breton'],
+  ['canada/newfoundland-and-labrador/gros-morne-national-park', 'Gros Morne'],
+  ['united-states/washington/mount-rainier-national-park', 'Mount Rainier'],
+  ['united-states/washington/olympic-national-park', 'Olympic'],
+  ['united-states/california/yosemite-national-park', 'Yosemite'],
+  ['united-states/california/sequoia-national-park', 'Sequoia'],
+  ['united-states/california/joshua-tree-national-park', 'Joshua Tree'],
+  ['united-states/utah/zion-national-park', 'Zion'],
+  ['united-states/utah/bryce-canyon-national-park', 'Bryce Canyon'],
+  ['united-states/arizona/grand-canyon-national-park', 'Grand Canyon'],
+  ['united-states/wyoming/grand-teton-national-park', 'Grand Teton'],
+  ['united-states/montana/waterton-glacier-international-peace-park', 'Waterton-Glacier'],
+  ['united-states/colorado/rocky-mountain-national-park', 'Rocky Mountain'],
+  ['united-states/north-carolina/great-smoky-mountains-national-park', 'Great Smokies'],
+  ['united-states/virginia/shenandoah-national-park', 'Shenandoah'],
+  ['united-states/new-hampshire/white-mountain-national-forest', 'White Mountains'],
+  ['united-states/new-york/adirondack-park', 'Adirondacks'],
+  ['united-states/maine/acadia-national-park', 'Acadia'],
 ];
 
 // The featured hike: the best easy or moderate one, if it scores this share
@@ -51,9 +51,9 @@ const NEAR_KM = 500;
 
 export interface Featured {
   near: boolean;
-  // Which showcase park it is, when one was asked for (?showcase=N, for
-  // checking them one by one).
-  showcase: { index: number; count: number } | null;
+  // The showcase parks (their short names), which one this is, and whether
+  // it was asked for (?showcase=N), for the homepage's park switcher.
+  showcase: { index: number; names: string[]; asked: boolean };
   park: {
     name: string;
     region: string;
@@ -143,12 +143,12 @@ const thin = (line: [number, number][], n: number) => {
 export async function featured(build: string, at: [number, number] | null, day: number, showcase: number | null = null): Promise<Featured | null> {
   const [regions, index] = await Promise.all([getJson<Regions>(regionsUrl(build)), getJson<BundleIndex>(indexUrl(build))]);
   if (!regions || !index) return null;
-  const parks = SHOWCASE.flatMap((path) => {
+  const parks = SHOWCASE.flatMap(([path, short]) => {
     const [c, s, a] = path.split('/');
     const country = regions.countries.find((x) => x.slug === c);
     const state = country?.states.find((x) => x.slug === s);
     const area = state?.areas.find((x) => x.slug === a);
-    return area?.bbox ? [{ path, state: state!.name, area, mid: [(area.bbox[0] + area.bbox[2]) / 2, (area.bbox[1] + area.bbox[3]) / 2] as [number, number] }] : [];
+    return area?.bbox ? [{ path, short, state: state!.name, area, mid: [(area.bbox[0] + area.bbox[2]) / 2, (area.bbox[1] + area.bbox[3]) / 2] as [number, number] }] : [];
   });
   if (!parks.length) return null;
   const nearest = at ? parks.map((p) => ({ p, d: km(at, p.mid) })).sort((a, b) => a.d - b.d)[0] : null;
@@ -177,7 +177,7 @@ export async function featured(build: string, at: [number, number] | null, day: 
   ] as [number, string][]).filter(([n]) => n > 0);
   return {
     near: showcase === null && near,
-    showcase: showcase !== null ? { index: wrap(showcase), count: parks.length } : null,
+    showcase: { index: parks.indexOf(pick), names: parks.map((x) => x.short), asked: showcase !== null },
     park: {
       name: doc.park?.name ?? pick.area.name,
       region: pick.state,

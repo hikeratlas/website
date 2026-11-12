@@ -2,7 +2,8 @@
 // linking to their pages on the map. The park on the basemap, outlined, with
 // its routes; the hike as an infographic, its shape and elevation profile
 // with what it passes numbered on both.
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
+import { Link } from '@remix-run/react';
 import type { Featured as Data } from '~/featured';
 import { DIFF_COLORS } from '~/park';
 import { TerrainBar } from './ParkSheet';
@@ -25,26 +26,42 @@ function Card({ href, eyebrow, children, art }: { href: string; eyebrow: string;
 
 const CTA = 'mt-auto inline-flex items-center gap-1.5 self-start rounded-xl bg-green-900 px-4 py-2 text-sm font-semibold text-white transition group-hover:bg-green-800';
 
+// The showcase parks, by short name, on one line (scrolling sideways when
+// it's too long), the featured one marked: a reader can switch the cards to
+// another park (?showcase=N, keeping the rest of the query, a preview's
+// ?build=). Remix links, so only the cards' data loads, and the page stays put.
+function ParkSwitcher({ showcase, search }: { showcase: Data['showcase']; search: string }) {
+  const { index, names } = showcase;
+  const row = useRef<HTMLDivElement>(null);
+  const to = (i: number) => {
+    const q = new URLSearchParams(search);
+    q.set('showcase', String((i + names.length) % names.length));
+    return `?${q}`;
+  };
+  // The featured park in view in the line.
+  useEffect(() => {
+    const el = row.current?.querySelector<HTMLElement>('[aria-current]');
+    if (el && row.current) row.current.scrollTo({ left: el.offsetLeft - row.current.clientWidth / 2 + el.clientWidth / 2, behavior: 'smooth' });
+  }, [index]);
+  const arrow = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-300 !text-stone-700 !no-underline hover:bg-stone-100';
+  return <nav aria-label='Showcase parks' className='mt-6 -mb-3 flex items-center gap-2'>
+    <Link to={to(index - 1)} preventScrollReset aria-label='Previous park' className={arrow}>«</Link>
+    <div ref={row} className='flex min-w-0 flex-1 gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'>
+      {names.map((n, i) => <Link key={n} to={to(i)} preventScrollReset aria-current={i === index ? 'true' : undefined}
+        className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm !no-underline ${i === index ? 'bg-green-900 font-semibold !text-white' : '!text-stone-700 hover:bg-stone-100'}`}>{n}</Link>)}
+    </div>
+    <Link to={to(index + 1)} preventScrollReset aria-label='Next park' className={arrow}>»</Link>
+  </nav>;
+}
+
 export default function Featured({ data, style, search = '' }: { data: Data | null; style: string; search?: string }) {
   const hk = data?.hike;
   const overlay = useMemo(() => hk && ({ line: hk.coords, stops: hk.along.map((f) => ({ n: f.n, at: f.at })) }), [hk]);
   if (!data) return null;
   const { park, hike } = data;
   const days = park.counts.find(([, w]) => w === 'day hike')?.[0] ?? 0;
-  const sc = data.showcase;
-  // ?showcase=N: a bar to step through the showcase parks, keeping the rest
-  // of the query (a preview's ?build=).
-  const step = (d: number) => {
-    const q = new URLSearchParams(search);
-    q.set('showcase', String(sc ? (sc.index + d + sc.count) % sc.count : 0));
-    return `?${q}`;
-  };
   return <>
-  {sc && <nav aria-label='Showcase parks' className='mt-6 -mb-3 flex items-center gap-3 text-sm'>
-    <a href={step(-1)} className='rounded-lg border border-stone-300 px-3 py-1 !text-stone-900 !no-underline hover:bg-stone-50'>‹ Prev</a>
-    <span className='text-stone-600'>Showcase park {sc.index + 1} of {sc.count}: {park.name}</span>
-    <a href={step(1)} className='rounded-lg border border-stone-300 px-3 py-1 !text-stone-900 !no-underline hover:bg-stone-50'>Next ›</a>
-  </nav>}
+  <ParkSwitcher showcase={data.showcase} search={search} />
   <section aria-label='Featured' className='my-6 grid gap-4 md:grid-cols-2'>
     <Card href={park.path} eyebrow={`${data.near ? 'A park near you' : 'Featured park'} · ${park.region}`}
       art={<Suspense fallback={<div className='h-[220px] md:h-[260px]' />}>

@@ -64,6 +64,9 @@ export default function MiniMap({ style, bounds, parkId, parkName, overlay, mute
   useEffect(() => {
     if (!seen || !box.current) return;
     setup();
+    // A new box (another park): none of the last one's drawing.
+    setProj(null);
+    setPark(null);
     const m = new maplibregl.Map({
       container: box.current,
       style,
