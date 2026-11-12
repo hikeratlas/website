@@ -42,6 +42,9 @@ export const SHOWCASE = [
   'united-states/maine/acadia-national-park',
 ];
 
+// A loop is featured over its park's best hike if it scores this share of it.
+const LOOP_WITHIN = 0.85;
+
 // A showcase park this close (km, centre to centre) counts as near.
 const NEAR_KM = 500;
 
@@ -55,7 +58,6 @@ export interface Featured {
     starts: { tag: string; title: string; km: number }[]; // its picks to start with
     id: string; // its OSM id, for its outline on the map
     bounds: [number, number, number, number]; // most of its routes (w, s, e, n)
-    routes: [number, number][][]; // its day hikes, thinned, for the map
   };
   hike: {
     title: string;
@@ -70,11 +72,11 @@ export interface Featured {
     landcover: [string, number][];
     passes: string[];
     reports: number;
-    line: string; // SVG points, in a 120x120 box (HikeGraphic's inset)
+    bounds: [number, number, number, number]; // its line's box (w, s, e, n)
     coords: [number, number][]; // its line, thinned, for its elevation profile
     km_total: number;
     // What it passes, in order, numbered, with where in the line's box.
-    along: { n: number; name: string; kind: string; km: number; x: number; y: number }[];
+    along: { n: number; name: string; kind: string; km: number; at: [number, number] }[];
   };
 }
 
@@ -154,10 +156,17 @@ export async function featured(build: string, at: [number, number] | null, day: 
   if (!doc || !doc.day_hikes.length) return null;
   const hikes = parkHikes(doc, reports);
   // The best moderate hike, one with trip reports if there is one; else the
-  // best easy one; else the best.
-  const best = (pred: (h: (typeof hikes)[number]) => boolean) => hikes.filter(pred).sort((a, b) => b.score - a.score)[0];
-  const h = best((x) => x.diff === 'Moderate' && x.reports > 0) ?? best((x) => x.diff === 'Moderate')
-    ?? best((x) => x.diff === 'Easy') ?? best(() => true)!;
+  // best easy one; else the best. A loop instead, if one scores within
+  // LOOP_WITHIN of it: its shape on the map says more than an out-and-back's.
+  type H = (typeof hikes)[number];
+  const best = (pred: (h: H) => boolean) => hikes.filter(pred).sort((a, b) => b.score - a.score)[0];
+  const tiers: ((x: H) => boolean)[] = [
+    (x) => x.diff === 'Moderate' && x.reports > 0, (x) => x.diff === 'Moderate', (x) => x.diff === 'Easy', () => true,
+  ];
+  const tier = tiers.find((t) => best(t))!;
+  const top1 = best(tier)!;
+  const loop = best((x) => tier(x) && x.loop);
+  const h = loop && loop.score >= LOOP_WITHIN * top1.score ? loop : top1;
   const entry = hikeEntries(doc).find((e) => e.id === h.id);
   const parkPath = hikesPath(pick.path.split('/'));
   const top = [...doc.day_hikes].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 60);
@@ -176,7 +185,6 @@ export async function featured(build: string, at: [number, number] | null, day: 
       counts,
       id: String(doc.park?.id ?? pick.area.id),
       bounds: trimmedBox(top.flatMap((x) => x.route.line), 0.04),
-      routes: top.map((x) => thin(x.route.line, 40)),
       starts: picks(hikes).map((p) => ({ tag: p.tag, title: hikeEntries(doc).find((e) => e.id === p.hike.id)?.title ?? p.hike.title, km: p.hike.route.km })),
     },
     hike: {
@@ -192,7 +200,7 @@ export async function featured(build: string, at: [number, number] | null, day: 
       landcover: h.route.landcover,
       passes: h.features,
       reports: h.reports,
-      line: fit([h.route.line], 120, 120, { pad: 10, n: 200 })[0] ?? '',
+      bounds: trimmedBox(h.route.line, 0),
       coords: thin(h.route.line, 300),
       km_total: h.route.km,
       along: alongPoints(h.route),
@@ -201,15 +209,9 @@ export async function featured(build: string, at: [number, number] | null, day: 
 }
 
 // A route's numbered features (routes' "along", from builds after
-// hikeratlas/routes#170), placed in the same box as fit([line], 120, 120,
-// { pad: 10 }) puts its line: at most 6, unnamed ones left out.
+// hikeratlas/routes#170): at most 6, unnamed ones and repeats left out.
 function alongPoints(r: Route): Featured['hike']['along'] {
   const seen = new Set<string>();
-  const items = (r.along ?? []).filter(([, n]) => n && !/^unnamed$/i.test(n) && !seen.has(n) && !!seen.add(n)).slice(0, 6);
-  if (!items.length) return [];
-  const pts = fit([r.line, ...items.map(([, , , at]) => [at, at] as [number, number][])], 120, 120, { pad: 10, n: 1e9, frame: [r.line] });
-  return items.map(([kind, name, km], i) => {
-    const [x, y] = pts[i + 1].split(' ')[0].split(',').map(Number);
-    return { n: i + 1, name, kind, km, x, y };
-  });
+  return (r.along ?? []).filter(([, n]) => n && !/^unnamed$/i.test(n) && !seen.has(n) && !!seen.add(n)).slice(0, 6)
+    .map(([kind, name, km, at], i) => ({ n: i + 1, name, kind, km, at }));
 }

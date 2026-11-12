@@ -2,7 +2,7 @@
 // linking to their pages on the map. The park on the basemap, outlined, with
 // its routes; the hike as an infographic, its shape and elevation profile
 // with what it passes numbered on both.
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import type { Featured as Data } from '~/featured';
 import { DIFF_COLORS } from '~/park';
 import { TerrainBar } from './ParkSheet';
@@ -23,13 +23,18 @@ function Card({ href, eyebrow, children, art }: { href: string; eyebrow: string;
   </a>;
 }
 
+const CTA = 'mt-auto inline-flex items-center gap-1.5 self-start rounded-xl bg-green-900 px-4 py-2 text-sm font-semibold text-white transition group-hover:bg-green-800';
+
 export default function Featured({ data, style }: { data: Data | null; style: string }) {
+  const hk = data?.hike;
+  const overlay = useMemo(() => hk && ({ line: hk.coords, stops: hk.along.map((f) => ({ n: f.n, at: f.at })) }), [hk]);
   if (!data) return null;
   const { park, hike } = data;
+  const days = park.counts.find(([, w]) => w === 'day hike')?.[0] ?? 0;
   return <section aria-label='Featured' className='my-6 grid gap-4 md:grid-cols-2'>
     <Card href={park.path} eyebrow={`${data.near ? 'A park near you' : 'Featured park'} · ${park.region}`}
       art={<Suspense fallback={<div className='h-[220px] md:h-[260px]' />}>
-        <MiniMap style={style} bounds={park.bounds} routes={park.routes} parkId={park.id} label={`A map of ${park.name} and its hikes`} />
+        <MiniMap style={style} bounds={park.bounds} parkId={park.id} label={`A map of ${park.name}`} className='h-[220px] md:h-[260px]' />
       </Suspense>}>
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{park.name}</span>
       <span className='text-sm text-stone-700'>{park.counts.map(([n, w]) => plural(n, w)).join(' · ')}</span>
@@ -40,11 +45,16 @@ export default function Featured({ data, style }: { data: Data | null; style: st
           <span>{st.title} <span className='text-stone-500'>· {st.km.toFixed(1)} km</span></span>
         </span>)}
       </span>}
-      <span className='mt-auto pt-2 text-sm font-semibold text-green-900 group-hover:underline'>See its hikes on the map →</span>
+      <span className='mt-auto pt-3'><span className={CTA}>Explore its {days} {days === 1 ? 'hike' : 'hikes'} <span aria-hidden='true'>→</span></span></span>
     </Card>
 
     <Card href={hike.path} eyebrow={`Featured hike · ${park.name}`}
-      art={<div className='bg-white px-2'><HikeGraphic hike={hike} /></div>}>
+      art={<div className='flex h-[200px] bg-white md:h-[220px]'>
+        <Suspense fallback={<div className='w-[48%]' />}>
+          <MiniMap style={style} bounds={hike.bounds} overlay={overlay} muted padding={22} label={`A map of ${hike.title}`} className='w-[48%] shrink-0' />
+        </Suspense>
+        <div className='min-w-0 flex-1 px-1 py-2'><HikeGraphic hike={hike} /></div>
+      </div>}>
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{hike.title}</span>
       <span className='text-sm text-stone-700'>
         <span className={`mr-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${DIFF_COLORS[hike.diff]}`}>{hike.diff}</span>
@@ -60,7 +70,7 @@ export default function Featured({ data, style }: { data: Data | null; style: st
         </ol>
         : hike.passes.length > 0 && <span className='text-sm text-stone-700'>Passes {hike.passes.join(', ')}</span>}
       {hike.reports > 0 && <span className='text-sm text-stone-700'>{plural(hike.reports, 'trip report')} from hikers who&apos;ve done it</span>}
-      <span className='mt-auto pt-2 text-sm font-semibold text-green-900 group-hover:underline'>See the hike →</span>
+      <span className='mt-auto pt-3'><span className={CTA}>See the hike <span aria-hidden='true'>→</span></span></span>
     </Card>
   </section>;
 }
