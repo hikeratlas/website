@@ -608,7 +608,13 @@ export default function Regressions({ build }: { build: string | null }) {
               <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${d ? (d.status === 'accepted' ? 'bg-emerald-500' : 'bg-red-500') : p.status === 'open' ? 'bg-gray-300' : p.status === 'accepted' ? 'bg-emerald-700' : 'bg-red-700'}`} />
               {p.name}</button>; })}
             {tab === 'proposals' && !proposals.length && <span className='text-xs text-gray-500'>Nothing open in this park.</span>}
-            {tab === 'entries' && park?.entries.map((e, i) => { const x = edits[park.stem]?.[entryKey(e)]; return <button key={entryKey(e)} type='button' onClick={() => setSubject({ type: 'entry', i })} className={chip(subject?.type === 'entry' && subject.i === i)}>
+            {tab === 'entries' && park?.entries.map((e, i) => { const x = edits[park.stem]?.[entryKey(e)];
+              // A featured entry checks the homepage's pick, not a hike on
+              // the map: shown, not opened (routes' expect.py).
+              if (e.kind === 'featured') return <span key={entryKey(e)} className='text-xs text-gray-600 px-2 py-1 rounded border border-dashed'
+                title={[e.not?.length && `not ${e.not.join(', ')}`, e.one_of?.length && `one of ${e.one_of.join(', ')}`].filter(Boolean).join('; ')}>
+                {e.name} (featured{e.not?.length ? `: not ${e.not.join(', ')}` : ''})</span>;
+              return <button key={entryKey(e)} type='button' onClick={() => setSubject({ type: 'entry', i })} className={chip(subject?.type === 'entry' && subject.i === i)}>
               <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${x ? (x.action === 'delete' ? 'bg-red-500' : 'bg-amber-500') : 'bg-gray-300'}`} />
               {e.name}{(e.kind ?? 'dest') === 'dest' ? ' (dest)' : e.blessed ? ' (blessed)' : ''}</button>; })}
             {tab === 'hikes' && park && parkHikes?.map((h, i) => { const b = h.key && blessings[park.stem]?.[h.key]; const has = blessedBy(park.entries, h.key); return <button key={`${h.key ?? h.label}|${i}`} type='button' onClick={() => setSubject({ type: 'hike', i })} className={chip(subject?.type === 'hike' && subject.i === i)}>
