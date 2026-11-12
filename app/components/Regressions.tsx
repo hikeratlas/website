@@ -28,7 +28,7 @@ import type { LngLat } from '~/routing/graph';
 import type { ParkDoc, Route } from '~/hikes';
 import { GitHub, REPO } from '~/regressions/github';
 import {
-  blessedEntry, entryFor, entryKey, fixtureFor, hikeTitle, key, norm, parseJsonl, passes, simplify, slug, toJsonl, walks, withFields,
+  blessedEntry, entryFor, entryKey, entryTraces, fixtureFor, hikeTitle, key, norm, parseJsonl, passes, simplify, slug, toJsonl, walks, withFields,
   type Decision, type Entry, type EntryEdit, type ParkFile, type Proposal,
 } from '~/regressions/model';
 
@@ -327,11 +327,12 @@ export default function Regressions({ build }: { build: string | null }) {
     let live = true;
     setTrail(null); setOffered([]); setPick(null); setDrawing(false); draw.clear();
     const name = prop?.name ?? entry!.name;
-    const trace = entry?.trace ?? null;
+    const traces = entry ? entryTraces(entry) : [];
+    const trace = traces[0] ?? null;
     if (prop) { setKm(String(dec?.km ?? prop.suggest_km ?? prop.km)); setNote(dec?.note ?? ''); }
     else { setKm(String((edit?.action === 'update' ? edit.km : undefined) ?? entry!.km ?? '')); setNote(edit?.note ?? ''); }
     if (map.getSource('rg-trace')) {
-      map.getSource<GeoJSONSource>('rg-trace')!.setData(trace ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: trace } } : EMPTY);
+      map.getSource<GeoJSONSource>('rg-trace')!.setData(traces.length ? { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: traces } } : EMPTY);
     }
     if (!archive.current) archive.current = new pmtiles.PMTiles(new CoalescingSource(new pmtiles.FetchSource(tilesUrl(routesBuild))), undefined, withZstd(new pmtiles.PMTiles('').decompress));
     (async () => {
@@ -344,7 +345,7 @@ export default function Regressions({ build }: { build: string | null }) {
       const lines = geom?.lines?.length ? geom.lines : null;
       if (!live) return;
       setTrail(lines);
-      const view = trace?.length ? bounds(lines ? [...lines, trace] : [trace])
+      const view = trace?.length ? bounds(lines ? [...lines, ...traces] : traces)
         : entry?.start ? bounds([[entry.start]]) : lines ? bounds(lines)
         : osmBox ?? src?.near_bbox ? (([w, so, e, n]) => bounds([[[w, so], [e, n]]]))((osmBox ?? src!.near_bbox)!) : park.bbox ? bounds([[[park.bbox[0], park.bbox[1]], [park.bbox[2], park.bbox[3]]]]) : null;
       if (view) map.fitBounds(view, { padding: 70, maxZoom: entry?.start && !trace ? 14 : 15, duration: 0 });
@@ -382,9 +383,9 @@ export default function Regressions({ build }: { build: string | null }) {
   // and of the hike picked, labelled.
   useEffect(() => {
     if (!map || !map.getSource('rg-ends')) return;
-    const trace = entry?.trace ?? hikeEntry?.trace ?? null;
+    const traces = entry ? entryTraces(entry) : hikeEntry?.trace ? [hikeEntry.trace] : [];
     const features = [
-      ...(trace ? endFeatures(trace, 'Trace', { of: 'trace' })
+      ...(traces.length ? traces.flatMap((t, i) => endFeatures(t, traces.length > 1 ? `Trace ${i + 1}` : 'Trace', { of: 'trace' }))
         : entry?.start ? endFeatures([entry.start], 'Trailhead', { of: 'trace' }).map((f) => ({ ...f, properties: { ...f.properties, label: 'Trailhead' } })) : []),
       ...(pick !== null && offered[pick] ? endFeatures(offered[pick].line, 'Hike', { of: 'hike' }) : []),
     ];
@@ -442,12 +443,13 @@ export default function Regressions({ build }: { build: string | null }) {
     setDecision({ status: 'accepted', km: kmNum, trace: t[0], how: t[1], note: note.trim() || undefined });
     setDrawing(false);
   };
-  const saveEntry = () => {
+  const saveEntry = (addTrace = false) => {
     if (!entry) return;
     const t = newTrace();
+    if (addTrace && !t) return;
     const kmChanged = kmNum > 0 && kmNum !== entry.km;
     if (!t && !kmChanged && !note.trim()) return;
-    setEdit({ action: 'update', ...(kmChanged ? { km: kmNum } : {}), ...(t ? { trace: t[0], how: t[1] } : {}), note: note.trim() || undefined });
+    setEdit({ action: 'update', ...(kmChanged ? { km: kmNum } : {}), ...(t ? { trace: t[0], how: t[1], ...(addTrace ? { addTrace } : {}) } : {}), note: note.trim() || undefined });
     setDrawing(false);
   };
 
@@ -497,7 +499,8 @@ export default function Regressions({ build }: { build: string | null }) {
           }
           const e = { ...entries[at] };
           if (x.km !== undefined) e.km = x.km;
-          if (x.trace) e.trace = x.trace;
+          if (x.trace && x.addTrace) e.traces = [...(e.traces ?? []), x.trace];
+          else if (x.trace) e.trace = x.trace;
           if (x.note) e.trace_note = x.note;
           entries[at] = e;
           updated++;
@@ -547,7 +550,7 @@ export default function Regressions({ build }: { build: string | null }) {
     return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'fixture';
   };
   const t = newTrace();
-  const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `new trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
+  const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `${x.addTrace ? 'another' : 'new'} trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
 
   // Search (as on the map page): results near the map's centre, and a pick
   // framed by its box, or at zoom 13.
@@ -653,7 +656,7 @@ export default function Regressions({ build }: { build: string | null }) {
                 className={`tap w-full text-left rounded border px-2 py-1.5 ${pick === i ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50 hover:border-blue-400'}`}>
                 <div className='flex justify-between gap-2'><span className='font-medium break-words min-w-0'>{o.label}</span><span className='tabular-nums whitespace-nowrap'>{o.km} km</span></div>
                 <div className='text-xs text-gray-500'>{o.check
-                  ? <>{o.check.ok ? <b className='text-emerald-700'>passes this entry</b> : 'doesn’t pass'} · name {o.check.name ? '✓' : '✗'} · length {o.check.length ? (o.check.byTrace ? '✓ (by the trace)' : '✓') : '✗'}{o.check.start !== null && <> · start {o.check.start ? '✓' : `✗ (${Math.round(o.check.startOff ?? 0)} m off)`}</>}{o.check.end !== null && <> · end {o.check.end ? '✓' : `✗ (${Math.round(o.check.endOff ?? 0)} m off)`}</>} · follows {Math.round(o.check.follows * 100)}% of the trace</>
+                  ? <>{o.check.ok ? <b className='text-emerald-700'>passes this entry</b> : 'doesn’t pass'}{o.check.trace !== undefined ? ` (trace ${o.check.trace + 1})` : ''} · name {o.check.name ? '✓' : '✗'} · length {o.check.length ? (o.check.byTrace ? '✓ (by the trace)' : '✓') : '✗'}{o.check.start !== null && <> · start {o.check.start ? '✓' : `✗ (${Math.round(o.check.startOff ?? 0)} m off)`}</>}{o.check.end !== null && <> · end {o.check.end ? '✓' : `✗ (${Math.round(o.check.endOff ?? 0)} m off)`}</>} · follows {Math.round(o.check.follows * 100)}% of the trace</>
                   : trail ? `${Math.round(o.share * 100)}% of the OSM trail` : o.share ? 'named for it' : 'nearby'}</div>
               </button></li>)}
               {!offered.length && <li className='text-xs text-gray-500'>Routes offers nothing here yet: draw it.</li>}
@@ -686,8 +689,10 @@ export default function Regressions({ build }: { build: string | null }) {
         </>}
         {entry && <>
           <div className='flex gap-1.5'>
-            {(entry.kind ?? 'dest') === 'trail' && <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={draw.busy || !(t || (kmNum > 0 && kmNum !== entry.km) || note.trim())} onClick={saveEntry}>
+            {(entry.kind ?? 'dest') === 'trail' && <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={draw.busy || !(t || (kmNum > 0 && kmNum !== entry.km) || note.trim())} onClick={() => saveEntry()}>
               {t ? `Use ${draw.coords.length > 1 ? 'drawn hike' : 'this hike'} as its trace` : 'Save changes'}</button>}
+            {(entry.kind ?? 'dest') === 'trail' && t && entry.trace && <button type='button' className={btn} disabled={draw.busy} onClick={() => saveEntry(true)}
+              title='The same hike another way, e.g. from another lot: the entry passes on any of its traces'>Add as another trace</button>}
             <button type='button' className={btn} onClick={() => setEdit({ action: 'delete', note: note.trim() || undefined })}>Delete entry</button>
             {edit && <button type='button' className={btn} onClick={() => setEdit(null)}>Undo</button>}
           </div>

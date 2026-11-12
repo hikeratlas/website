@@ -153,7 +153,7 @@ export function fixtureFor(f: ParkFile, bbox: [number, number, number, number]) 
 export interface Entry {
   kind?: 'trail' | 'dest'; name: string; park: string; park_id: string; issue?: string;
   km?: number; km_tolerance?: number; trail?: string; aka?: string[]; source?: string; why?: string;
-  trace?: LngLat[]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_end_m?: number | null; trace_note?: string;
+  trace?: LngLat[]; traces?: LngLat[][]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_end_m?: number | null; trace_note?: string;
   dest?: string; start?: LngLat; start_within_m?: number; max_km?: number;
   // A hike routes offered, kept as it was (see blessedEntry).
   blessed?: Blessed;
@@ -183,7 +183,7 @@ export const entryKey = (e: Pick<Entry, 'kind' | 'name'>) => `${e.kind ?? 'dest'
 
 // A change to an existing entry, kept until committed.
 export type EntryEdit =
-  | { action: 'update'; km?: number; trace?: LngLat[]; how?: string; note?: string }
+  | { action: 'update'; km?: number; trace?: LngLat[]; addTrace?: boolean; how?: string; note?: string }
   | { action: 'delete'; note?: string };
 
 // A name to compare, as routes' expectations.norm: 'The "Crack" Trail' and
@@ -205,21 +205,40 @@ export function norm(s: string | null | undefined): string {
 // trace_within_m of trace_cover of the trace's points.
 export const TRACE_KM: [number, number] = [0.85, 1.4];
 export const BLESSED_TOLERANCE = 0.15;
-export function passes(e: Entry, label: string | null, km: number, line: LngLat[], dest: string | null = null): { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; end: boolean | null; endOff: number | null; follows: number; ok: boolean } {
+// An entry's traces: `trace`, then `traces`, the same hike other ways (from
+// another lot: Tunnel Mountain Summit Trail's two, routes#152).
+export function entryTraces(e: Entry): LngLat[][] {
+  return e.trace?.length ? [e.trace, ...(e.traces ?? [])] : (e.traces ?? []);
+}
+export type Check = { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; end: boolean | null; endOff: number | null; follows: number; ok: boolean; trace?: number };
+// Against each of the entry's traces, keeping the best, as expect.py does:
+// passing, else the fewest failed checks. `trace` is which one (0-based).
+export function passes(e: Entry, label: string | null, km: number, line: LngLat[], dest: string | null = null): Check {
+  const ts = entryTraces(e);
+  if (ts.length < 2) return passesOne(e, ts[0], label, km, line, dest);
+  const failed = (c: Check) => [c.name, c.length, c.start, c.end, c.follows >= (e.trace_cover ?? 0.7)].filter((v) => v === false).length;
+  let best: Check | null = null;
+  ts.forEach((t, i) => {
+    const c = { ...passesOne(e, t, label, km, line, dest), trace: i };
+    if (!best || (c.ok && !best.ok) || (c.ok === best.ok && failed(c) < failed(best))) best = c;
+  });
+  return best!;
+}
+function passesOne(e: Entry, trace: LngLat[] | undefined, label: string | null, km: number, line: LngLat[], dest: string | null): Check {
   const names = new Set([e.name, e.trail, ...(e.aka ?? [])].filter(Boolean).map((n) => norm(n as string)));
   const name = (label !== null && names.has(norm(label))) || (!e.blessed && dest !== null && names.has(norm(dest)));
   // A blessed entry: within 15% of its own km, not by the trace.
   const tol = e.km_tolerance ?? (e.blessed ? BLESSED_TOLERANCE : 0.3);
   const byPark = e.km !== undefined && km >= e.km * (1 - tol) && km <= e.km * (1 + tol);
-  const tk = e.trace?.length && !e.blessed ? lineKm(e.trace) : 0;
+  const tk = trace?.length && !e.blessed ? lineKm(trace) : 0;
   const byTrace = !byPark && tk > 0 && km >= tk * TRACE_KM[0] && km <= tk * TRACE_KM[1];
   const length = byPark || byTrace;
-  const follows = e.trace?.length ? walks([e.trace], line, e.trace_within_m ?? 50) : 0;
+  const follows = trace?.length ? walks([trace], line, e.trace_within_m ?? 50) : 0;
   const startM = e.trace_start_m === undefined ? 150 : e.trace_start_m;
-  const startOff = e.trace?.length && line.length ? haversine(e.trace[0], line[0]) : null;
+  const startOff = trace?.length && line.length ? haversine(trace[0], line[0]) : null;
   const start = startM === null ? null : startOff !== null && startOff <= startM;
   const endM = e.trace_end_m === undefined ? 150 : e.trace_end_m;
-  const endOff = e.trace?.length && line.length ? haversine(e.trace[e.trace.length - 1], line[line.length - 1]) : null;
+  const endOff = trace?.length && line.length ? haversine(trace[trace.length - 1], line[line.length - 1]) : null;
   const end = endM === null ? null : endOff !== null && endOff <= endM;
   return { name, length, byTrace, start, startOff, end, endOff, follows, ok: name && length && start !== false && end !== false && follows >= (e.trace_cover ?? 0.7) };
 }
