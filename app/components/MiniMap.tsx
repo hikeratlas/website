@@ -100,6 +100,9 @@ export default function MiniMap({ style, bounds, parkId, overlay, muted, padding
       setPark({ area: pathOf(rings, true) });
     };
     m.once('load', () => {
+      // The box again: the style's own camera can win over the constructor's.
+      m.resize();
+      m.fitBounds(bounds, { padding, duration: 0 });
       // The credits start folded, behind their (i), as on the map page.
       m.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
       if (parkId && muted) m.once('idle', drawPark);
