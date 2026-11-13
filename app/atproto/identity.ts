@@ -1,6 +1,5 @@
 // Finding an account on the AT Protocol, on the server: a handle to its DID
 // (its permanent id), and a DID to its PDS (the server holding its data).
-// Our own, so handle lookups for signing in don't go to a third party.
 
 const HANDLE_RE = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
 const DID_RE = /^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.-]+)$/;
@@ -8,29 +7,19 @@ const DID_RE = /^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.-]+)$/;
 export const isHandle = (h: string) => h.length <= 253 && HANDLE_RE.test(h);
 export const isDid = (d: string) => DID_RE.test(d);
 
-// A handle's DID: its _atproto TXT record (over DNS-over-HTTPS), else
-// https://<handle>/.well-known/atproto-did (the two ways atproto allows).
+// A handle's DID, by Bluesky's public API (which follows the handle's DNS
+// record or well-known file, as atproto has it).
 export async function resolveHandle(handle: string): Promise<string | null> {
   handle = handle.toLowerCase();
   if (!isHandle(handle)) return null;
   try {
-    const r = await fetch(`https://cloudflare-dns.com/dns-query?name=_atproto.${handle}&type=TXT`, { headers: { accept: 'application/dns-json' } });
-    if (r.ok) {
-      const j = await r.json() as { Answer?: { data: string }[] };
-      for (const a of j.Answer ?? []) {
-        const m = a.data.replace(/"/g, '').match(/^did=(did:\S+)$/);
-        if (m && isDid(m[1])) return m[1];
-      }
-    }
-  } catch { /* try the well-known file */ }
-  try {
-    const r = await fetch(`https://${handle}/.well-known/atproto-did`, { redirect: 'error' });
-    if (r.ok) {
-      const did = (await r.text()).trim();
-      if (isDid(did)) return did;
-    }
-  } catch { /* not found */ }
-  return null;
+    const r = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
+    if (!r.ok) return null;
+    const { did } = await r.json() as { did?: string };
+    return did && isDid(did) ? did : null;
+  } catch {
+    return null;
+  }
 }
 
 // A DID's document: its handle and its PDS.

@@ -23,8 +23,8 @@ function client(): Promise<BrowserOAuthClient> {
     clientP = import('@atproto/oauth-client-browser').then(({ BrowserOAuthClient }) =>
       BrowserOAuthClient.load({
         clientId: `${window.location.origin}/oauth-client-metadata.json`,
-        // Our own resolveHandle (app/routes/xrpc.[...].ts), not Bluesky's.
-        handleResolver: window.location.origin,
+        // Bluesky's, for a handle typed ("Use another account").
+        handleResolver: 'https://bsky.social',
         // Expired or revoked: signed out.
         onSessionDeleted: () => set({ status: 'out' }),
       }));
@@ -61,11 +61,13 @@ async function handleOf(session: OAuthSession): Promise<string | null> {
   }
 }
 
-// To the user's PDS to sign in, coming back to this page.
-export async function signIn(handle: string) {
+// To sign in, coming back to this page: at Bluesky (BLUESKY, its sign-in
+// page asks who), or at the PDS of a handle typed.
+export const BLUESKY = 'https://bsky.social';
+export async function signIn(who: string) {
   const c = await client();
   const back = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  await c.signIn(handle.trim().replace(/^@/, ''), { state: back });
+  await c.signIn(who === BLUESKY ? who : who.trim().replace(/^@/, ''), { state: back });
 }
 
 export async function signOut() {
