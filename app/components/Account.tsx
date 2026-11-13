@@ -28,30 +28,26 @@ export function SignInDialog({ onClose, why }: { onClose: () => void; why?: stri
     <div className='flex flex-col gap-3 p-5'>
       <h2 className='font-display text-xl font-extrabold'>Sign in</h2>
       {why && <p className='text-sm text-stone-700'>{why}</p>}
-      <p className='text-sm text-stone-600'>
-        Your faves are saved in your own account, not ours, so you can take them anywhere.
-      </p>
+      <p className='text-sm text-stone-600'>Your faves are saved to your own account, so they&apos;re always yours.</p>
       <button type='button' onClick={() => go(BLUESKY)} disabled={busy}
         className='flex h-11 items-center justify-center rounded-xl bg-[#1185fe] text-sm font-semibold text-white hover:bg-[#0a6fd8] disabled:opacity-60'>
         {busy && !other ? 'Going to Bluesky…' : 'Continue with Bluesky'}
       </button>
-      {other
-        ? <form onSubmit={submit} className='flex flex-col gap-2'>
-          <label htmlFor='at-handle' className='text-sm font-semibold'>Your handle</label>
-          <input id='at-handle' autoCapitalize='none' autoCorrect='off' spellCheck={false} placeholder='you.example.com'
-            value={handle} onChange={(e) => setHandle(e.target.value)}
-            className='h-11 rounded-xl border border-stone-300 px-3 text-base' />
-          <button type='submit' disabled={busy} className='h-11 rounded-xl bg-green-900 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-60'>
-            {busy ? 'Going to your account…' : 'Continue'}
-          </button>
-        </form>
-        : <button type='button' onClick={() => setOther(true)} className='text-sm text-blue-700 hover:underline'>
-          Use another account (any AT Protocol handle)
-        </button>}
+      {other && <form onSubmit={submit} className='flex flex-col gap-2'>
+        <label htmlFor='at-handle' className='text-sm font-semibold'>Your handle</label>
+        <input id='at-handle' autoCapitalize='none' autoCorrect='off' spellCheck={false} placeholder='you.example.com'
+          value={handle} onChange={(e) => setHandle(e.target.value)}
+          className='h-11 rounded-xl border border-stone-300 px-3 text-base' />
+        <button type='submit' disabled={busy} className='h-11 rounded-xl border border-stone-300 text-sm font-semibold hover:bg-stone-50 disabled:opacity-60'>
+          {busy ? 'Going to your account…' : 'Continue'}
+        </button>
+      </form>}
       {error && <p className='text-sm text-red-700'>{error}</p>}
-      <div className='flex items-center justify-between gap-2'>
-        <p className='text-xs text-stone-500'>No account? <a href='https://bsky.app' className='text-blue-700 hover:underline'>Make one on Bluesky</a>.</p>
-        <button type='button' onClick={() => dialog.current?.close()} className='h-9 rounded-xl border border-stone-300 px-3 text-sm font-semibold hover:bg-stone-50'>Cancel</button>
+      <div className='flex items-center justify-between gap-2 text-xs text-stone-500'>
+        {other
+          ? <span>Any AT Protocol account works.</span>
+          : <button type='button' onClick={() => setOther(true)} className='hover:underline'>Use a non-Bluesky account</button>}
+        <button type='button' onClick={() => dialog.current?.close()} className='rounded-lg px-2 py-1 text-sm font-semibold text-stone-700 hover:bg-stone-100'>Cancel</button>
       </div>
     </div>
   </dialog>;

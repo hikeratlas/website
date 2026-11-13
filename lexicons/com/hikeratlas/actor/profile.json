@@ -1,0 +1,18 @@
+{
+  "lexicon": 1,
+  "id": "com.hikeratlas.actor.profile",
+  "description": "That an account uses Hiker Atlas (https://www.hikeratlas.com), and its settings there. Written when someone first signs in; indexers find Hiker Atlas's users by it.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["createdAt"],
+        "properties": {
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

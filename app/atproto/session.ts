@@ -6,6 +6,7 @@
 // One store for the page: who's signed in (useAtSession), sign in and out.
 import { useSyncExternalStore } from 'react';
 import type { BrowserOAuthClient, OAuthSession } from '@atproto/oauth-client-browser';
+import { PROFILE } from './scope';
 
 export type AtState =
   | { status: 'loading' }
@@ -45,11 +46,28 @@ export function init() {
         handleOf(r.session).then((handle) => {
           if (state.status === 'in' && state.did === r.session.did) set({ ...state, handle });
         });
+        ensureProfile(r.session);
         return r;
       })
       .catch(() => { set({ status: 'out' }); return null; });
   }
   return initP;
+}
+
+// That this account uses Hiker Atlas (com.hikeratlas.actor.profile/self,
+// lexicons/com/hikeratlas/actor/profile.json): written once, the first time
+// it signs in, and never overwritten. Indexers find our users by it, whether
+// or not they've faved anything.
+async function ensureProfile(session: OAuthSession) {
+  try {
+    const at = `repo=${encodeURIComponent(session.did)}&collection=${PROFILE}&rkey=self`;
+    const r = await session.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${at}`);
+    if (r.ok || r.status !== 400) return; // there already (or the PDS is down: next time)
+    await session.fetchHandler('/xrpc/com.atproto.repo.createRecord', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repo: session.did, collection: PROFILE, rkey: 'self', record: { $type: PROFILE, createdAt: new Date().toISOString() } }),
+    });
+  } catch { /* next sign-in */ }
 }
 
 async function handleOf(session: OAuthSession): Promise<string | null> {
