@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "com.hikeratlas.fave",
+  "id": "com.hikeratlas.temp.fave",
   "description": "A hike someone likes or wants to do, on Hiker Atlas (https://www.hikeratlas.com).",
   "defs": {
     "main": {

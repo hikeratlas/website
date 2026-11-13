@@ -54,8 +54,8 @@ export function init() {
   return initP;
 }
 
-// That this account uses Hiker Atlas (com.hikeratlas.actor.profile/self,
-// lexicons/com/hikeratlas/actor/profile.json): written once, the first time
+// That this account uses Hiker Atlas (com.hikeratlas.temp.actor.profile/self,
+// lexicons/com/hikeratlas/temp/actor/profile.json): written once, the first time
 // it signs in, and never overwritten. Indexers find our users by it, whether
 // or not they've faved anything.
 async function ensureProfile(session: OAuthSession) {

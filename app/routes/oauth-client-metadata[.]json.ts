@@ -1,7 +1,7 @@
 // The site's OAuth client metadata (atproto OAuth): its client_id is this
 // file's own URL, so each origin (the live site, each preview) is a client
 // of its own. A browser-only ("public") client, asking only to write
-// Hiker Atlas faves (lexicons/com/hikeratlas/fave.json).
+// Hiker Atlas faves (lexicons/com/hikeratlas/temp/fave.json).
 import type { LoaderFunctionArgs } from 'react-router';
 import { OAUTH_SCOPE } from '~/atproto/scope';
 

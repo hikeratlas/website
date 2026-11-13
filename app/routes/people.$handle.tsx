@@ -1,6 +1,6 @@
 // Someone's faved hikes (/people/<handle or DID>): read from their own
 // repository, on their PDS, not from anything of ours. Their faves are
-// public records (com.hikeratlas.fave), so anyone can see them, here or in
+// public records (com.hikeratlas.temp.fave), so anyone can see them, here or in
 // any other app.
 import { data, useLoaderData, type LoaderFunctionArgs, type MetaFunction } from 'react-router';
 import { describeDid, isDid, resolveHandle } from '~/atproto/identity';

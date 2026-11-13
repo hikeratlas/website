@@ -1,4 +1,4 @@
-// Faves (com.hikeratlas.fave, lexicons/com/hikeratlas/fave.json): records in
+// Faves (com.hikeratlas.temp.fave, lexicons/com/hikeratlas/temp/fave.json): records in
 // the user's own repository, one per hike, under a record key derived from
 // the hike's key, so faving again replaces it and unfaving is one delete.
 import type { OAuthSession } from '@atproto/oauth-client-browser';
