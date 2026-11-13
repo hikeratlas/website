@@ -13,6 +13,7 @@
     "pages:deploy": "npm run build && wrangler pages deploy ./public"
   },
   "dependencies": {
+    "@atproto/oauth-client-browser": "^0.5.14",
     "@bokuweb/zstd-wasm": "0.0.27",
     "@mapbox/vector-tile": "^3.0.0",
     "@react-router/cloudflare": "8.5.1",

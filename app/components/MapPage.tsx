@@ -8,6 +8,7 @@ import OsmLink from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
 import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, loadRegions, regionList, resolve } from '~/hikes';
+import { AccountButton } from '~/components/Account';
 
 // What a /hikes URL resolved to on the server (routes/hikes.$.tsx), to show
 // once the map is ready.
@@ -328,7 +329,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
       {/* On phones the title bar goes and search floats on the map (see
           .map-header in map.css), so the map gets the whole screen. */}
       <div className='map-header relative'>
-        <div className='map-header-osm absolute top-3 right-3'><OsmLink map={map}/></div>
+        <div className='map-header-osm absolute top-3 right-3 flex items-center gap-3'><AccountButton /><OsmLink map={map}/></div>
         <div className='p-2'>
           <div className='map-header-title text-2xl'>
             <a href={`/map${search}`}>Hiker Atlas</a>
