@@ -5,6 +5,8 @@
 //
 // The library (with h3-js) is loaded only when a key is made or read: most
 // visitors never fave.
+import { useEffect, useState } from 'react';
+
 type Lib = typeof import('@hikeratlas/route-keys');
 let libP: Promise<Lib> | null = null;
 const lib = () => (libP ??= import('@hikeratlas/route-keys'));
@@ -30,4 +32,16 @@ export async function routeKeys(routes: { line: Pt[]; shape: Shape }[]): Promise
 // null for anything that isn't a v1 key (e.g. a fave written by the spike).
 export async function keyCentroid(key: string): Promise<Pt | null> {
   return (await lib()).centroidOf(key);
+}
+
+// A route's key, once made (null until then, or for a line too short).
+export function useRouteKey(line: Pt[], shape: string): string | null {
+  const [key, setKey] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setKey(null);
+    routeKey(line, shapeFor(shape)).then((k) => { if (live) setKey(k); }).catch(() => {});
+    return () => { live = false; };
+  }, [line, shape]);
+  return key;
 }
