@@ -8,8 +8,8 @@ import { data, useLoaderData, type LoaderFunctionArgs, type MetaFunction } from 
 import { buildFor } from '~/build';
 import { describeDid, isDid, resolveHandle } from '~/atproto/identity';
 import { listFaves, type Fave } from '~/atproto/faves';
+import { signOut, useAtSession } from '~/atproto/session';
 import { findRoutes, type Found } from '~/atproto/findRoutes';
-import { FAVE } from '~/atproto/scope';
 
 // Route keys are recipe v1's (hikeratlas/route-keys: a cell part, a dot, an
 // 11-character hash); faves in another form (the spike's) aren't routes.
@@ -21,22 +21,26 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   const did = isDid(who) ? who : await resolveHandle(who);
   const doc = did ? await describeDid(did) : null;
   if (!did || !doc) {
-    return data({ who, build, handle: null as string | null, faves: [] as Fave[], error: 'No such account' }, { status: 404 });
+    return data({ who, did: null as string | null, build, handle: null as string | null, faves: [] as Fave[], error: 'No such account' }, { status: 404 });
   }
   const faves = (await listFaves(doc.pds, did).catch(() => [])).filter((f) => isRouteKey(f.key));
-  return { who, build, handle: doc.handle ?? null, faves, error: null as string | null };
+  return { who, did, build, handle: doc.handle ?? null, faves, error: null as string | null };
 };
 
 export const meta: MetaFunction<typeof loader> = ({ loaderData }) => {
   const name = loaderData?.handle ?? loaderData?.who ?? 'Someone';
-  return [{ title: `@${name}'s faved hikes | Hiker Atlas` }, { name: 'robots', content: 'noindex' }];
+  return [{ title: `@${name}'s saved hikes | Hiker Atlas` }, { name: 'robots', content: 'noindex' }];
 };
 
 const day = (s: string) => (s ? new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
 export default function Person() {
-  const { who, build, handle, faves, error } = useLoaderData<typeof loader>();
+  const { who, did, build, handle, faves, error } = useLoaderData<typeof loader>();
   const name = handle ?? who;
+  // Your own page: where you sign out on a phone (the header shows only your
+  // picture there).
+  const at = useAtSession();
+  const mine = at.status === 'in' && !!did && at.did === did;
   // Which hikes the faves are, once found: null while looking.
   const [found, setFound] = useState<Map<string, Found> | null>(null);
   useEffect(() => {
@@ -47,16 +51,13 @@ export default function Person() {
       .catch(() => { if (live) setFound(new Map()); });
     return () => { live = false; };
   }, [build, faves]);
-  return <main className='mx-auto max-w-2xl px-4 py-6 font-sans text-stone-900'>
-    <a href='/map' className='text-sm text-blue-700 hover:underline'>← Hiker Atlas</a>
-    <h1 className='mt-2 font-display text-3xl font-extrabold'>@{name}</h1>
+  return <main className='frame'>
+    <h1>@{name}</h1>
+    {mine && <p><button type='button' onClick={() => signOut()} className='text-sm text-blue-700 hover:underline'>Sign out</button></p>}
     {error
       ? <p className='mt-2 text-stone-600'>{error}.</p>
       : <>
-        <p className='mt-1 text-stone-600'>
-          {faves.length ? `${faves.length} faved ${faves.length === 1 ? 'hike' : 'hikes'}` : 'No faved hikes yet.'}{' '}
-          Saved in {handle ? `@${handle}'s` : 'their'} own account (<code className='text-xs'>{FAVE}</code> records), so they can take them anywhere.
-        </p>
+        <p className='mt-1 text-stone-600'>{faves.length ? `${faves.length} saved ${faves.length === 1 ? 'hike' : 'hikes'}` : 'No saved hikes yet.'}</p>
         {faves.length > 0 && <ul className='mt-4 flex flex-col gap-2'>
           {faves.map((f) => {
             const h = found?.get(f.key);
@@ -73,8 +74,5 @@ export default function Person() {
           })}
         </ul>}
       </>}
-    <footer className='mt-8 border-t border-stone-200 pt-3 text-xs text-stone-500'>
-      <a href='/terms' className='hover:underline'>Terms of service</a> · <a href='/terms#privacy' className='hover:underline'>Privacy policy</a>
-    </footer>
   </main>;
 }

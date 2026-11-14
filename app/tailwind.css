@@ -3,32 +3,49 @@
 @tailwind utilities;
 
 @layer components {
+	/* Text pages (blog posts, terms, the profile page): a centred reading
+	   column in the site's frame (components/Site.tsx). The homepage is wider
+	   (frame-wide), for its cards. */
 	.frame {
-		@apply p-2 leading-relaxed max-w-6xl
+		@apply mx-auto max-w-3xl px-4 py-8 leading-relaxed text-stone-800
+	}
+
+	.frame-wide {
+		@apply max-w-6xl
 	}
 
 	.frame p {
-		@apply pb-2
+		@apply pb-3
 	}
 
-	.frame a {
-		@apply text-sky-600 hover:text-sky-800 hover:underline
+	/* Prose links; links with classes of their own (buttons, cards) keep theirs. */
+	.frame a:not([class]) {
+		@apply text-green-800 underline decoration-green-800/30 underline-offset-2 hover:decoration-green-800
 	}
 
 	.frame h1 {
-		@apply text-3xl font-bold pb-4
+		@apply font-display text-4xl font-extrabold tracking-tight text-stone-900 pb-4
 	}
 
 	.frame h2 {
-		@apply text-2xl font-bold pb-2
+		@apply font-display text-2xl font-bold text-stone-900 pt-4 pb-2
 	}
 
-	.frame ul {
-		@apply pb-2 ml-8 list-disc
+	.frame h3 {
+		@apply font-display text-lg font-bold text-stone-900 pt-2 pb-1
 	}
 
-	.frame ol {
-		@apply pb-2 ml-8 list-decimal
+	/* Prose lists; lists with classes of their own (a page's cards) keep theirs. */
+	.frame ul:not([class]) {
+		@apply pb-3 ml-6 list-disc
+	}
+
+	.frame ol:not([class]) {
+		@apply pb-3 ml-6 list-decimal
+	}
+
+	.frame li {
+		@apply pb-1
 	}
 
 	.frame .autosuggest ul {
@@ -36,15 +53,23 @@
 	}
 
 	.frame pre {
-		@apply ml-8 mb-2 p-2 bg-zinc-100 inline-block
+		@apply mb-3 max-w-full overflow-x-auto rounded-lg bg-stone-100 p-3 text-sm
 	}
 
 	.frame code {
-		@apply p-1 bg-zinc-100
+		@apply rounded bg-stone-100 px-1 py-0.5 text-[0.9em]
+	}
+
+	.frame pre code {
+		@apply bg-transparent p-0
 	}
 
 	.frame blockquote {
-		@apply ml-8 pl-2 pt-2 mb-2 border-emerald-500 border-l-8
+		@apply mb-3 border-l-4 border-green-800/40 pl-4 text-stone-600
+	}
+
+	.frame img {
+		@apply h-auto max-w-full
 	}
 
 }

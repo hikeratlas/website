@@ -9,9 +9,10 @@ import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
 import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, loadRegions, regionList, resolve } from '~/hikes';
 import { AccountButton } from '~/components/Account';
+import MapMenu from '~/components/MapMenu';
 
-// Hiker Atlas's terms and privacy (#133), beside the OSM link: in the header,
-// and on the map on phones. Many people only ever see the map page.
+// Hiker Atlas's terms and privacy (#133), beside the OSM link in the header
+// (on phones, in the menu: MapMenu). Many people only ever see the map page.
 const TermsLink = () => <a href='/terms' className='text-sm text-gray-500 hover:text-gray-800'>Terms</a>;
 
 // What a /hikes URL resolved to on the server (routes/hikes.$.tsx), to show
@@ -330,22 +331,23 @@ export default function MapPage({ build, search, initial, summary }: Props) {
   }, []);
 
   return <>
-      {/* On phones the title bar goes and search floats on the map (see
-          .map-header in map.css), so the map gets the whole screen. */}
-      <div className='map-header relative'>
-        <div className='map-header-osm absolute top-3 right-3 flex items-center gap-3'><AccountButton /><OsmLink map={map}/><TermsLink /></div>
-        <div className='p-2'>
-          <div className='map-header-title text-2xl'>
-            <a href={`/map${search}`}>Hiker Atlas</a>
-            {build && <span className='ml-2 text-sm text-gray-500'>preview: {build}</span>}
-          </div>
-          <div className='map-search'><Search onSelect={onSelect} build={build} near={near}/></div>
+      {/* One row: the site (logo and name, home), search, and links. On
+          phones the row goes and search floats on the map, with a menu for
+          the links (see .map-header in map.css), so the map gets the whole
+          screen. */}
+      <div className='map-header relative z-20 flex items-center gap-4 border-b border-stone-200 bg-white px-3'>
+        <a href='/' title='Hiker Atlas: home' className='map-header-title flex shrink-0 items-center gap-2 font-display text-xl font-extrabold text-stone-900 hover:text-green-900'>
+          <img src='/favicon.svg' alt='' width={30} height={30} className='rounded-md' />
+          Hiker Atlas
+        </a>
+        {build && <span className='map-header-title shrink-0 text-sm text-gray-500'>preview: {build}</span>}
+        <div className='map-search flex min-w-0 flex-1 items-center gap-2'>
+          <MapMenu map={map} />
+          <div className='min-w-0 flex-1 md:max-w-xl'><Search onSelect={onSelect} build={build} near={near}/></div>
         </div>
+        <div className='map-header-osm ml-auto flex shrink-0 items-center gap-3'><AccountButton /><OsmLink map={map}/><TermsLink /></div>
       </div>
       <div className='map-wrap'>
-        {/* Phones: the header's OSM link is hidden with the title bar, so it
-            sits on the map instead (see .map-osm-mobile in map.css). */}
-        <div className='map-osm-mobile flex items-center gap-2'><OsmLink map={map}/><span className='text-gray-300' aria-hidden='true'>·</span><TermsLink /></div>
         {/* A build only covers its own area, so don't constrain it to North
             America; start at its tiles' center instead. */}
         <Map

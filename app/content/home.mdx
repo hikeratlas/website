@@ -1,7 +1,7 @@
 {/* The homepage (app/routes/_index.tsx renders it; Featured is its featured park and hike). */}
 
-<div className="frame">
-# Hiker Atlas
+<div className="frame frame-wide">
+<h1 className="sr-only">Hiker Atlas</h1>
 
 <p className="!pb-1 text-xl font-semibold text-stone-900">Like AllTrails, but worse.</p>
 
@@ -25,7 +25,7 @@ _Disclosure: this is 99% vibe-coded slop. But at least it's not enshittified!_
   <div><p className="!pb-0.5 font-semibold">Take it with you</p><p className="text-stone-700">Download a hike's GPX, get directions to the trailhead, or try the [Android app](https://github.com/hikeratlas/android/releases/latest) (in preview).</p></div>
 </div>
 
-## Blog
+<h2 id="blog">Blog</h2>
 
 Anger and hubris. Like most good things, these two emotions drove me to build Hiker Atlas.
 
@@ -46,8 +46,6 @@ Turns out, it's a little involved. This blog documents my journey as I learn abo
 - 2024-01-18: Lua tricks: [let multiple threads write to a file safely](/blog/lua-atomic-file-append)
 - 2024-01-14: [30,000 foot overview](/blog/mapping-overview) of how mapping works
 - 2024-01-14: [Glossary of web mapping terms](/blog/glossary)
-
-[Terms and privacy](/terms)
 
 {/*
 - MapBox vector tile factories: [Planetiler, OpenMapTiles (PostGIS), Tilemaker](/blog/planetiler-vs-openmaptiles-postgis-vs-tilemaker)

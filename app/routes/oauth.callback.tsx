@@ -16,9 +16,9 @@ export default function OAuthCallback() {
       window.location.replace(back);
     });
   }, []);
-  return <main className='mx-auto max-w-md p-6 font-sans'>
+  return <main className='frame'>
     {failed
-      ? <p>Signing in didn&apos;t work. <a href='/map' className='text-blue-700 hover:underline'>Back to the map</a></p>
+      ? <p>Signing in didn&apos;t work. <a href='/map'>Back to the map</a></p>
       : <p>Signing you in…</p>}
   </main>;
 }

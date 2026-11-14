@@ -54,7 +54,18 @@ export function SignInDialog({ onClose, why }: { onClose: () => void; why?: stri
   </dialog>;
 }
 
-// The header's: "Sign in", or your handle (to your faves) and "Sign out".
+// A signed-in account's picture, as Bluesky shows one: a circle with a faint
+// ring, so a light picture doesn't melt into the page. The handle's first
+// letter on green without one.
+export function Avatar({ src, name, size = 26 }: { src: string | null; name: string; size?: number }) {
+  return src
+    ? <img src={src} alt='' width={size} height={size} className='shrink-0 rounded-full object-cover ring-1 ring-black/10' style={{ width: size, height: size }} />
+    : <span aria-hidden='true' className='flex shrink-0 items-center justify-center rounded-full bg-green-800 text-xs font-semibold uppercase text-white ring-1 ring-black/10' style={{ width: size, height: size }}>{name.replace(/^@/, '').charAt(0) || '?'}</span>;
+}
+
+// The header's: "Sign in", or your picture and handle (to your saved hikes)
+// and "Sign out". On phones, just the picture (a handle can be long); the
+// map's menu has Sign out there.
 export function AccountButton() {
   const at = useAtSession();
   const [open, setOpen] = useState(false);
@@ -67,8 +78,11 @@ export function AccountButton() {
   }
   const who = at.handle ?? at.did;
   return <span className='flex items-center gap-2 text-sm'>
-    <a href={`/people/${encodeURIComponent(who)}`} className='text-blue-700 hover:underline'>@{at.handle ?? 'you'}</a>
-    <button type='button' onClick={() => signOut()} className='text-stone-500 hover:underline'>Sign out</button>
+    <a href={`/people/${encodeURIComponent(who)}`} title='Your saved hikes' className='flex items-center gap-1.5 text-blue-700 hover:underline'>
+      <Avatar src={at.avatar} name={at.handle ?? '?'} />
+      <span className='hidden sm:inline'>@{at.handle ?? 'you'}</span>
+    </a>
+    <button type='button' onClick={() => signOut()} className='hidden text-stone-500 hover:underline sm:inline'>Sign out</button>
   </span>;
 }
 

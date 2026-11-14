@@ -6,7 +6,8 @@ import Regressions from '~/components/Regressions';
 import { buildFor } from '~/build';
 import { PMTILES_JS } from '~/components/nlDem';
 
-export const handle: ExternalScriptsHandle = {
+export const handle: ExternalScriptsHandle & { fullscreen: boolean } = {
+  fullscreen: true,
   scripts: [{ src: PMTILES_JS, crossOrigin: 'anonymous', async: false, defer: false, preload: true }],
 };
 

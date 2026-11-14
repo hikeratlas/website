@@ -6,8 +6,9 @@ import Featured from '~/components/Featured';
 import { buildFor, styleUrl } from '~/build';
 import { featured } from '~/featured';
 
-// The map's PMTiles script, for the featured park's map.
-export { handle } from './map';
+// The map's PMTiles script, for the featured park's map, in the site's frame.
+import { handle as mapHandle } from './map';
+export const handle = { ...mapHandle, fullscreen: false };
 
 export const meta: MetaFunction = () => [
   { title: 'Hiker Atlas' },

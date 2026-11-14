@@ -4,7 +4,9 @@ import MapPage from '~/components/MapPage';
 import { buildFor } from '~/build';
 import { PMTILES_JS } from '~/components/nlDem';
 
-export const handle: ExternalScriptsHandle = {
+// fullscreen: no site frame (root.tsx).
+export const handle: ExternalScriptsHandle & { fullscreen: boolean } = {
+  fullscreen: true,
   scripts: [
     {
       src: PMTILES_JS,

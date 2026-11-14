@@ -11,7 +11,7 @@ import { PROFILE } from './scope';
 export type AtState =
   | { status: 'loading' }
   | { status: 'out' }
-  | { status: 'in'; did: string; handle: string | null; session: OAuthSession };
+  | { status: 'in'; did: string; handle: string | null; avatar: string | null; session: OAuthSession };
 
 let state: AtState = { status: 'loading' };
 const listeners = new Set<() => void>();
@@ -42,9 +42,12 @@ export function init() {
       .then(async (c) => {
         const r = await c.init();
         if (!r) { set({ status: 'out' }); return null; }
-        set({ status: 'in', did: r.session.did, handle: null, session: r.session });
+        set({ status: 'in', did: r.session.did, handle: null, avatar: null, session: r.session });
         handleOf(r.session).then((handle) => {
           if (state.status === 'in' && state.did === r.session.did) set({ ...state, handle });
+        });
+        avatarOf(r.session.did).then((avatar) => {
+          if (state.status === 'in' && state.did === r.session.did) set({ ...state, avatar });
         });
         ensureProfile(r.session);
         return r;
@@ -68,6 +71,17 @@ async function ensureProfile(session: OAuthSession) {
       body: JSON.stringify({ repo: session.did, collection: PROFILE, rkey: 'self', record: { $type: PROFILE, createdAt: new Date().toISOString() } }),
     });
   } catch { /* next sign-in */ }
+}
+
+// The account's profile picture, from its Bluesky profile (public): null
+// without one, or for an account that isn't on Bluesky.
+async function avatarOf(did: string): Promise<string | null> {
+  try {
+    const r = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
+    return r.ok ? ((await r.json()) as { avatar?: string }).avatar ?? null : null;
+  } catch {
+    return null;
+  }
 }
 
 async function handleOf(session: OAuthSession): Promise<string | null> {
