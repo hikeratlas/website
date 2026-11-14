@@ -9,7 +9,7 @@ export function osmUrl(lng: number, lat: number, zoom: number): string {
   return `https://www.openstreetmap.org/#map=${z}/${lat.toFixed(5)}/${lng.toFixed(5)}`;
 }
 
-export default function OsmLink({ map }: { map: MaplibreMap | null }) {
+export default function OsmLink({ map, label = 'OSM', className = 'inline-flex items-center gap-0.5 text-sm text-gray-500 hover:text-gray-800' }: { map: MaplibreMap | null; label?: string; className?: string }) {
   const [href, setHref] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,9 +30,9 @@ export default function OsmLink({ map }: { map: MaplibreMap | null }) {
       target="_blank"
       rel="noopener noreferrer"
       title="Open this view on OpenStreetMap"
-      className="inline-flex items-center gap-0.5 text-sm text-gray-500 hover:text-gray-800"
+      className={className}
     >
-      OSM
+      {label}
       <svg aria-hidden="true" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M6 3H3v10h10v-3" />
         <path d="M9 3h4v4" />

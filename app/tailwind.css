@@ -35,11 +35,12 @@
 		@apply font-display text-lg font-bold text-stone-900 pt-2 pb-1
 	}
 
-	.frame ul {
+	/* Prose lists; lists with classes of their own (a page's cards) keep theirs. */
+	.frame ul:not([class]) {
 		@apply pb-3 ml-6 list-disc
 	}
 
-	.frame ol {
+	.frame ol:not([class]) {
 		@apply pb-3 ml-6 list-decimal
 	}
 

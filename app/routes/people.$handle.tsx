@@ -56,7 +56,7 @@ export default function Person() {
           {faves.length ? `${faves.length} faved ${faves.length === 1 ? 'hike' : 'hikes'}` : 'No faved hikes yet.'}{' '}
           Saved in {handle ? `@${handle}'s` : 'their'} own account (<code className='text-xs'>{FAVE}</code> records), so they can take them anywhere.
         </p>
-        {faves.length > 0 && <ul className='mt-4 ml-0 flex list-none flex-col gap-2'>
+        {faves.length > 0 && <ul className='mt-4 flex flex-col gap-2'>
           {faves.map((f) => {
             const h = found?.get(f.key);
             return <li key={f.key} className='rounded-xl border border-stone-200 bg-white p-3'>
