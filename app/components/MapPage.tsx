@@ -10,6 +10,10 @@ import { styleUrl, tilesUrl } from '~/build';
 import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, loadRegions, regionList, resolve } from '~/hikes';
 import { AccountButton } from '~/components/Account';
 
+// Hiker Atlas's terms and privacy (#133), beside the OSM link: in the header,
+// and on the map on phones. Many people only ever see the map page.
+const TermsLink = () => <a href='/terms' className='text-sm text-gray-500 hover:text-gray-800'>Terms</a>;
+
 // What a /hikes URL resolved to on the server (routes/hikes.$.tsx), to show
 // once the map is ready.
 export interface Initial {
@@ -329,7 +333,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
       {/* On phones the title bar goes and search floats on the map (see
           .map-header in map.css), so the map gets the whole screen. */}
       <div className='map-header relative'>
-        <div className='map-header-osm absolute top-3 right-3 flex items-center gap-3'><AccountButton /><OsmLink map={map}/></div>
+        <div className='map-header-osm absolute top-3 right-3 flex items-center gap-3'><AccountButton /><OsmLink map={map}/><TermsLink /></div>
         <div className='p-2'>
           <div className='map-header-title text-2xl'>
             <a href={`/map${search}`}>Hiker Atlas</a>
@@ -341,7 +345,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
       <div className='map-wrap'>
         {/* Phones: the header's OSM link is hidden with the title bar, so it
             sits on the map instead (see .map-osm-mobile in map.css). */}
-        <div className='map-osm-mobile'><OsmLink map={map}/></div>
+        <div className='map-osm-mobile flex items-center gap-2'><OsmLink map={map}/><span className='text-gray-300' aria-hidden='true'>·</span><TermsLink /></div>
         {/* A build only covers its own area, so don't constrain it to North
             America; start at its tiles' center instead. */}
         <Map

@@ -17,6 +17,8 @@ export const loader = ({ request }: LoaderFunctionArgs) => {
     client_name: 'Hiker Atlas',
     client_uri: origin,
     redirect_uris: [`${origin}/oauth/callback`],
+    tos_uri: `${origin}/terms`,
+    policy_uri: `${origin}/terms#privacy`,
     scope: OAUTH_SCOPE,
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
