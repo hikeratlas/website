@@ -51,7 +51,7 @@ export default function Overview() {
   const remove = async (p: Post) => {
     if (!session) return;
     const what = p.review && p.track ? 'this review and its track' : p.review ? 'this review' : 'this track';
-    if (!window.confirm(`Delete ${what}? Copies others already made may remain.`)) return;
+    if (!window.confirm(`Delete ${what}?`)) return;
     try {
       if (p.review) await deletePost(session, p.review.uri);
       if (p.track) await deletePost(session, p.track.uri);
