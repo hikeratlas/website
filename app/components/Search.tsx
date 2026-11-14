@@ -43,6 +43,9 @@ function kmText(km: number): string {
 
 const KIND_LABEL: Record<string, string> = {
   lake: 'Lake',
+  // Bays and straits (basemap#317): most are mapped as a point.
+  bay: 'Bay',
+  strait: 'Strait',
   waterfall: 'Waterfall',
   camp_site: 'Campsite',
   cliff: 'Cliff',
