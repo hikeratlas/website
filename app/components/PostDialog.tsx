@@ -10,6 +10,7 @@ import { preparePhoto, type PreparedPhoto } from '~/atproto/photos';
 import { DEFAULT_LICENSE, getSettings, publishReview, publishTrack, TAGS, type StrongRef } from '~/atproto/posts';
 import { routeKey, shapeFor } from '~/atproto/routeKey';
 import { useAtSession } from '~/atproto/session';
+import { distance, elevation, METRIC, useUnits, type Units } from '~/units';
 import { SignInDialog } from '~/components/Account';
 
 const MAX_TEXT = 3000;
@@ -33,7 +34,7 @@ const localDay = (iso: string) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-export function kmText(m: number) { return `${(m / 1000).toFixed(m < 10_000 ? 1 : 0)} km`; }
+export function kmText(m: number, u: Units = METRIC) { return distance(m / 1000, u); }
 export function durationText(s: number) {
   const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
   if (h >= 48) return `${Math.round(s / 86400)} days`;
@@ -70,6 +71,7 @@ function whereText(p: Picked, track: string | null): string {
 interface Picked { file: File; url: string; prepared: Promise<PreparedPhoto>; alt: string; info?: PreparedPhoto | 'failed' }
 
 function PostDialog({ title, line, shape, onClose }: { title: string; line: [number, number][]; shape: string; onClose: () => void }) {
+  const units = useUnits();
   const at = useAtSession();
   const session = at.status === 'in' ? at.session : null;
   const dialog = useRef<HTMLDialogElement>(null);
@@ -240,7 +242,7 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
             className='text-sm file:mr-3 file:h-10 file:rounded-lg file:border file:border-stone-300 file:bg-white file:px-3 file:text-sm file:font-semibold' />
           <span className='text-xs text-stone-500'>For a trip over several days, pick each day’s file: they’re joined into one track.</span>
           {gpx && <span className='text-sm text-stone-700'>
-            {[kmText(gpx.stats.distance), gpx.stats.gain !== null && `↑ ${gpx.stats.gain.toLocaleString('en-US')} m`,
+            {[kmText(gpx.stats.distance, units), gpx.stats.gain !== null && `↑ ${elevation(gpx.stats.gain, units)}`,
               gpx.stats.duration !== null && durationText(gpx.stats.duration)].filter(Boolean).join(' · ')}
             {gpx.names.length > 1 && ` (${gpx.names.length} files)`}
           </span>}

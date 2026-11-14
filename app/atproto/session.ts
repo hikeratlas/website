@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from 'react';
 import type { BrowserOAuthClient, OAuthSession } from '@atproto/oauth-client-browser';
 import { PROFILE } from './scope';
+import { resetUnits, setUnits, unitsOf } from '~/units';
 
 export type AtState =
   | { status: 'loading' }
@@ -60,12 +61,17 @@ export function init() {
 // That this account uses Hiker Atlas (com.hikeratlas.temp.actor.profile/self,
 // in hikeratlas/atproto-lexicon): written once, the first time
 // it signs in, and never overwritten. Indexers find our users by it, whether
-// or not they've faved anything.
+// or not they've faved anything. Its settings (units) apply from here.
 async function ensureProfile(session: OAuthSession) {
   try {
     const at = `repo=${encodeURIComponent(session.did)}&collection=${PROFILE}&rkey=self`;
     const r = await session.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${at}`);
-    if (r.ok || r.status !== 400) return; // there already (or the PDS is down: next time)
+    if (r.ok) {
+      const { value } = await r.json() as { value?: { units?: { distance?: string; elevation?: string } } };
+      setUnits(unitsOf(value?.units));
+      return;
+    }
+    if (r.status !== 400) return; // the PDS is down: next time
     await session.fetchHandler('/xrpc/com.atproto.repo.createRecord', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ repo: session.did, collection: PROFILE, rkey: 'self', record: { $type: PROFILE, createdAt: new Date().toISOString() } }),
@@ -103,6 +109,7 @@ export async function signIn(who: string) {
 }
 
 export async function signOut() {
+  resetUnits();
   if (state.status === 'in') {
     try { await state.session.signOut(); } catch { /* signed out here anyway */ }
   }

@@ -7,6 +7,7 @@ import { Link } from 'react-router';
 import type { Featured as Data } from '~/featured';
 import { DIFF_COLORS } from '~/park';
 import { TerrainBar } from './ParkSheet';
+import { useFormat } from '~/units';
 import HikeGraphic from './HikeGraphic';
 
 // MapLibre only in the browser, and only for the homepage's map.
@@ -69,6 +70,7 @@ const HIKE_ART = { w: 480, h: 220 };
 // build has them, as two MapLibre maps and an elevation profile from the DEM
 // were heavy for a page's first look. Without them, live.
 export default function Featured({ data, style, search = '', shots = false }: { data: Data | null; style: string; search?: string; shots?: boolean }) {
+  const { dist, elev } = useFormat();
   const hk = data?.hike;
   const overlay = useMemo(() => hk && ({ line: hk.coords, stops: hk.along.map((f) => ({ n: f.n, at: f.at })) }), [hk]);
   if (!data) return null;
@@ -106,7 +108,7 @@ export default function Featured({ data, style, search = '', shots = false }: { 
         <span className='text-stone-500'>Start with</span>
         {park.starts.map((st) => <span key={st.tag} className='grid grid-cols-[4.5rem_1fr] items-baseline text-stone-800'>
           <span className='text-xs font-semibold uppercase tracking-wide text-stone-500'>{st.tag}</span>
-          <span>{st.title} <span className='text-stone-500'>· {st.km.toFixed(1)} km</span></span>
+          <span>{st.title} <span className='text-stone-500'>· {dist(st.km, 1)}</span></span>
         </span>)}
       </span>}
       <span className='mt-auto pt-3'><span className={CTA}>Explore its {days} {days === 1 ? 'hike' : 'hikes'} <span aria-hidden='true'>→</span></span></span>
@@ -117,7 +119,7 @@ export default function Featured({ data, style, search = '', shots = false }: { 
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{hike.title}</span>
       <span className='text-sm text-stone-700'>
         <span className={`mr-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${DIFF_COLORS[hike.diff]}`}>{hike.diff}</span>
-        {hike.km.toFixed(1)} km · ↑ {Math.round(hike.gain).toLocaleString('en-US')} m · {hike.time} · {hike.shape} · from {hike.from}
+        {dist(hike.km, 1)} · ↑ {elev(hike.gain)} · {hike.time} · {hike.shape} · from {hike.from}
       </span>
       <TerrainBar landcover={hike.landcover} className='h-[5px] w-40' />
       {hike.along.length > 0

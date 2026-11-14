@@ -5,6 +5,7 @@
 // Base camps, multi-day trips and stops are a tab away.
 import { useEffect, useMemo, useState } from 'react';
 import type { ParkDoc, ParkReports, SeeAlso, Stop } from '~/hikes';
+import { distance, distanceValue, elevation, useUnits, type Units } from '~/units';
 import {
   DIFFICULTIES, DIFF_COLORS, NO_FILTERS, TERRAIN_COLORS, isSmall, matches, parkHikes, picks, sorted, summary, thumb, timeBand, timeLabel, trailhead,
   type Difficulty, type Filters, type ParkHike, type Sort,
@@ -28,8 +29,9 @@ interface Props {
   onPark?: (id: string, name: string) => void;
 }
 
-const km1 = (n: number) => `${n.toFixed(1)} km`;
-const m = (n: number) => `${Math.round(n).toLocaleString('en-US')} m`;
+// In the reader's units (units.ts).
+const km1 = (n: number, u: Units) => distance(n, u, 1);
+const m = (n: number, u: Units) => elevation(n, u);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 function Thumb({ line, size = 56, className = '' }: { line: [number, number][]; size?: number; className?: string }) {
@@ -52,8 +54,8 @@ export function TerrainBar({ landcover, className = 'h-[5px] w-36' }: { landcove
   </span>;
 }
 
-function stats(h: ParkHike): string {
-  return `${km1(h.route.km)} · ↑ ${m(h.route.gain)} · ${timeLabel(h.hours, h.route)} · ${h.shape}`;
+function stats(h: ParkHike, u: Units): string {
+  return `${km1(h.route.km, u)} · ↑ ${m(h.route.gain, u)} · ${timeLabel(h.hours, h.route)} · ${h.shape}`;
 }
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -64,6 +66,7 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 }
 
 function HikeRow({ h, onOpen, onHover }: { h: ParkHike; onOpen: () => void; onHover: (on: boolean) => void }) {
+  const u = useUnits();
   return <li>
     <button type='button' onClick={onOpen} onMouseEnter={() => onHover(true)} onMouseLeave={() => onHover(false)} onFocus={() => onHover(true)} onBlur={() => onHover(false)}
       className='tap-row flex w-full items-center gap-3.5 rounded-xl border-b border-stone-100 px-2 py-3 text-left hover:bg-fuchsia-50'>
@@ -73,7 +76,7 @@ function HikeRow({ h, onOpen, onHover }: { h: ParkHike; onOpen: () => void; onHo
           <span className='text-[15px] font-semibold leading-tight text-stone-900'>{h.title}</span>
           <Pill diff={h.diff} />
         </span>
-        <span className='text-[13px] text-stone-700'>{stats(h)}</span>
+        <span className='text-[13px] text-stone-700'>{stats(h, u)}</span>
         <TerrainBar landcover={h.route.landcover} />
         <span className='text-xs text-stone-600'>from {h.from}{h.features.length > 0 && ` · ${h.features.slice(0, 2).join(', ')}`}</span>
       </span>
@@ -83,6 +86,7 @@ function HikeRow({ h, onOpen, onHover }: { h: ParkHike; onOpen: () => void; onHo
 }
 
 export default function ParkSheet({ doc, reports, nearby, onOpen, onHover, onShown, onPark }: Props) {
+  const u = useUnits();
   const park = String(doc.park?.id ?? '');
   const hikes = useMemo(() => parkHikes(doc, reports), [doc, reports]);
   const [tab, setTab] = useState<Tab>('day');
@@ -117,7 +121,7 @@ export default function ParkSheet({ doc, reports, nearby, onOpen, onHover, onSho
       {hikes.length > 0 && <div className='flex flex-col gap-3 rounded-2xl bg-[#f7f4ec] p-4'>
         <p className='m-0 text-[15px] leading-relaxed'>{summary(hikes)}</p>
         <div className='grid grid-cols-4 gap-2'>
-          {[[String(hikes.length), hikes.length === 1 ? 'day hike' : 'day hikes'], [km1(total), 'of trail in all'], [`≤ ${m(climb)}`, 'of climbing'], [String(reps), reps === 1 ? 'trip report' : 'trip reports']]
+          {[[String(hikes.length), hikes.length === 1 ? 'day hike' : 'day hikes'], [km1(total, u), 'of trail in all'], [`≤ ${m(climb, u)}`, 'of climbing'], [String(reps), reps === 1 ? 'trip report' : 'trip reports']]
             .map(([v, l]) => <div key={l} className='rounded-xl bg-white p-2.5'>
               <div className='font-display text-lg font-bold leading-tight text-green-900'>{v}</div>
               <div className='mt-1 text-xs text-stone-600'>{l}</div>
@@ -132,8 +136,8 @@ export default function ParkSheet({ doc, reports, nearby, onOpen, onHover, onSho
             <Thumb line={h.route.line} size={48} />
             <span className='flex min-w-0 flex-1 flex-col gap-0.5'>
               <button type='button' onClick={() => onOpen(park, h.id)} className='tap text-left text-base font-semibold text-stone-900 hover:underline'>{h.title}</button>
-              <span className='text-[13px] text-stone-700'>{stats(h)}</span>
-              <span className='text-xs text-stone-600'>from {h.from}{h.route.min_ele ? ` · ${m(h.route.min_ele)}–${m(h.route.max_ele)}` : ''}</span>
+              <span className='text-[13px] text-stone-700'>{stats(h, u)}</span>
+              <span className='text-xs text-stone-600'>from {h.from}{h.route.min_ele ? ` · ${m(h.route.min_ele, u)}–${m(h.route.max_ele, u)}` : ''}</span>
             </span>
             <Pill diff={h.diff} />
           </div>
@@ -150,17 +154,17 @@ export default function ParkSheet({ doc, reports, nearby, onOpen, onHover, onSho
         <span className='flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eef2ea] font-display font-bold text-lime-800'>{hikes.length}</span>
         <span className='flex flex-col gap-0.5'>
           <span className='text-[15px] font-semibold'>Do them all</span>
-          <span className='text-[13px] text-stone-700'>{km1(total)} and about {walk < 1 ? `${Math.round((walk * 60) / 5) * 5} minutes` : `${Math.round(walk * 2) / 2} hours`} of walking in all{new Set(hikes.map((h) => h.from)).size > 1 ? ', plus getting between trailheads' : ''}.</span>
+          <span className='text-[13px] text-stone-700'>{km1(total, u)} and about {walk < 1 ? `${Math.round((walk * 60) / 5) * 5} minutes` : `${Math.round(walk * 2) / 2} hours`} of walking in all{new Set(hikes.map((h) => h.from)).size > 1 ? ', plus getting between trailheads' : ''}.</span>
         </span>
       </div>}
-      {stops.length > 0 && <Others title='Quick stops' blurb='A short walk from the car to a view.' items={stops.map((s, i) => ({ key: `${park}/stop/${i}`, badge: '', title: s.dest, meta: quickStop(s), open: () => onOpen(park, `${park}/stop/${i}`) }))} />}
+      {stops.length > 0 && <Others title='Quick stops' blurb='A short walk from the car to a view.' items={stops.map((s, i) => ({ key: `${park}/stop/${i}`, badge: '', title: s.dest, meta: quickStop(s, u), open: () => onOpen(park, `${park}/stop/${i}`) }))} />}
       {nearby && nearby.length > 0 && <div>
         <h3 className='mb-1 font-display text-base font-bold'>More hiking nearby</h3>
         <ul>{nearby.map((p) => <li key={p.id}>
           <button type='button' onClick={() => onPark?.(p.id, p.name)} className='tap-row flex w-full items-center justify-between border-b border-stone-100 px-1 py-3 text-left'>
             <span className='flex flex-col gap-0.5'>
               <span className='text-[15px] font-semibold text-blue-700'>{p.name}</span>
-              <span className='text-[13px] text-stone-600'>{plural(p.hikes, 'hike')} · {p.km} km away</span>
+              <span className='text-[13px] text-stone-600'>{plural(p.hikes, 'hike')} · {distance(p.km, u, 0)} away</span>
             </span>
             <span aria-hidden='true' className='text-stone-500'>›</span>
           </button>
@@ -190,7 +194,7 @@ export default function ParkSheet({ doc, reports, nearby, onOpen, onHover, onSho
             <span className='text-[11px] font-semibold uppercase tracking-wider text-lime-800'>{p.tag}</span>
             <Thumb line={p.hike.route.line} size={56} className='h-14 w-full' />
             <span className='text-sm font-semibold leading-tight'>{p.hike.title}</span>
-            <span className='text-xs text-stone-600'>{km1(p.hike.route.km)} · ↑ {m(p.hike.route.gain)}</span>
+            <span className='text-xs text-stone-600'>{km1(p.hike.route.km, u)} · ↑ {m(p.hike.route.gain, u)}</span>
           </button>)}
         </div>
       </div>}
@@ -232,21 +236,21 @@ export default function ParkSheet({ doc, reports, nearby, onOpen, onHover, onSho
 
     {tab === 'camps' && <Others title='Base camps' blurb='Walk in once, camp, and do day hikes from camp.'
       items={doc.base_camps.map((b, i) => ({ key: `${park}/base/${i}`, badge: String(b.hikes.length), title: b.camp,
-        meta: `${km1(b.approach.km)} walk in from ${trailhead(b.from)} · ↑ ${m(b.approach.gain)} · ${plural(b.hikes.length, 'day hike')} from camp`,
+        meta: `${km1(b.approach.km, u)} walk in from ${trailhead(b.from)} · ↑ ${m(b.approach.gain, u)} · ${plural(b.hikes.length, 'day hike')} from camp`,
         open: () => onOpen(park, `${park}/base/${i}`), hover: hover(`${park}/base/${i}`) }))} />}
     {tab === 'multi' && <Others title='Multi-day trips' blurb='Backpacking routes, campground to campground.'
-      items={multi.map((t) => ({ key: t.id, badge: String(Math.round(t.km)), title: t.title,
-        meta: `${t.km.toFixed(0)} km · ↑ ${m(t.gain)} · ${t.loop ? 'loop' : 'one way'}${t.camps ? ` · ${plural(t.camps, 'campground')} along it` : ''}${t.inPark ? ` · in ${t.inPark}` : ''}`,
+      items={multi.map((t) => ({ key: t.id, badge: String(Math.round(distanceValue(t.km, u))), title: t.title,
+        meta: `${distance(t.km, u, 0)} · ↑ ${m(t.gain, u)} · ${t.loop ? 'loop' : 'one way'}${t.camps ? ` · ${plural(t.camps, 'campground')} along it` : ''}${t.inPark ? ` · in ${t.inPark}` : ''}`,
         open: () => onOpen(t.park, t.id), hover: t.park === park ? hover(t.id) : undefined }))} />}
     {tab === 'stops' && <Others title='Quick stops' blurb='A short walk from the car to a view: for a road trip or a rest day.'
-      items={stops.map((s, i) => ({ key: `${park}/stop/${i}`, badge: '', title: s.dest, meta: quickStop(s), open: () => onOpen(park, `${park}/stop/${i}`), hover: hover(`${park}/stop/${i}`) }))} />}
+      items={stops.map((s, i) => ({ key: `${park}/stop/${i}`, badge: '', title: s.dest, meta: quickStop(s, u), open: () => onOpen(park, `${park}/stop/${i}`), hover: hover(`${park}/stop/${i}`) }))} />}
   </div>;
 }
 
-function quickStop(s: Stop): string {
+function quickStop(s: Stop, u: Units): string {
   const km = s.route.one_way_km ?? s.route.km / 2;
   if (km < 0.05) return s.from === "Road's end" ? 'By the road' : `By the road at ${trailhead(s.from)}`;
-  return `${(km * 2).toFixed(1)} km there and back from ${s.from === "Road's end" ? "the road's end" : trailhead(s.from)}`;
+  return `${distance(km * 2, u, 1)} there and back from ${s.from === "Road's end" ? "the road's end" : trailhead(s.from)}`;
 }
 
 function Others({ title, blurb, items }: { title: string; blurb: string; items: { key: string; badge: string; title: string; meta: string; open: () => void; hover?: (on: boolean) => void }[] }) {

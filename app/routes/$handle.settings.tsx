@@ -1,10 +1,11 @@
-// Your page's Settings tab (/@<handle>/settings): the licence your new posts
-// are shared under, in your profile record (actor.profile/self). Only yours
-// to see: someone else's settings show in what they post.
+// Your page's Settings tab (/@<handle>/settings): the units distances and
+// elevations show in, and the licence your new posts are shared under, in
+// your profile record (actor.profile/self). Only yours to see.
 import { useEffect, useState } from 'react';
 import { Link, useRevalidator, type MetaFunction } from 'react-router';
 import { profilePath } from '~/atproto/identity';
 import { DEFAULT_LICENSE, LICENSES, saveSettings } from '~/atproto/posts';
+import { setUnits, unitsOf, type Units } from '~/units';
 import { useProfile } from './$handle';
 
 export const meta: MetaFunction = ({ matches }) => {
@@ -13,12 +14,48 @@ export const meta: MetaFunction = ({ matches }) => {
 };
 
 export default function Settings() {
-  const { name, pds, license, session } = useProfile();
+  const { name, pds, license, units, session } = useProfile();
   const revalidator = useRevalidator();
   if (!session || !pds) return <p className='mt-4 text-stone-600'>
     These are @{name}’s settings: sign in as @{name} to see them. <Link to={profilePath(name)}>Back to their hikes</Link>.
   </p>;
-  return <LicenseSetting current={license} onSave={async (l) => { await saveSettings(session, pds, { license: l }); revalidator.revalidate(); }} />;
+  return <>
+    <UnitsSetting current={unitsOf(units)} onSave={async (u) => {
+      await saveSettings(session, pds, { units: u });
+      setUnits(u);
+      revalidator.revalidate();
+    }} />
+    <LicenseSetting current={license} onSave={async (l) => { await saveSettings(session, pds, { license: l }); revalidator.revalidate(); }} />
+  </>;
+}
+
+// The units distances and elevations show in, everywhere on Hiker Atlas.
+function UnitsSetting({ current, onSave }: { current: Units; onSave: (u: Units) => Promise<void> }) {
+  const [value, setValue] = useState(current);
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | string>('idle');
+  useEffect(() => { setValue(current); }, [current.distance, current.elevation]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = async (u: Units) => {
+    setValue(u); setState('saving');
+    try { await onSave(u); setState('saved'); } catch (e) { setState(e instanceof Error ? e.message : String(e)); }
+  };
+  const choice = (name: string, options: [string, string][], v: string, set: (x: string) => void) =>
+    <fieldset className='flex flex-col gap-1.5'>
+      <legend className='mb-1 font-semibold'>{name}</legend>
+      {options.map(([k, label]) => <label key={k} className='flex items-center gap-2'>
+        <input type='radio' name={name} value={k} checked={v === k} onChange={() => set(k)} disabled={state === 'saving'} />
+        <span>{label}</span>
+      </label>)}
+    </fieldset>;
+  return <section>
+    <h2>Units</h2>
+    <div className='mt-2 flex flex-wrap gap-x-12 gap-y-4'>
+      {choice('Distance', [['km', 'Kilometres (km)'], ['mi', 'Miles (mi)']], value.distance,
+        (d) => save({ ...value, distance: d as Units['distance'] }))}
+      {choice('Elevation', [['m', 'Metres (m)'], ['ft', 'Feet (ft)']], value.elevation,
+        (e) => save({ ...value, elevation: e as Units['elevation'] }))}
+    </div>
+    <p className='mt-2 text-sm text-stone-500'>{state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved.' : state === 'idle' ? 'For distances, climbs and heights across Hiker Atlas.' : state}</p>
+  </section>;
 }
 
 // Your own page: the licence your new posts are shared under.

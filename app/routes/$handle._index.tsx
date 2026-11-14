@@ -8,6 +8,7 @@ import { lines, readBlob } from '~/atproto/gpx';
 import { blobUrl, deletePost, tagLabel, type Photo, type Rec, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
 import { findRoutes, type Found } from '~/atproto/findRoutes';
 import { durationText, kmText, LICENSE_LABEL } from '~/components/PostDialog';
+import { elevation, useUnits } from '~/units';
 import { isRouteKey, useProfile } from './$handle';
 
 const day = (s?: string) => (s ? new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '');
@@ -132,6 +133,7 @@ function Photos({ photos, pds, did }: { photos: Photo[]; pds: string; did: strin
 // A track's stats, its line (drawn from its GPX, fetched when shown), and
 // its GPX to download.
 function TrackView({ track, pds, did }: { track: TrackRecord; pds: string; did: string }) {
+  const units = useUnits();
   const url = blobUrl(pds, did, track.gpx);
   const [segs, setSegs] = useState<[number, number][][] | null>(null);
   const [gpxText, setGpxText] = useState<string | null>(null);
@@ -147,8 +149,8 @@ function TrackView({ track, pds, did }: { track: TrackRecord; pds: string; did: 
     return () => { live = false; };
   }, [url, track.gpx.mimeType]);
   const facts = [
-    typeof track.distance === 'number' && kmText(track.distance),
-    typeof track.gain === 'number' && `↑ ${track.gain.toLocaleString('en-US')} m`,
+    typeof track.distance === 'number' && kmText(track.distance, units),
+    typeof track.gain === 'number' && `↑ ${elevation(track.gain, units)}`,
     typeof track.duration === 'number' && durationText(track.duration),
   ].filter(Boolean).join(' · ');
   const download = () => {

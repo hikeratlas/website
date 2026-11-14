@@ -1,4 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
+import { useUnits } from '~/units';
+import { applyMapUnits, forgetMapStyle } from './mapUnits';
 import * as maplibregl from 'maplibre-gl';
 import { ImageryControl } from '~/components/imagery';
 import mlcontour from 'maplibre-contour';
@@ -106,6 +108,17 @@ export default function Map(props: Props) {
   const [lng] = useState(props.lng);
   const [lat] = useState(props.lat);
   const [zoom] = useState(props.zoom);
+  // The reader's units for the map's elevations (mapUnits.ts): on each style
+  // load, and when they change.
+  const units = useUnits();
+  const unitsRef = useRef(units);
+  unitsRef.current = units;
+  const scaleRef = useRef<maplibregl.ScaleControl | null>(null);
+  useEffect(() => {
+    const m = map.current;
+    if (m?.isStyleLoaded()) applyMapUnits(m, units);
+    scaleRef.current?.setUnit(units.distance === 'mi' ? 'imperial' : 'metric');
+  }, [units]);
 
   useEffect(() => {
     if (map.current) return; // stops map from intializing more than once
@@ -142,11 +155,13 @@ export default function Map(props: Props) {
     const protocol = zstdProtocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
 
+    // In the reader's distance unit (feet and miles for miles).
     const scale = new maplibregl.ScaleControl({
         maxWidth: 160,
-        unit: 'metric'
+        unit: unitsRef.current.distance === 'mi' ? 'imperial' : 'metric'
     });
     m.addControl(scale);
+    scaleRef.current = scale;
 
     // Compact attribution starts expanded and only collapses on the first
     // drag; start collapsed. Collapsed, it reads "© OpenStreetMap" (the short
@@ -187,6 +202,7 @@ export default function Map(props: Props) {
       }).catch((e) => console.error(`Unable to read center from ${props.centerOnPmtiles}`, e));
     }
 
+    m.on('style.load', () => { forgetMapStyle(m); applyMapUnits(m, unitsRef.current); });
     map.current = m;
     (props.onInitialized || (() => {}))(m);
 

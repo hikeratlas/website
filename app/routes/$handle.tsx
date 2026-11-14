@@ -27,13 +27,14 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   const did = await resolveHandle(who);
   const doc = did ? await describeDid(did) : null;
   const none = { who, did: null as string | null, pds: null as string | null, build, handle: null as string | null,
-    faves: [] as Fave[], tracks: [] as Rec<TrackRecord>[], reviews: [] as Rec<ReviewRecord>[], license: null as string | null };
+    faves: [] as Fave[], tracks: [] as Rec<TrackRecord>[], reviews: [] as Rec<ReviewRecord>[], license: null as string | null,
+    units: null as { distance?: string; elevation?: string } | null };
   if (!did || !doc) return data({ ...none, error: 'No such account' }, { status: 404 });
   const [faves, tracks, reviews, settings] = await Promise.all([
     listFaves(doc.pds, did).catch(() => [] as Fave[]),
     listRecords<TrackRecord>(doc.pds, did, TRACK).catch(() => []),
     listRecords<ReviewRecord>(doc.pds, did, REVIEW).catch(() => []),
-    getSettings(doc.pds, did).catch(() => ({ license: undefined })),
+    getSettings(doc.pds, did).catch(() => ({ license: undefined, units: undefined })),
   ]);
   return {
     ...none, did, pds: doc.pds, handle: doc.handle ?? null, error: null as string | null,
@@ -42,6 +43,7 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
     tracks: tracks.filter((t) => t.value && typeof t.value.createdAt === 'string' && t.value.gpx?.ref?.$link),
     reviews: reviews.filter((r) => r.value && typeof r.value.text === 'string' && typeof r.value.createdAt === 'string'),
     license: settings.license ?? null,
+    units: settings.units ?? null,
   };
 };
 

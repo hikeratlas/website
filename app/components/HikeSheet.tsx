@@ -10,8 +10,7 @@ import RouteReportsList from './RouteReports';
 import { TerrainBar } from './ParkSheet';
 import { FaveButton } from '~/components/Account';
 import { PostButton } from '~/components/PostDialog';
-
-const m = (n: number) => `${Math.round(n).toLocaleString('en-US')} m`;
+import { distanceValue, useFormat } from '~/units';
 
 const KIND_NAMES: Record<string, string> = {
   lake: 'Lake', peak: 'Summit', waterfall: 'Waterfall', glacier: 'Glacier', pass: 'Pass', viewpoint: 'Viewpoint',
@@ -35,6 +34,9 @@ interface Props {
 }
 
 export default function HikeSheet({ title, route: r, shape, why, prof, reports, dest, campLabel, onHover, children }: Props) {
+  const { units, dist, elev: m } = useFormat();
+  // Where along it: "km 3.4", "mi 2.1".
+  const at = (km: number) => `${units.distance} ${distanceValue(km, units).toFixed(1)}`;
   const diff = difficulty(r);
   const h = hours(r);
   const sac = r.max_sac ?? 0;
@@ -60,7 +62,7 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
   const tiles: [string, string][] = [
-    [`${r.km.toFixed(1)} km`, { loop: 'loop', 'out-and-back': 'there and back', 'one-way': 'one way' }[shape]],
+    [dist(r.km, 1), { loop: 'loop', 'out-and-back': 'there and back', 'one-way': 'one way' }[shape]],
     [`↑ ${m(r.gain)}`, 'climbing'],
     [timeLabel(h, r).replace(/^about /, '~'), 'walking time'],
     [m(r.max_ele), 'high point'],
@@ -97,7 +99,7 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
     {r.stopovers.length > 0 && <section>
       <h2 className='font-display text-base font-bold'>{campLabel}</h2>
       <ul className='mt-1'>{r.stopovers.map((c) => <li key={`${c.name}-${c.km}`} className='flex justify-between border-b border-stone-100 py-2 text-sm'>
-        <span className='font-semibold'>{c.name}</span><span className='text-stone-600'>km {c.km.toFixed(1)}</span>
+        <span className='font-semibold'>{c.name}</span><span className='text-stone-600'>{at(c.km)}</span>
       </li>)}</ul>
     </section>}
 
@@ -107,7 +109,7 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
         onMouseEnter={() => f.at && onHover(f.at)} onMouseLeave={() => onHover(null)}>
         {f.km !== undefined && <span className='flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-fuchsia-700 text-xs font-bold text-white'>{f.n}</span>}
         <span className='flex-1 font-semibold'>{f.name}</span>
-        <span className='text-stone-600'>{KIND_NAMES[f.kind] ?? f.kind.replace(/_/g, ' ')}{f.km !== undefined && ` · km ${f.km.toFixed(1)}`}</span>
+        <span className='text-stone-600'>{KIND_NAMES[f.kind] ?? f.kind.replace(/_/g, ' ')}{f.km !== undefined && ` · ${at(f.km)}`}</span>
       </li>)}</ol>
     </section>}
 
