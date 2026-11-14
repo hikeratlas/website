@@ -1,56 +1,14 @@
-// Someone's page (/people/<handle or DID>): their reviews, tracks and faved
-// hikes, read from their own repository, on their PDS, not from anything of
-// ours. They're public records (com.hikeratlas.temp.*), so anyone can see
-// them, here or in any other app. Each is tied to a hike by its route key:
-// the server lists them, and the browser finds which hikes they are
-// (findRoutes). On your own page: deleting your posts, and your settings.
+// Someone's page, its Overview tab (/@<handle>): their reviews and tracks,
+// newest hike first, and their faved hikes. Each is tied to a hike by its
+// route key, and the browser finds which hikes they are (findRoutes). On
+// your own page, you can delete your posts.
 import { useEffect, useMemo, useState } from 'react';
-import { data, useLoaderData, useRevalidator, type LoaderFunctionArgs, type MetaFunction } from 'react-router';
-import { buildFor } from '~/build';
-import { describeDid, isDid, resolveHandle } from '~/atproto/identity';
-import { listFaves, type Fave } from '~/atproto/faves';
+import { useRevalidator } from 'react-router';
 import { lines, readBlob } from '~/atproto/gpx';
-import {
-  blobUrl, deletePost, DEFAULT_LICENSE, LICENSES, listRecords, saveSettings, getSettings, tagLabel,
-  type Photo, type Rec, type ReviewRecord, type TrackRecord,
-} from '~/atproto/posts';
-import { REVIEW, TRACK } from '~/atproto/scope';
-import { signOut, useAtSession } from '~/atproto/session';
+import { blobUrl, deletePost, tagLabel, type Photo, type Rec, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
 import { findRoutes, type Found } from '~/atproto/findRoutes';
 import { durationText, kmText, LICENSE_LABEL } from '~/components/PostDialog';
-
-// Route keys are recipe v1's (hikeratlas/route-keys: a cell part, a dot, an
-// 11-character hash); faves in another form (the spike's) aren't routes.
-const isRouteKey = (k: string) => /^1[A-Za-z0-9_-]{7}[bpw][A-Za-z0-9_-]+\.[A-Za-z0-9_-]{11}$/.test(k);
-
-export const loader = async ({ params, request }: LoaderFunctionArgs) => {
-  const build = buildFor(new URL(request.url)) ?? 'north-america';
-  const who = (params.handle ?? '').replace(/^@/, '').toLowerCase();
-  const did = isDid(who) ? who : await resolveHandle(who);
-  const doc = did ? await describeDid(did) : null;
-  const none = { who, did: null as string | null, pds: null as string | null, build, handle: null as string | null,
-    faves: [] as Fave[], tracks: [] as Rec<TrackRecord>[], reviews: [] as Rec<ReviewRecord>[], license: null as string | null };
-  if (!did || !doc) return data({ ...none, error: 'No such account' }, { status: 404 });
-  const [faves, tracks, reviews, settings] = await Promise.all([
-    listFaves(doc.pds, did).catch(() => [] as Fave[]),
-    listRecords<TrackRecord>(doc.pds, did, TRACK).catch(() => []),
-    listRecords<ReviewRecord>(doc.pds, did, REVIEW).catch(() => []),
-    getSettings(doc.pds, did).catch(() => ({ license: undefined })),
-  ]);
-  return {
-    ...none, did, pds: doc.pds, handle: doc.handle ?? null, error: null as string | null,
-    faves: faves.filter((f) => isRouteKey(f.key)),
-    // Only well-formed ones: these are other people's records.
-    tracks: tracks.filter((t) => t.value && typeof t.value.createdAt === 'string' && t.value.gpx?.ref?.$link),
-    reviews: reviews.filter((r) => r.value && typeof r.value.text === 'string' && typeof r.value.createdAt === 'string'),
-    license: settings.license ?? null,
-  };
-};
-
-export const meta: MetaFunction<typeof loader> = ({ loaderData }) => {
-  const name = loaderData?.handle ?? loaderData?.who ?? 'Someone';
-  return [{ title: `@${name} | Hiker Atlas` }, { name: 'robots', content: 'noindex' }];
-};
+import { isRouteKey, useProfile } from './$handle';
 
 const day = (s?: string) => (s ? new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
@@ -58,12 +16,8 @@ const day = (s?: string) => (s ? new Date(s).toLocaleDateString('en-US', { year:
 // or a track on its own.
 interface Post { at: string; review?: Rec<ReviewRecord>; track?: Rec<TrackRecord> }
 
-export default function Person() {
-  const { who, did, pds, build, handle, faves, tracks, reviews, license, error } = useLoaderData<typeof loader>();
-  const name = handle ?? who;
-  const at = useAtSession();
-  const mine = at.status === 'in' && !!did && at.did === did;
-  const session = mine && at.status === 'in' ? at.session : null;
+export default function Overview() {
+  const { did, pds, build, faves, tracks, reviews, session, mine } = useProfile();
   const revalidator = useRevalidator();
 
   const posts = useMemo(() => {
@@ -116,12 +70,7 @@ export default function Person() {
     </span>;
   };
 
-  return <main className='frame'>
-    <h1>@{name}</h1>
-    {mine && <p><button type='button' onClick={() => signOut()} className='text-sm text-blue-700 hover:underline'>Sign out</button></p>}
-    {error
-      ? <p className='mt-2 text-stone-600'>{error}.</p>
-      : <>
+  return <>
         <h2>Hikes</h2>
         <p className='mt-1 text-stone-600'>{posts.length
           ? `${posts.length} ${posts.length === 1 ? 'post' : 'posts'}`
@@ -152,8 +101,8 @@ export default function Person() {
           })}
         </ul>}
 
-        <h2>Saved hikes</h2>
-        <p className='mt-1 text-stone-600'>{faves.length ? `${faves.length} saved ${faves.length === 1 ? 'hike' : 'hikes'}` : 'No saved hikes yet.'}</p>
+        <h2>Faved hikes</h2>
+        <p className='mt-1 text-stone-600'>{faves.length ? `${faves.length} faved ${faves.length === 1 ? 'hike' : 'hikes'}` : 'No faved hikes yet.'}</p>
         {faves.length > 0 && <ul className='mt-4 flex flex-col gap-2'>
           {faves.map((f) => {
             const h = found?.get(f.key);
@@ -164,10 +113,9 @@ export default function Person() {
           })}
         </ul>}
 
-        {session && pds && <LicenseSetting current={license} onSave={async (l) => { await saveSettings(session, pds, { license: l }); revalidator.revalidate(); }} />}
-      </>}
-  </main>;
+  </>;
 }
+
 
 function Photos({ photos, pds, did }: { photos: Photo[]; pds: string; did: string }) {
   return <div className='grid grid-cols-3 gap-1.5 sm:grid-cols-4'>
@@ -235,26 +183,4 @@ function TrackLine({ segs }: { segs: [number, number][][] | null }) {
   return <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className='shrink-0 rounded bg-white' aria-hidden='true'>
     <path d={d} fill='none' stroke='#c026d3' strokeWidth='2' strokeLinejoin='round' strokeLinecap='round' />
   </svg>;
-}
-
-// Your own page: the licence your new posts are shared under.
-function LicenseSetting({ current, onSave }: { current: string | null; onSave: (l: string) => Promise<void> }) {
-  const [value, setValue] = useState(current ?? DEFAULT_LICENSE);
-  const [state, setState] = useState<'idle' | 'saving' | 'saved' | string>('idle');
-  useEffect(() => { setValue(current ?? DEFAULT_LICENSE); }, [current]);
-  const save = async (l: string) => {
-    setValue(l); setState('saving');
-    try { await onSave(l); setState('saved'); } catch (e) { setState(e instanceof Error ? e.message : String(e)); }
-  };
-  return <section id='settings'>
-    <h2>Settings</h2>
-    <fieldset className='mt-2 flex flex-col gap-2'>
-      <legend className='mb-2 text-stone-700'>What others may do with your new posts (you keep ownership; <a href='/terms#what-you-post'>details</a>):</legend>
-      {LICENSES.map((l) => <label key={l} className='flex items-center gap-2'>
-        <input type='radio' name='license' value={l} checked={value === l} onChange={() => save(l)} disabled={state === 'saving'} />
-        <span>{l === 'CC0-1.0' ? 'Anything: public domain (CC0)' : l === 'CC-BY-4.0' ? 'Anything, crediting you (CC BY 4.0)' : 'Nothing beyond Hiker Atlas showing them'}</span>
-      </label>)}
-      <span className='text-sm text-stone-500'>{state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved. Posts you’ve already made keep theirs.' : state === 'idle' ? 'Posts you’ve already made keep theirs.' : state}</span>
-    </fieldset>
-  </section>;
 }

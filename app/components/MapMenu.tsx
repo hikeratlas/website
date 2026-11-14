@@ -1,4 +1,4 @@
-// Phones: the map page has no title bar, so its links (home, your saved hikes
+// Phones: the map page has no title bar, so its links (home, your hikes
 // or signing in, terms; signing out and OpenStreetMap at the bottom) are in a
 // drawer, opened by the menu button beside the search box. Closed by its ×,
 // by tapping the map beside it, or by Escape.
@@ -7,6 +7,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl';
 import { Avatar, SignInDialog } from '~/components/Account';
 import OsmLink from '~/components/OsmLink';
 import { signOut, useAtSession } from '~/atproto/session';
+import { profilePath } from '~/atproto/identity';
 
 const item = 'tap-row text-left text-base text-blue-700 hover:underline';
 
@@ -45,14 +46,14 @@ export default function MapMenu({ map }: { map: MaplibreMap | null }) {
         </div>
         {/* Signed in: who you are, as its own block (as Bluesky's drawer has
             it), not a picture squeezed into a list item. */}
-        {at.status === 'in' && who && <a href={`/people/${encodeURIComponent(who)}`}
+        {at.status === 'in' && who && <a href={profilePath(who)}
           className='mb-2 flex items-center gap-3 border-b border-stone-200 pb-4'>
           <Avatar src={at.avatar} name={at.handle ?? '?'} size={40} />
           <span className='min-w-0 truncate text-base font-semibold text-stone-900'>@{at.handle ?? 'you'}</span>
         </a>}
         <a href='/' className={item}>Home</a>
         {at.status === 'in' && who
-          ? <a href={`/people/${encodeURIComponent(who)}`} className={item}>Your saved hikes</a>
+          ? <a href={profilePath(who)} className={item}>Your hikes</a>
           : at.status === 'out' && <button type='button' className={item} onClick={() => { setOpen(false); setAsking(true); }}>Sign in</button>}
         <a href='/terms' className={item}>Terms &amp; privacy</a>
         {/* The bottom line: Sign out, and (niche) this view on OpenStreetMap. */}

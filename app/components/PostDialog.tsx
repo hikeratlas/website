@@ -4,7 +4,7 @@
 // is the GPX of one outing: several files (a multi-day trip's days) become
 // one. Photos go on the review, or on the track if there's no review.
 import { useEffect, useRef, useState } from 'react';
-import { describeDid } from '~/atproto/identity';
+import { describeDid, profilePath } from '~/atproto/identity';
 import { combine, locate, stats, type GpxStats } from '~/atproto/gpx';
 import { preparePhoto, type PreparedPhoto } from '~/atproto/photos';
 import { DEFAULT_LICENSE, getSettings, publishReview, publishTrack, TAGS, type StrongRef } from '~/atproto/posts';
@@ -175,7 +175,7 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
         <h2 className='font-display text-xl font-extrabold'>Posted</h2>
         <p className='text-sm text-stone-700'>Thanks! It’s on your profile, and in your own account for any app to show.</p>
         <div className='flex justify-end gap-2'>
-          <a href={`/people/${encodeURIComponent(me)}`} className='tap flex h-11 items-center rounded-xl bg-green-900 px-4 text-sm font-semibold text-white hover:bg-green-800'>See your profile</a>
+          <a href={profilePath(me)} className='tap flex h-11 items-center rounded-xl bg-green-900 px-4 text-sm font-semibold text-white hover:bg-green-800'>See your profile</a>
           <button type='button' onClick={() => dialog.current?.close()} className='tap h-11 rounded-xl border border-stone-300 px-4 text-sm font-semibold hover:bg-stone-50'>Close</button>
         </div>
       </div>
@@ -250,7 +250,7 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
 
         <p className='text-xs text-stone-600'>
           Posts are public, and stay in your own account. You keep ownership; this one is shared under{' '}
-          <strong>{LICENSE_LABEL[license]}</strong> (<a href={`/people/${encodeURIComponent(me)}#settings`} className='text-blue-700 hover:underline'>change</a>,{' '}
+          <strong>{LICENSE_LABEL[license]}</strong> (<a href={`${profilePath(me)}/settings`} className='text-blue-700 hover:underline'>change</a>,{' '}
           <a href='/terms#what-you-post' className='text-blue-700 hover:underline'>what that means</a>).
         </p>
 

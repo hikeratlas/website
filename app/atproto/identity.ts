@@ -7,6 +7,9 @@ const DID_RE = /^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.-]+)$/;
 export const isHandle = (h: string) => h.length <= 253 && HANDLE_RE.test(h);
 export const isDid = (d: string) => DID_RE.test(d);
 
+// Someone's page on Hiker Atlas: /@<handle> (or /@<DID>).
+export const profilePath = (who: string) => `/@${encodeURIComponent(who.replace(/^@/, '')).replace(/%3A/gi, ':')}`;
+
 // A handle's DID, by Bluesky's public API (which follows the handle's DNS
 // record or well-known file, as atproto has it).
 export async function resolveHandle(handle: string): Promise<string | null> {
