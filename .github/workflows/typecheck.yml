@@ -19,3 +19,5 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
+      # Unit tests (app/**/*.test.ts): vitest.config.ts.
+      - run: npm test
