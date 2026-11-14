@@ -29,7 +29,7 @@ export function SignInDialog({ onClose, why }: { onClose: () => void; why?: stri
     <div className='flex flex-col gap-3 p-5'>
       <h2 className='font-display text-xl font-extrabold'>Sign in</h2>
       {why && <p className='text-sm text-stone-700'>{why}</p>}
-      <p className='text-sm text-stone-600'>Your faves are saved to your own account, so they&apos;re always yours. They&apos;re public: see <a href='/terms' className='text-blue-700 hover:underline'>terms and privacy</a>.</p>
+      <p className='text-sm text-stone-600'>Use of Hiker Atlas is bound by our <a href='/terms' className='text-blue-700 hover:underline'>terms of service</a> and <a href='/terms#privacy' className='text-blue-700 hover:underline'>privacy policy</a>.</p>
       <button type='button' onClick={() => go(BLUESKY)} disabled={busy}
         className='flex h-11 items-center justify-center rounded-xl bg-[#1185fe] text-sm font-semibold text-white hover:bg-[#0a6fd8] disabled:opacity-60'>
         {busy && !other ? 'Going to Bluesky…' : 'Continue with Bluesky'}
