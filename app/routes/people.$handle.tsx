@@ -9,7 +9,6 @@ import { buildFor } from '~/build';
 import { describeDid, isDid, resolveHandle } from '~/atproto/identity';
 import { listFaves, type Fave } from '~/atproto/faves';
 import { findRoutes, type Found } from '~/atproto/findRoutes';
-import { signOut, useAtSession } from '~/atproto/session';
 
 // Route keys are recipe v1's (hikeratlas/route-keys: a cell part, a dot, an
 // 11-character hash); faves in another form (the spike's) aren't routes.
@@ -35,11 +34,7 @@ export const meta: MetaFunction<typeof loader> = ({ loaderData }) => {
 const day = (s: string) => (s ? new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
 export default function Person() {
-  const { who, did, build, handle, faves, error } = useLoaderData<typeof loader>();
-  // Your own page: where you sign out on a phone (the header shows only your
-  // picture there).
-  const at = useAtSession();
-  const mine = at.status === 'in' && !!did && at.did === did;
+  const { who, build, handle, faves, error } = useLoaderData<typeof loader>();
   const name = handle ?? who;
   // Which hikes the faves are, once found: null while looking.
   const [found, setFound] = useState<Map<string, Found> | null>(null);
@@ -73,6 +68,5 @@ export default function Person() {
           })}
         </ul>}
       </>}
-    {mine && <p className='mt-8'><button type='button' onClick={() => signOut()} className='text-sm text-blue-700 hover:underline'>Sign out</button></p>}
   </main>;
 }

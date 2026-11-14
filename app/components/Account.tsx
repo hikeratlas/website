@@ -64,7 +64,8 @@ export function Avatar({ src, name, size = 26 }: { src: string | null; name: str
 }
 
 // The header's: "Sign in", or your picture and handle (to your saved hikes)
-// and "Sign out". On phones, just the picture: a handle can be long.
+// and "Sign out". On phones, the picture without the handle: a handle can be
+// long.
 export function AccountButton() {
   const at = useAtSession();
   const [open, setOpen] = useState(false);
@@ -81,7 +82,7 @@ export function AccountButton() {
       <Avatar src={at.avatar} name={at.handle ?? '?'} />
       <span className='hidden sm:inline'>@{at.handle ?? 'you'}</span>
     </a>
-    <button type='button' onClick={() => signOut()} className='hidden text-stone-500 hover:underline sm:inline'>Sign out</button>
+    <button type='button' onClick={() => signOut()} className='text-stone-500 hover:underline'>Sign out</button>
   </span>;
 }
 
