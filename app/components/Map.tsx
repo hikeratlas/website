@@ -93,6 +93,11 @@ export interface Props {
   onInitialized: (map: maplibregl.Map) => void;
 }
 
+
+// Hiker Atlas's own terms and privacy (#133), with the map's credits: shown on
+// every screen size, unlike the header's links.
+const TERMS_ATTRIBUTION = "<a href='/terms'>Terms &amp; privacy</a>";
+
 export default function Map(props: Props) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -130,7 +135,7 @@ export default function Map(props: Props) {
       maxZoom: props.maxZoom,
       // An (i) that expands, rather than two lines of credits across the
       // bottom of a phone screen.
-      attributionControl: { compact: true, customAttribution: [NL_DEM_ATTRIBUTION, WORLDCOVER_ATTRIBUTION] },
+      attributionControl: { compact: true, customAttribution: [NL_DEM_ATTRIBUTION, WORLDCOVER_ATTRIBUTION, TERMS_ATTRIBUTION] },
     });
     m.showTileBoundaries = !!props.showTileBoundaries;
 
