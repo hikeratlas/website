@@ -1,5 +1,6 @@
-// A blog post's frontmatter "meta" and "headers" as its route's meta and
-// headers exports, as Remix's own compiler made them:
+// A blog post's frontmatter "meta", "headers" and "handle" as its route's
+// exports, as Remix's own compiler made them (handle carries a post's
+// external scripts, e.g. highlight.js, for root.tsx's ExternalScripts):
 //
 //   ---
 //   meta:
@@ -9,12 +10,13 @@
 //   ---
 //
 // remark-mdx-frontmatter exports the frontmatter (as `frontmatter`); this adds
-// the two exports reading it.
+// the exports reading it.
 import { parse } from "acorn";
 import type { Root } from "mdast";
 
 const CODE = `export const meta = () => frontmatter?.meta ?? [];
-export const headers = () => frontmatter?.headers ?? {};`;
+export const headers = () => frontmatter?.headers ?? {};
+export const handle = frontmatter?.handle;`;
 
 export default function remarkRouteExports() {
   return (tree: Root) => {
