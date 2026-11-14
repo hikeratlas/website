@@ -56,6 +56,13 @@ CASES = [
     ('dawson creek b', None, {'first': ('Dawson Creek', 'British Columbia')}),
     ('panorama ridge gar', None, {'first': (None, 'Garibaldi')}),
     ('bear mountain bc', None, {'first': ('Bear Mountain', 'British Columbia')}),
+    # States and provinces (basemap#318), before their own places, by name
+    # or abbreviation.
+    ('alber', None, {'first': ('Alberta', None)}),
+    ('bc', None, {'first': ('British Columbia', None)}),
+    ('new york', None, {'top': (2, 'New York')}),
+    # A bay mapped as a point (basemap#317).
+    ('little dunks bay', None, {'first': ('Little Dunks Bay', None)}),
     # Near the map (website#44): the same name, the nearer one first.
     ('panorama ridge', (49.95, -123.05), {'first': (None, 'Garibaldi')}),
     ('panorama ridge', (51.2, -116.1), {'first': (None, 'Banff')}),
