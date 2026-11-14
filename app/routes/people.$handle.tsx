@@ -11,8 +11,9 @@ import { listFaves, type Fave } from '~/atproto/faves';
 import { findRoutes, type Found } from '~/atproto/findRoutes';
 import { FAVE } from '~/atproto/scope';
 
-// Route keys are recipe v1's: the spike's faves (a hash) aren't routes.
-const isRouteKey = (k: string) => /^1[A-Za-z0-9_-]{7}[bpw][A-Za-z0-9_-]*$/.test(k);
+// Route keys are recipe v1's (hikeratlas/route-keys: a cell part, a dot, an
+// 11-character hash); faves in another form (the spike's) aren't routes.
+const isRouteKey = (k: string) => /^1[A-Za-z0-9_-]{7}[bpw][A-Za-z0-9_-]+\.[A-Za-z0-9_-]{11}$/.test(k);
 
 export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   const build = buildFor(new URL(request.url)) ?? 'north-america';

@@ -1,4 +1,4 @@
-// Faves (com.hikeratlas.temp.fave, lexicons/com/hikeratlas/temp/fave.json):
+// Faves (com.hikeratlas.temp.fave, in hikeratlas/atproto-lexicon):
 // records in the user's own repository, one per route, whose record key is
 // the route's key (routeKey.ts). The record holds only when: faving again
 // replaces it, unfaving is one delete, and whether a route is faved is one
