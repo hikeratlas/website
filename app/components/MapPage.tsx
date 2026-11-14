@@ -336,16 +336,17 @@ export default function MapPage({ build, search, initial, summary }: Props) {
         <div className='map-header-osm absolute top-3 right-3 flex items-center gap-3'><AccountButton /><OsmLink map={map}/><TermsLink /></div>
         <div className='p-2'>
           <div className='map-header-title text-2xl'>
-            <a href={`/map${search}`}>Hiker Atlas</a>
+            <a href='/' title='Hiker Atlas: home'>Hiker Atlas</a>
             {build && <span className='ml-2 text-sm text-gray-500'>preview: {build}</span>}
           </div>
           <div className='map-search'><Search onSelect={onSelect} build={build} near={near}/></div>
         </div>
       </div>
       <div className='map-wrap'>
-        {/* Phones: the header's OSM link is hidden with the title bar, so it
-            sits on the map instead (see .map-osm-mobile in map.css). */}
-        <div className='map-osm-mobile flex items-center gap-2'><OsmLink map={map}/><span className='text-gray-300' aria-hidden='true'>·</span><TermsLink /></div>
+        {/* Phones: the header's links (home, OSM, terms) are hidden with the
+            title bar, so they sit on the map instead (see .map-osm-mobile in
+            map.css). */}
+        <div className='map-osm-mobile flex items-center gap-2'><a href='/' className='text-sm text-gray-500 hover:text-gray-800'>Home</a><span className='text-gray-300' aria-hidden='true'>·</span><OsmLink map={map}/><span className='text-gray-300' aria-hidden='true'>·</span><TermsLink /></div>
         {/* A build only covers its own area, so don't constrain it to North
             America; start at its tiles' center instead. */}
         <Map
