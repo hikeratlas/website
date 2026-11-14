@@ -54,12 +54,13 @@ export function SignInDialog({ onClose, why }: { onClose: () => void; why?: stri
   </dialog>;
 }
 
-// A signed-in account's picture, small and round; the handle's first letter
-// on green without one.
-export function Avatar({ src, name, size = 24 }: { src: string | null; name: string; size?: number }) {
+// A signed-in account's picture, as Bluesky shows one: a circle with a faint
+// ring, so a light picture doesn't melt into the page. The handle's first
+// letter on green without one.
+export function Avatar({ src, name, size = 26 }: { src: string | null; name: string; size?: number }) {
   return src
-    ? <img src={src} alt='' width={size} height={size} className='shrink-0 rounded-full object-cover' style={{ width: size, height: size }} />
-    : <span aria-hidden='true' className='flex shrink-0 items-center justify-center rounded-full bg-green-800 text-xs font-semibold uppercase text-white' style={{ width: size, height: size }}>{name.replace(/^@/, '').charAt(0) || '?'}</span>;
+    ? <img src={src} alt='' width={size} height={size} className='shrink-0 rounded-full object-cover ring-1 ring-black/10' style={{ width: size, height: size }} />
+    : <span aria-hidden='true' className='flex shrink-0 items-center justify-center rounded-full bg-green-800 text-xs font-semibold uppercase text-white ring-1 ring-black/10' style={{ width: size, height: size }}>{name.replace(/^@/, '').charAt(0) || '?'}</span>;
 }
 
 // The header's: "Sign in", or your picture and handle (to your saved hikes)
