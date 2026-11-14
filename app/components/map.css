@@ -9,17 +9,18 @@ h1 {
 }
 
 .map-header {
-  height: 100px;
+  height: 56px;
 }
 
-.map-osm-mobile {
+/* The menu (MapMenu) is for phones; the header has the links on desktop. */
+.map-menu-button {
   display: none;
 }
 
 .map-wrap {
   position: relative;
   width: 100%;
-  height: calc(100dvh - 100px); /* calculate height of the screen minus the heading */
+  height: calc(100dvh - 56px); /* the screen, less the header */
 }
 
 /* Phones: no title bar. Search floats over the top of the map, and the map
@@ -34,8 +35,12 @@ h1 {
   }
   .map-header {
     height: 0;
-    position: relative;
+    padding: 0;
+    border: 0;
     z-index: 5;
+  }
+  .map-menu-button {
+    display: flex;
   }
   .map-header-title,
   .map-header-osm {
@@ -55,18 +60,6 @@ h1 {
   }
   .map-wrap {
     height: 100dvh;
-  }
-  /* The OSM link, bottom left above the scale bar; under the bottom sheet
-     (z-index 2) when that's open. */
-  .map-osm-mobile {
-    display: block;
-    position: absolute;
-    left: 10px;
-    bottom: 40px;
-    z-index: 1;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.9);
   }
   .map-wrap .maplibregl-ctrl-top-right,
   .map-wrap > button.absolute.top-3 {
