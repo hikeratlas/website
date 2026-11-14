@@ -53,7 +53,7 @@ export default function Person() {
       ? <p className='mt-2 text-stone-600'>{error}.</p>
       : <>
         <p className='mt-1 text-stone-600'>
-          {faves.length ? `${faves.length} faved ${faves.length === 1 ? 'hike' : 'hikes'}` : 'No faved hikes yet.'}{' '}
+          {faves.length ? `${faves.length} faved ${faves.length === 1 ? 'hike' : 'hikes'}.` : 'No faved hikes yet.'}{' '}
           Saved in {handle ? `@${handle}'s` : 'their'} own account (<code className='text-xs'>{FAVE}</code> records), so they can take them anywhere.
         </p>
         {faves.length > 0 && <ul className='mt-4 flex flex-col gap-2'>

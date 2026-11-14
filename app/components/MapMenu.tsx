@@ -30,7 +30,7 @@ export default function MapMenu({ map }: { map: MaplibreMap | null }) {
         </a>
         <a href='/' className='tap-row text-base text-stone-800'>Home</a>
         <div className='tap-row text-base'><AccountButton /></div>
-        <OsmLink map={map} label='Open in OpenStreetMap' className='tap-row inline-flex items-center gap-1 text-base text-stone-800' />
+        <div className='tap-row'><OsmLink map={map} label='Open in OpenStreetMap' className='inline-flex items-center gap-1 text-base text-stone-800' /></div>
         <a href='/terms' className='tap-row text-base text-stone-800'>Terms &amp; privacy</a>
       </nav>
     </div>}
