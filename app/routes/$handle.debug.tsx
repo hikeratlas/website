@@ -6,6 +6,7 @@
 // and as stored, malformed ones included.
 import { useEffect, useState, type ReactNode } from 'react';
 import type { MetaFunction } from 'react-router';
+import { deletePost } from '~/atproto/posts';
 import { FAVE, PROFILE, REVIEW, TRACK } from '~/atproto/scope';
 import { useProfile } from './$handle';
 
@@ -61,7 +62,23 @@ const A = ({ href, children }: { href: string; children: ReactNode }) =>
   <a href={href} target='_blank' rel='noreferrer' className={`${mono} break-all text-blue-700 hover:underline`}>{children}</a>;
 
 export default function Debug() {
-  const { did, pds, name } = useProfile();
+  const { did, pds, name, session } = useProfile();
+  // Your own page: deleting a record (any of them, as the PDS has it).
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const remove = async (nsid: string, r: Rec) => {
+    if (!session) return;
+    const self = nsid === PROFILE;
+    if (!window.confirm(`Delete ${r.uri}?\n\nThis can't be undone.${self ? ' Hiker Atlas writes a new profile record the next time you sign in.' : ''}`)) return;
+    setDeleting(r.uri);
+    try {
+      await deletePost(session, r.uri);
+      setCollections((cs) => cs!.map((c) => (c.nsid === nsid ? { ...c, records: (c.records ?? []).filter((x) => x.uri !== r.uri) } : c)));
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(null);
+    }
+  };
   const [collections, setCollections] = useState<Collection[] | null>(null);
   const [others, setOthers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +153,10 @@ export default function Debug() {
                 <A href={xrpc(pds, 'com.atproto.sync.getBlob', { did, cid: b.cid })}>{b.cid}</A>
                 <span className='text-stone-500'> {b.mimeType}{typeof b.size === 'number' ? `, ${b.size.toLocaleString('en-US')} bytes` : ''}</span></div>)}
               <pre className={`mt-1 overflow-x-auto rounded bg-white p-2 ${mono} leading-snug`}>{JSON.stringify(r.value, null, 2)}</pre>
+              {session && <button type='button' onClick={() => remove(c.nsid, r)} disabled={deleting === r.uri}
+                className='self-start rounded-lg border border-red-200 px-3 py-1 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50'>
+                {deleting === r.uri ? 'Deleting…' : 'Delete this record'}
+              </button>}
             </div>
           </details>;
         })}
