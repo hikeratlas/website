@@ -43,11 +43,16 @@ export default function MapMenu({ map }: { map: MaplibreMap | null }) {
             </svg>
           </button>
         </div>
+        {/* Signed in: who you are, as its own block (as Bluesky's drawer has
+            it), not a picture squeezed into a list item. */}
+        {at.status === 'in' && who && <a href={`/people/${encodeURIComponent(who)}`}
+          className='mb-2 flex items-center gap-3 border-b border-stone-200 pb-4'>
+          <Avatar src={at.avatar} name={at.handle ?? '?'} size={40} />
+          <span className='min-w-0 truncate text-base font-semibold text-stone-900'>@{at.handle ?? 'you'}</span>
+        </a>}
         <a href='/' className={item}>Home</a>
         {at.status === 'in' && who
-          ? <a href={`/people/${encodeURIComponent(who)}`} className={`${item} flex items-center gap-2`}>
-            <Avatar src={at.avatar} name={at.handle ?? '?'} />Your saved hikes
-          </a>
+          ? <a href={`/people/${encodeURIComponent(who)}`} className={item}>Your saved hikes</a>
           : at.status === 'out' && <button type='button' className={item} onClick={() => { setOpen(false); setAsking(true); }}>Sign in</button>}
         <a href='/terms' className={item}>Terms &amp; privacy</a>
         {/* The bottom line: Sign out, and (niche) this view on OpenStreetMap. */}
