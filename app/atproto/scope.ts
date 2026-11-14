@@ -6,14 +6,12 @@ export const FAVE = 'com.hikeratlas.temp.fave';
 export const TRACK = 'com.hikeratlas.temp.track';
 export const REVIEW = 'com.hikeratlas.temp.review';
 
-// What signing in asks for: writing these records in the user's own
-// repository, and uploading files (GPX traces, photos), which no permission
-// set can grant. Tracks and reviews are asked for now, though the site
-// doesn't write them yet, so nobody is asked again when it does.
-//
-// Once the lexicons are published (hikeratlas/atproto-lexicon's README), the
-// repo: parts become include:com.hikeratlas.authFull, a permission set: new collections
-// under com.hikeratlas.* (the stable names, too) then need no new approval.
-// The client metadata's scope is the most a sign-in may ask for, so it must
-// change before (or with) the sign-in's.
-export const OAUTH_SCOPE = ['atproto', ...[PROFILE, FAVE, TRACK, REVIEW].map((c) => `repo:${c}`), 'blob:*/*'].join(' ');
+// What signing in asks for: com.hikeratlas.authFull, Hiker Atlas's permission
+// set (published from hikeratlas/atproto-lexicon), which covers writing these
+// records in the user's own repository; and uploading files (GPX traces,
+// photos), which no permission set can grant. A PDS shows the set's title
+// and description when asking. New collections under com.hikeratlas.* (the
+// stable names, too) are added to the published set, and need no new
+// approval. The client metadata's scope is the most a sign-in may ask for:
+// it changes with the sign-in's (both read this).
+export const OAUTH_SCOPE = 'atproto include:com.hikeratlas.authFull blob:*/*';
