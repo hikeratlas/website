@@ -13,5 +13,7 @@ export const REVIEW = 'com.hikeratlas.temp.review';
 // and description when asking. New collections under com.hikeratlas.* (the
 // stable names, too) are added to the published set, and need no new
 // approval. The client metadata's scope is the most a sign-in may ask for:
-// it changes with the sign-in's (both read this).
+// it changes with the sign-in's (both read this). The Android app's client
+// metadata (oauth-android-client-metadata[.]json.ts) reads it too, and the
+// app asks for the same.
 export const OAUTH_SCOPE = 'atproto include:com.hikeratlas.authFull blob:*/*';
