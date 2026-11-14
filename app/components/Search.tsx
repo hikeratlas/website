@@ -28,11 +28,20 @@ export interface Item {
   ele?: number | null;
   km?: number | null;
   area?: number | null;
-  // A curated hike's climb (m) and type (day, base or multi); a park's number
-  // of curated hikes. From hikeratlas/basemap's search-add-hikes.py.
+  // A curated hike's climb (m) and type (day, base or multi); a park's or a
+  // state's number of curated hikes. From hikeratlas/basemap's
+  // search-add-hikes.py, which also adds states (kind 'state', basemap#318),
+  // their osm_id "<country slug>/<state slug>", their page under /hikes.
   gain?: number | null;
   hike?: string | null;
   hikes?: number | null;
+}
+
+// A state or province (basemap#318): what it's called there.
+function regionLabel(item: Item): string {
+  if (item.country === 'Canada') return /^(Yukon|Northwest Territories|Nunavut)$/.test(item.name) ? 'Territory' : 'Province';
+  if (item.name === 'District of Columbia') return 'District';
+  return 'State';
 }
 
 const HIKE_LABEL: Record<string, string> = { day: 'Day hike', base: 'Base camp', multi: 'Multi-day', stop: 'Stop' };
@@ -58,9 +67,15 @@ const KIND_LABEL: Record<string, string> = {
 // The second line of a result (#44): what it is or how big, then where:
 // "2,830 m · Jasper NP, Alberta", "12.4 km · Jasper NP, Alberta",
 // "Lake · 1.1 km² · Banff NP, Alberta", "Park · 14 hikes · Alberta",
-// "Multi-day · 36 km · ↑ 1,150 m · Sleeping Giant PP, Ontario".
+// "Multi-day · 36 km · ↑ 1,150 m · Sleeping Giant PP, Ontario",
+// "Province · 2,641 hikes · Canada".
 export function describe(item: Item): string {
   const what: string[] = [];
+  if (item.kind === 'state') {
+    what.push(regionLabel(item));
+    if (item.hikes) what.push(`${item.hikes.toLocaleString('en-US')} hike${item.hikes === 1 ? '' : 's'}`);
+    return [...what, item.country].filter(x => x).join(' · ');
+  }
   if (item.kind === 'peak') {
     if (item.ele) what.push(`${item.ele.toLocaleString('en-US')} m`);
   } else if (item.kind === 'trail') {
@@ -98,9 +113,10 @@ function kmBetween(a: LatLon, b: LatLon): number {
 }
 
 // "38 km away" for a result well away from where you're looking, so
-// same-named places can be told apart; nothing for ones nearby.
+// same-named places can be told apart; nothing for ones nearby, or for a
+// state (its middle is no measure of how far it is).
 export function away(item: Item, near: LatLon | null): string {
-  if (!near) return '';
+  if (!near || item.kind === 'state') return '';
   const km = kmBetween(near, item);
   if (km < 25) return '';
   return `${km < 100 ? Math.round(km) : Math.round(km / 10) * 10} km away`;

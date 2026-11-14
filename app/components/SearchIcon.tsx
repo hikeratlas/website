@@ -65,11 +65,23 @@ function Ridgeline() {
   );
 }
 
+// A folded map, for states and provinces: a region's page of hikes.
+function FoldedMap() {
+  return (
+    <svg viewBox="0 0 15 15" width={SIZE} height={SIZE} aria-hidden="true" fill="none" stroke="#4b5563"
+      strokeWidth="1.4" strokeLinejoin="round">
+      <path d="M1.5 3.5 5.5 2l4 1.5 4-1.5v9.5l-4 1.5-4-1.5-4 1.5z" />
+      <path d="M5.5 2v9.5M9.5 3.5V13" />
+    </svg>
+  );
+}
+
 export default function SearchIcon({ kind }: { kind: string }) {
   if (kind === 'trail') return <Path color="#991b1b" />;
   if (kind === 'hike') return <Path color="#c026d3" />;
   if (kind === 'park') return <Pine />;
   if (kind === 'peak') return <Ridgeline />;
+  if (kind === 'state') return <FoldedMap />;
   if (kind === 'lake' || kind === 'bay' || kind === 'strait') return <Waves />;
   const icon = MAKI[kind];
   if (!icon) return <svg viewBox="0 0 15 15" width={SIZE} height={SIZE} aria-hidden="true" />;

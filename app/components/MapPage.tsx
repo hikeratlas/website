@@ -266,6 +266,11 @@ export default function MapPage({ build, search, initial, summary }: Props) {
   const onSelect = (item: Item) => {
     if (!map)
       return;
+    // A state or province (basemap#318): its page, which fits the map to it.
+    if (item.kind === 'state') {
+      navigate(`/hikes/${item.osm_id}`);
+      return;
+    }
 
     let camera: JumpToOptions = { center: item, zoom: 13 };
     if (item.min_lon != null && item.min_lat != null && item.max_lon != null && item.max_lat != null) {
