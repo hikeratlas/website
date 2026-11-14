@@ -1,8 +1,7 @@
 // Phones: the map page has no title bar, so its links (home, your saved hikes
 // or signing in, terms; signing out and OpenStreetMap at the bottom) are in a
-// drawer, opened by the menu
-// button beside the search box. Closed by its ×, by tapping the map beside
-// it, or by Escape.
+// drawer, opened by the menu button beside the search box. Closed by its ×,
+// by tapping the map beside it, or by Escape.
 import { useEffect, useState } from 'react';
 import type { Map as MaplibreMap } from 'maplibre-gl';
 import { Avatar, SignInDialog } from '~/components/Account';
@@ -54,7 +53,7 @@ export default function MapMenu({ map }: { map: MaplibreMap | null }) {
         {/* The bottom line: Sign out, and (niche) this view on OpenStreetMap. */}
         <div className='mt-auto flex items-center justify-between'>
           {at.status === 'in'
-            ? <button type='button' className={item} onClick={() => { setOpen(false); signOut(); }}>Sign out</button>
+            ? <button type='button' className='tap text-left text-base text-blue-700 hover:underline' onClick={() => { setOpen(false); signOut(); }}>Sign out</button>
             : <span />}
           <OsmLink map={map} className='tap inline-flex items-center justify-end gap-0.5 text-sm text-blue-700 hover:underline' />
         </div>
