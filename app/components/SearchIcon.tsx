@@ -70,7 +70,7 @@ export default function SearchIcon({ kind }: { kind: string }) {
   if (kind === 'hike') return <Path color="#c026d3" />;
   if (kind === 'park') return <Pine />;
   if (kind === 'peak') return <Ridgeline />;
-  if (kind === 'lake') return <Waves />;
+  if (kind === 'lake' || kind === 'bay' || kind === 'strait') return <Waves />;
   const icon = MAKI[kind];
   if (!icon) return <svg viewBox="0 0 15 15" width={SIZE} height={SIZE} aria-hidden="true" />;
   return (
