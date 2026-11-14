@@ -73,5 +73,8 @@ export default function Person() {
           })}
         </ul>}
       </>}
+    <footer className='mt-8 border-t border-stone-200 pt-3 text-xs text-stone-500'>
+      <a href='/terms' className='hover:underline'>Terms of service</a> · <a href='/terms#privacy' className='hover:underline'>Privacy policy</a>
+    </footer>
   </main>;
 }
