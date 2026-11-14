@@ -3,6 +3,7 @@
 // button.
 import { useEffect, useRef, useState } from 'react';
 import { BLUESKY, signIn, signOut, useAtSession } from '~/atproto/session';
+import { profilePath } from '~/atproto/identity';
 import { isFaved, setFave } from '~/atproto/faves';
 import { routeKey, shapeFor } from '~/atproto/routeKey';
 
@@ -63,7 +64,7 @@ export function Avatar({ src, name, size = 26 }: { src: string | null; name: str
     : <span aria-hidden='true' className='flex shrink-0 items-center justify-center rounded-full bg-green-800 text-xs font-semibold uppercase text-white ring-1 ring-black/10' style={{ width: size, height: size }}>{name.replace(/^@/, '').charAt(0) || '?'}</span>;
 }
 
-// The header's: "Sign in", or your picture and handle (to your saved hikes)
+// The header's: "Sign in", or your picture and handle (to your page)
 // and "Sign out". On phones, just the picture (a handle can be long); the
 // map's menu has Sign out there.
 export function AccountButton() {
@@ -76,9 +77,9 @@ export function AccountButton() {
       {open && <SignInDialog onClose={() => setOpen(false)} />}
     </>;
   }
-  const who = at.handle ?? at.did;
+  // To your page once your handle is known (its address).
   return <span className='flex items-center gap-2 text-sm'>
-    <a href={`/people/${encodeURIComponent(who)}`} title='Your saved hikes' className='flex items-center gap-1.5 text-blue-700 hover:underline'>
+    <a href={at.handle ? profilePath(at.handle) : undefined} title='Your hikes' className='flex items-center gap-1.5 text-blue-700 hover:underline'>
       <Avatar src={at.avatar} name={at.handle ?? '?'} />
       <span className='hidden sm:inline'>@{at.handle ?? 'you'}</span>
     </a>

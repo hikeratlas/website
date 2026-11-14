@@ -9,6 +9,7 @@ import { ElevationChart, type Mark } from './RoutePlanner';
 import RouteReportsList from './RouteReports';
 import { TerrainBar } from './ParkSheet';
 import { FaveButton } from '~/components/Account';
+import { PostButton } from '~/components/PostDialog';
 
 const m = (n: number) => `${Math.round(n).toLocaleString('en-US')} m`;
 
@@ -132,6 +133,8 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
     </section>}
 
     {children}
+
+    <PostButton title={title} line={r.line} shape={shape} />
 
     <RouteReportsList reports={reports} dest={dest} />
 
