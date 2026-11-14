@@ -8,6 +8,7 @@ import { data, useLoaderData, type LoaderFunctionArgs, type MetaFunction } from 
 import { buildFor } from '~/build';
 import { describeDid, isDid, resolveHandle } from '~/atproto/identity';
 import { listFaves, type Fave } from '~/atproto/faves';
+import { signOut, useAtSession } from '~/atproto/session';
 import { findRoutes, type Found } from '~/atproto/findRoutes';
 
 // Route keys are recipe v1's (hikeratlas/route-keys: a cell part, a dot, an
@@ -34,8 +35,12 @@ export const meta: MetaFunction<typeof loader> = ({ loaderData }) => {
 const day = (s: string) => (s ? new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
 export default function Person() {
-  const { who, build, handle, faves, error } = useLoaderData<typeof loader>();
+  const { who, did, build, handle, faves, error } = useLoaderData<typeof loader>();
   const name = handle ?? who;
+  // Your own page: where you sign out on a phone (the header shows only your
+  // picture there).
+  const at = useAtSession();
+  const mine = at.status === 'in' && !!did && at.did === did;
   // Which hikes the faves are, once found: null while looking.
   const [found, setFound] = useState<Map<string, Found> | null>(null);
   useEffect(() => {
@@ -48,6 +53,7 @@ export default function Person() {
   }, [build, faves]);
   return <main className='frame'>
     <h1>@{name}</h1>
+    {mine && <p><button type='button' onClick={() => signOut()} className='text-sm text-blue-700 hover:underline'>Sign out</button></p>}
     {error
       ? <p className='mt-2 text-stone-600'>{error}.</p>
       : <>
