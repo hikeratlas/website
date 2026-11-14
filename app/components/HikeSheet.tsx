@@ -10,6 +10,8 @@ import RouteReportsList from './RouteReports';
 import { TerrainBar } from './ParkSheet';
 import { FaveButton } from '~/components/Account';
 import { PostButton } from '~/components/PostDialog';
+import { FromHikers, RouteCounts, useRouteStats } from '~/components/FromHikers';
+import { useRouteKey } from '~/atproto/routeKey';
 import { distanceValue, useFormat } from '~/units';
 
 const KIND_NAMES: Record<string, string> = {
@@ -45,6 +47,9 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
   // What it passes: in order and numbered, from builds that say where.
   const feats = alongOf(r);
   const [shared, setShared] = useState(false);
+  // Everyone's posts about it, from the indexer, by its route key.
+  const key = useRouteKey(r.line, shape);
+  const stats = useRouteStats(key);
   const start = r.line[0];
   const share = async () => {
     const url = window.location.href;
@@ -78,6 +83,7 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
       <span className={`mt-px shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${DIFF_COLORS[diff]}`}>{diff}</span>
       {sac > 0 && <span>{SAC_WORDS[sac] ?? `SAC T${sac}`}</span>}
     </div>
+    <RouteCounts stats={stats} />
     {sac >= 4 && <div className='rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900'>
       Includes scrambling (SAC T4, alpine hiking): expect to use your hands on rock, exposed sections, and possibly snow. Some sections may need route-finding.
     </div>}
@@ -137,6 +143,8 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
     {children}
 
     <PostButton title={title} line={r.line} shape={shape} />
+
+    {key && <FromHikers routeKey={key} stats={stats} />}
 
     <RouteReportsList reports={reports} dest={dest} />
 
