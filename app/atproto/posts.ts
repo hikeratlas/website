@@ -27,7 +27,10 @@ export const tagLabel = (t: string) => TAGS.find(([k]) => k === t)?.[1] ?? t;
 
 export interface BlobRef { $type: 'blob'; ref: { $link: string }; mimeType: string; size: number }
 export interface StrongRef { uri: string; cid: string }
-export interface Photo { image: BlobRef; alt?: string; takenAt?: string }
+export interface Photo { image: BlobRef; alt?: string; takenAt?: string; at?: { lat: number; lon: number } }
+
+// Degrees as the lexicon's integer microdegrees (defs#point).
+const micro = (x: number) => Math.round(x * 1e6);
 
 async function call(session: OAuthSession, method: string, body: unknown): Promise<Response> {
   const r = await session.fetchHandler(`/xrpc/${method}`, {
@@ -53,7 +56,10 @@ async function uploadPhotos(session: OAuthSession, photos: (PreparedPhoto & { al
   const out: Photo[] = [];
   for (const p of photos) {
     const image = await uploadBlob(session, p.blob, 'image/jpeg');
-    out.push({ image, ...(p.alt ? { alt: p.alt } : {}), ...(p.takenAt ? { takenAt: p.takenAt } : {}) });
+    out.push({
+      image, ...(p.alt ? { alt: p.alt } : {}), ...(p.takenAt ? { takenAt: p.takenAt } : {}),
+      ...(p.lat !== null && p.lon !== null ? { at: { lat: micro(p.lat), lon: micro(p.lon) } } : {}),
+    });
   }
   return out;
 }

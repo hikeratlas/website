@@ -128,6 +128,28 @@ export function lines(text: string, n = 400): [number, number][][] {
   return segs.map((s) => s.filter((_, i) => i % step === 0 || i === s.length - 1).map((p) => [p.lon, p.lat]));
 }
 
+// Where the trace was at a time (ISO), between the two points either side
+// of it; null if the trace has no times, or the time is more than SLACK
+// outside it or in a gap of more than GAP (a pause between segments, a
+// night). For placing a photo without GPS by when it was taken.
+const SLACK = 10 * 60_000, GAP = 30 * 60_000;
+export function locate(text: string, when: string): { lon: number; lat: number } | null {
+  const t = Date.parse(when);
+  if (!Number.isFinite(t)) return null;
+  const pts = byName(parse(text), 'trkseg').flatMap(pointsOf).filter((p) => p.time !== null)
+    .sort((a, b) => a.time! - b.time!);
+  if (!pts.length) return null;
+  if (t <= pts[0].time!) return pts[0].time! - t <= SLACK ? { lon: pts[0].lon, lat: pts[0].lat } : null;
+  const last = pts[pts.length - 1];
+  if (t >= last.time!) return t - last.time! <= SLACK ? { lon: last.lon, lat: last.lat } : null;
+  let lo = 0, hi = pts.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pts[mid].time! <= t) lo = mid; else hi = mid; }
+  const a = pts[lo], b = pts[hi];
+  if (b.time! - a.time! > GAP) return null;
+  const f = b.time! === a.time! ? 0 : (t - a.time!) / (b.time! - a.time!);
+  return { lon: a.lon + (b.lon - a.lon) * f, lat: a.lat + (b.lat - a.lat) * f };
+}
+
 async function pipe(bytes: Uint8Array, t: CompressionStream | DecompressionStream): Promise<Uint8Array> {
   const s = new Blob([bytes as BlobPart]).stream().pipeThrough(t);
   return new Uint8Array(await new Response(s).arrayBuffer());

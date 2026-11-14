@@ -5,7 +5,7 @@
 // one. Photos go on the review, or on the track if there's no review.
 import { useEffect, useRef, useState } from 'react';
 import { describeDid } from '~/atproto/identity';
-import { combine, stats, type GpxStats } from '~/atproto/gpx';
+import { combine, locate, stats, type GpxStats } from '~/atproto/gpx';
 import { preparePhoto, type PreparedPhoto } from '~/atproto/photos';
 import { DEFAULT_LICENSE, getSettings, publishReview, publishTrack, TAGS, type StrongRef } from '~/atproto/posts';
 import { routeKey, shapeFor } from '~/atproto/routeKey';
@@ -57,7 +57,17 @@ export function PostButton({ title, line, shape }: { title: string; line: [numbe
   </section>;
 }
 
-interface Picked { file: File; url: string; prepared: Promise<PreparedPhoto>; alt: string }
+// A photo picked: its upload being prepared, and once it is, whether its
+// EXIF says where it was taken (else its time on the track may).
+function whereText(p: Picked, track: string | null): string {
+  if (!p.info) return 'Reading…';
+  if (p.info === 'failed') return 'Can’t read this photo';
+  if (p.info.lat !== null) return 'Location from the photo';
+  if (p.info.takenAt && track && locate(track, p.info.takenAt)) return 'Placed on your track by its time';
+  return p.info.takenAt ? 'No location (add your GPX track to place it)' : 'No location';
+}
+
+interface Picked { file: File; url: string; prepared: Promise<PreparedPhoto>; alt: string; info?: PreparedPhoto | 'failed' }
 
 function PostDialog({ title, line, shape, onClose }: { title: string; line: [number, number][]; shape: string; onClose: () => void }) {
   const at = useAtSession();
@@ -114,9 +124,12 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
   const pickPhotos = (files: FileList | null) => {
     const add = Array.from(files ?? []).filter((f) => f.type.startsWith('image/')).slice(0, MAX_PHOTOS - photos.length)
       .map((file) => ({ file, url: URL.createObjectURL(file), prepared: preparePhoto(file), alt: '' }));
-    // Don't let a failed one reject unobserved; it fails the post instead.
-    add.forEach((p) => p.prepared.catch(() => {}));
     setPhotos([...photos, ...add]);
+    // Each one's location, once read (a failed one fails the post instead).
+    for (const a of add) {
+      a.prepared.then((info) => info, () => 'failed' as const).then((info) =>
+        setPhotos((ps) => ps.map((q) => (q.url === a.url ? { ...q, info } : q))));
+    }
   };
 
   const canPost = !!session && !!pds && !!key && (text.trim().length > 0 || !!gpx) && !busy && text.length <= MAX_TEXT;
@@ -125,7 +138,12 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
     setError(null);
     try {
       setBusy(photos.length ? 'Preparing photos…' : 'Posting…');
-      const ready = await Promise.all(photos.map(async (p) => ({ ...(await p.prepared), alt: p.alt.trim() || undefined })));
+      // A photo without GPS is placed by its time on the track, if any.
+      const ready = await Promise.all(photos.map(async (p) => {
+        const r = { ...(await p.prepared), alt: p.alt.trim() || undefined };
+        const at = r.lat === null && r.takenAt && gpx ? locate(gpx.text, r.takenAt) : null;
+        return at ? { ...r, lat: at.lat, lon: at.lon } : r;
+      }));
       const review = text.trim().length > 0;
       let track: StrongRef | undefined;
       if (gpx) {
@@ -201,16 +219,19 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
           {photos.length > 0 && <ul className='flex flex-col gap-2'>
             {photos.map((p, i) => <li key={p.url} className='flex items-center gap-2'>
               <img src={p.url} alt='' className='h-14 w-14 shrink-0 rounded-lg object-cover' />
-              <input value={p.alt} placeholder='Describe it (for people who can’t see it)' aria-label={`Description of photo ${i + 1}`}
-                onChange={(e) => setPhotos(photos.map((q, j) => (j === i ? { ...q, alt: e.target.value } : q)))}
-                className='h-10 min-w-0 flex-1 rounded-lg border border-stone-300 px-2 text-sm' />
+              <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
+                <input value={p.alt} placeholder='Describe it (for people who can’t see it)' aria-label={`Description of photo ${i + 1}`}
+                  onChange={(e) => setPhotos(photos.map((q, j) => (j === i ? { ...q, alt: e.target.value } : q)))}
+                  className='h-10 min-w-0 rounded-lg border border-stone-300 px-2 text-sm' />
+                <span className={`text-xs ${p.info === 'failed' ? 'text-red-700' : 'text-stone-500'}`}>{whereText(p, gpx?.text ?? null)}</span>
+              </div>
               <button type='button' aria-label={`Remove photo ${i + 1}`} onClick={() => setPhotos(photos.filter((_, j) => j !== i))}
                 className='h-10 w-10 shrink-0 rounded-lg text-stone-500 hover:bg-stone-100'>×</button>
             </li>)}
           </ul>}
           {photos.length < MAX_PHOTOS && <input type='file' accept='image/*' multiple onChange={(e) => { pickPhotos(e.target.files); e.target.value = ''; }}
             className='text-sm file:mr-3 file:h-10 file:rounded-lg file:border file:border-stone-300 file:bg-white file:px-3 file:text-sm file:font-semibold' />}
-          <span className='text-xs text-stone-500'>Their location data is removed.</span>
+          <span className='text-xs text-stone-500'>Photos keep where and when they were taken (their EXIF), so others can see the place. Photos without a location are placed by their time on your GPX track.</span>
         </div>
 
         <div className='flex flex-col gap-1'>
