@@ -76,11 +76,14 @@ export default function Profile() {
     {error
       ? <p className='mt-2 text-stone-600'>{error}.</p>
       : <>
-        {/* Settings are only yours to see. */}
-        {mine && <nav aria-label='Your page' className='mt-4 flex gap-5 border-b border-stone-200'>
+        {/* Settings are only yours to see; Debug (their raw records) is for
+            developers, so small and out on the right. */}
+        <nav aria-label={mine ? 'Your page' : `@${name}`} className='mt-4 flex items-end gap-5 border-b border-stone-200'>
           <NavLink to={base} end className={tab}>Overview</NavLink>
-          <NavLink to={`${base}/settings`} className={tab}>Settings</NavLink>
-        </nav>}
+          {mine && <NavLink to={`${base}/settings`} className={tab}>Settings</NavLink>}
+          <NavLink to={`${base}/debug`} className={({ isActive }) =>
+            `-mb-px ml-auto border-b-2 px-1 pb-2 text-xs ${isActive ? 'border-stone-500 text-stone-700' : 'border-transparent text-stone-400 hover:text-stone-600'}`}>Debug</NavLink>
+        </nav>
         <Outlet />
       </>}
   </main>;
