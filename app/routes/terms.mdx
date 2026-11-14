@@ -37,7 +37,7 @@ anything that happens from using it, as far as the law allows.
 
 ## Things you post are public
 
-Hiker Atlas's community features, like faving a hike and (in future) reviews
+Hiker Atlas's community features, like faving a hike and posting reviews
 and GPS tracks, work through your
 [AT Protocol](https://atproto.com) account: the same kind of account as
 [Bluesky](https://bsky.app).
@@ -51,6 +51,19 @@ and GPS tracks, work through your
   data), so others can see the place; a photo without a location is placed
   by its time on your track, if you post one. Remove a photo's location
   before posting it if you'd rather not share it.
+- **Hike pages show everyone's posts.** To show a hike's faves, reviews and
+  tracks, Hiker Atlas keeps an index of public Hiker Atlas records, read from
+  people's own accounts (its code is
+  [on GitHub](https://github.com/hikeratlas/atproto-indexer)). The index is a
+  copy: it's rebuilt from people's accounts, never backed up, and a record you
+  delete leaves it within minutes. Photos and GPS tracks aren't copied into
+  it; they're loaded from your account's server. Fave counts include only
+  people who have signed in to Hiker Atlas.
+- **You can report a post** that shouldn't be here, with its "Report" link,
+  at [hikeratlas/feedback](https://github.com/hikeratlas/feedback). Reports
+  are public. A post Hiker Atlas acts on is hidden from Hiker Atlas; it stays
+  in its author's account, which only they or their account's server can
+  change.
 - **You can delete them,** in Hiker Atlas (tap the heart again to unfave) or
   directly through your account's server. As on any public network, copies
   other services made while a record was public may outlive its deletion.
@@ -95,7 +108,10 @@ and GPS tracks, work through your
   device.
 - **The services the site uses see the usual details of each request,** like
   your IP address and browser:
-  - Hiker Atlas's hosting (Cloudflare) serves the site, its maps and its routes.
+  - Hiker Atlas's hosting (Cloudflare) serves the site, its maps and its
+    routes, and its index of posts.
+  - Photos and GPS tracks on hike pages come from their authors' account
+    servers.
   - Search goes to Hiker Atlas's search service (on Amazon Web Services). It
     sends what you typed and roughly where the map is (to about 100 m), to
     rank nearby results first.
