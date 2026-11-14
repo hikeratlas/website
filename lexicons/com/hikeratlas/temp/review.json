@@ -1,0 +1,74 @@
+{
+  "lexicon": 1,
+  "id": "com.hikeratlas.temp.review",
+  "description": "A review of a hike someone did, on Hiker Atlas (https://www.hikeratlas.com). In beta: may change.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "text",
+          "createdAt"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxGraphemes": 3000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "hikedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When they did the hike."
+          },
+          "routeKey": {
+            "type": "ref",
+            "ref": "com.hikeratlas.temp.defs#routeKey"
+          },
+          "track": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "Their com.hikeratlas.temp.track record of the hike, if any."
+          },
+          "tags": {
+            "type": "array",
+            "maxLength": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "knownValues": [
+                "snow",
+                "ice",
+                "mud",
+                "washout",
+                "blowdown",
+                "bugs",
+                "crowded",
+                "quiet",
+                "views",
+                "wildflowers",
+                "fall-colours",
+                "wildlife",
+                "water-crossing",
+                "closed"
+              ]
+            }
+          },
+          "photos": {
+            "type": "array",
+            "maxLength": 20,
+            "items": {
+              "type": "ref",
+              "ref": "com.hikeratlas.temp.defs#photo"
+            }
+          }
+        }
+      }
+    }
+  }
+}

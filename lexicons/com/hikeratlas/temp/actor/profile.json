@@ -1,16 +1,44 @@
 {
   "lexicon": 1,
   "id": "com.hikeratlas.temp.actor.profile",
-  "description": "That an account uses Hiker Atlas (https://www.hikeratlas.com), and its settings there. Written when someone first signs in; indexers find Hiker Atlas's users by it.",
+  "description": "That an account uses Hiker Atlas (https://www.hikeratlas.com), and its settings there. Written when someone first signs in, and never overwritten; indexers find Hiker Atlas's users by it. In beta: may change.",
   "defs": {
     "main": {
       "type": "record",
       "key": "literal:self",
       "record": {
         "type": "object",
-        "required": ["createdAt"],
+        "required": [
+          "createdAt"
+        ],
         "properties": {
-          "createdAt": { "type": "string", "format": "datetime" }
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "units": {
+            "type": "ref",
+            "ref": "#units"
+          }
+        }
+      }
+    },
+    "units": {
+      "type": "object",
+      "properties": {
+        "distance": {
+          "type": "string",
+          "knownValues": [
+            "km",
+            "mi"
+          ]
+        },
+        "elevation": {
+          "type": "string",
+          "knownValues": [
+            "m",
+            "ft"
+          ]
         }
       }
     }

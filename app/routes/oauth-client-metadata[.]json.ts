@@ -1,7 +1,12 @@
 // The site's OAuth client metadata (atproto OAuth): its client_id is this
 // file's own URL, so each origin (the live site, each preview) is a client
-// of its own. A browser-only ("public") client, asking only to write
-// Hiker Atlas faves (lexicons/com/hikeratlas/temp/fave.json).
+// of its own. The live site's, https://www.hikeratlas.com/oauth-client-metadata.json,
+// is Hiker Atlas's identity to every PDS: sessions and approvals are bound
+// to it, so it must never change (hikeratlas.com redirects to www).
+//
+// A browser-only ("public") client: no secret, so sessions last at most two
+// weeks (atproto's limit for public clients). Asking to write Hiker Atlas's
+// records and upload files (scope.ts).
 import type { LoaderFunctionArgs } from 'react-router';
 import { OAUTH_SCOPE } from '~/atproto/scope';
 

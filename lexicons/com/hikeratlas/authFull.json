@@ -1,0 +1,23 @@
+{
+  "lexicon": 1,
+  "id": "com.hikeratlas.authFull",
+  "defs": {
+    "main": {
+      "type": "permission-set",
+      "title": "Hiker Atlas",
+      "detail": "Save your faved hikes, GPS tracks and reviews to your account, as Hiker Atlas records.",
+      "permissions": [
+        {
+          "type": "permission",
+          "resource": "repo",
+          "collection": [
+            "com.hikeratlas.temp.actor.profile",
+            "com.hikeratlas.temp.fave",
+            "com.hikeratlas.temp.track",
+            "com.hikeratlas.temp.review"
+          ]
+        }
+      ]
+    }
+  }
+}

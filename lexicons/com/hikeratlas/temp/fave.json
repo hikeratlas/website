@@ -1,31 +1,23 @@
 {
   "lexicon": 1,
   "id": "com.hikeratlas.temp.fave",
-  "description": "A hike someone likes or wants to do, on Hiker Atlas (https://www.hikeratlas.com).",
+  "description": "A route someone faved on Hiker Atlas (https://www.hikeratlas.com); what a fave means is up to them. In beta: may change.",
   "defs": {
     "main": {
       "type": "record",
-      "description": "One per hike: its record key is derived from the hike's key, so faving it again replaces it.",
       "key": "any",
+      "description": "The record key is the route's routeKey (com.hikeratlas.temp.defs#routeKey): faving it again replaces the record, and the record holds only when.",
       "record": {
         "type": "object",
-        "required": ["subject", "createdAt"],
+        "required": [
+          "createdAt"
+        ],
         "properties": {
-          "subject": { "type": "ref", "ref": "#hike" },
-          "createdAt": { "type": "string", "format": "datetime" }
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
         }
-      }
-    },
-    "hike": {
-      "type": "object",
-      "description": "A curated hike, as Hiker Atlas named it when faved. Hikes are rebuilt from OpenStreetMap, so this carries enough to find it again.",
-      "required": ["uri", "title"],
-      "properties": {
-        "uri": { "type": "string", "format": "uri", "description": "Its page on Hiker Atlas." },
-        "title": { "type": "string", "maxLength": 300 },
-        "key": { "type": "string", "maxLength": 1000, "description": "Its key in hikeratlas/routes: park, kind, trailhead, destination and shape." },
-        "park": { "type": "string", "maxLength": 300, "description": "The park it's in." },
-        "parkId": { "type": "string", "maxLength": 64, "description": "The park's OpenStreetMap id." }
       }
     }
   }

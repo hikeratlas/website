@@ -325,7 +325,7 @@ export default function CuratedRoutes(props: Props) {
   const [prof, setProf] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The selected route's pages on other sites (trip reports), once loaded.
-  const [reps, setReps] = useState<{ id: string; reports: RouteReports | null; dest?: string; key?: string; park?: string; parkId?: string } | null>(null);
+  const [reps, setReps] = useState<{ id: string; reports: RouteReports | null; dest?: string } | null>(null);
   // A list of routes to pick from (see Item), and whether it's showing or a
   // route's details are.
   const [list, setList] = useState<List | null>(null);
@@ -628,7 +628,7 @@ export default function CuratedRoutes(props: Props) {
       .then(async (doc) => {
         const all = await reportsFor(build, String(doc.park?.id ?? park));
         const { key, dest } = reportsKey(doc, sel.id);
-        if (live) setReps({ id: sel.id, reports: all?.[key] ?? null, dest, key, park: doc.park?.name, parkId: doc.park?.id != null ? String(doc.park.id) : undefined });
+        if (live) setReps({ id: sel.id, reports: all?.[key] ?? null, dest });
       })
       .catch(() => { if (live) setReps({ id: sel.id, reports: null }); });
     return () => { live = false; };
@@ -718,7 +718,6 @@ export default function CuratedRoutes(props: Props) {
     {mode === 'detail' && r && sel && <HikeSheet title={sel.title} route={r} shape={sel.shape} why={sel.why} prof={prof}
       reports={reps?.id === sel.id ? reps.reports : null} dest={reps?.id === sel.id ? reps.dest : undefined}
       campLabel={sel.base && !sel.id.split('/')[3] ? 'Camp' : 'Campsites along it'}
-      fave={reps?.id === sel.id && reps.key ? { title: sel.title, key: reps.key, park: reps.park, parkId: reps.parkId } : null}
       onHover={(c) => setData('curated-hover', c ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } } : EMPTY)}>
       {sel.base && <section>
         <h2 className='font-display text-base font-bold'>From {sel.base.camp}</h2>

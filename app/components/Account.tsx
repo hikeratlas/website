@@ -3,7 +3,8 @@
 // button.
 import { useEffect, useRef, useState } from 'react';
 import { BLUESKY, signIn, signOut, useAtSession } from '~/atproto/session';
-import { isFaved, setFave, type FaveSubject } from '~/atproto/faves';
+import { isFaved, setFave } from '~/atproto/faves';
+import { routeKey, shapeFor } from '~/atproto/routeKey';
 
 export function SignInDialog({ onClose, why }: { onClose: () => void; why?: string }) {
   const [other, setOther] = useState(false);
@@ -72,33 +73,39 @@ export function AccountButton() {
 }
 
 // The hike sheet's: a heart, saving the hike to your faves (or signing in
-// first).
-export function FaveButton({ subject: hike }: { subject: Omit<FaveSubject, 'uri'> }) {
-  // Its page: the map page's URL, which follows the hike open.
-  const subject: FaveSubject = { ...hike, uri: `https://www.hikeratlas.com${typeof window === 'undefined' ? '' : window.location.pathname}` };
+// first). A fave is of its route's key, made from its line and shape.
+export function FaveButton({ title, line, shape }: { title: string; line: [number, number][]; shape: string }) {
   const at = useAtSession();
+  const [key, setKey] = useState<string | null>(null);
   const [faved, setFaved] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const session = at.status === 'in' ? at.session : null;
   useEffect(() => {
-    setFaved(null);
-    if (!session) return;
     let live = true;
-    isFaved(session, subject.key).then((f) => { if (live) setFaved(f); }).catch(() => {});
+    setKey(null);
+    routeKey(line, shapeFor(shape)).then((k) => { if (live) setKey(k); }).catch(() => {});
     return () => { live = false; };
-  }, [session, subject.key]);
+  }, [line, shape]);
+  useEffect(() => {
+    setFaved(null);
+    if (!session || !key) return;
+    let live = true;
+    isFaved(session, key).then((f) => { if (live) setFaved(f); }).catch(() => {});
+    return () => { live = false; };
+  }, [session, key]);
   const toggle = async () => {
     if (!session) { setAsking(true); return; }
+    if (!key) return;
     const on = !faved;
     setBusy(true); setError(null); setFaved(on);
-    try { await setFave(session, subject, on); }
+    try { await setFave(session, key, on); }
     catch (e) { setFaved(!on); setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
   return <>
-    <button type='button' onClick={toggle} disabled={busy || at.status === 'loading'} aria-pressed={!!faved}
+    <button type='button' onClick={toggle} disabled={busy || at.status === 'loading' || (!!session && !key)} aria-pressed={!!faved}
       title={faved ? 'Remove from your faves' : 'Save to your faves'}
       className={`tap flex h-11 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold ${faved ? 'border-rose-300 bg-rose-50 text-rose-700' : 'border-stone-300 hover:bg-stone-50'}`}>
       <svg viewBox='0 0 24 24' className='h-5 w-5' fill={faved ? 'currentColor' : 'none'} stroke='currentColor' strokeWidth='2' strokeLinejoin='round' aria-hidden='true'>
@@ -107,6 +114,6 @@ export function FaveButton({ subject: hike }: { subject: Omit<FaveSubject, 'uri'
       <span className='sr-only'>{faved ? 'Faved' : 'Fave'}</span>
     </button>
     {error && <span role='alert' className='basis-full text-sm text-red-700'>{error}</span>}
-    {asking && <SignInDialog onClose={() => setAsking(false)} why={`Sign in to save ${subject.title} to your faves.`} />}
+    {asking && <SignInDialog onClose={() => setAsking(false)} why={`Sign in to save ${title} to your faves.`} />}
   </>;
 }

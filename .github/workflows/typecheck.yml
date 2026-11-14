@@ -1,7 +1,9 @@
 name: Typecheck
 
-# Fails a PR that introduces a TypeScript error. tsc should stay at zero
-# errors so a new one stands out.
+# Fails a PR that introduces a TypeScript error (tsc should stay at zero
+# errors, so a new one stands out), or breaks a test: route keys
+# (app/atproto/routeKey.ts) against the reference implementation's
+# (lexicons/route_key.py), and that against its test vectors.
 on:
   pull_request:
   push:
@@ -19,3 +21,8 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
+      - run: npm test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'h3>=4.1,<5' && python3 lexicons/route_key.py check lexicons/route_key_vectors.json
