@@ -71,7 +71,8 @@ export default function Profile() {
   const base = profilePath(name);
   return <main className='frame'>
     <h1>@{name}</h1>
-    {mine && <p><button type='button' onClick={() => signOut()} className='text-sm text-blue-700 hover:underline'>Sign out</button></p>}
+    {/* Phones only: the header has Sign out on wider screens. */}
+    {mine && <p className='sm:hidden'><button type='button' onClick={() => signOut()} className='text-sm text-blue-700 hover:underline'>Sign out</button></p>}
     {error
       ? <p className='mt-2 text-stone-600'>{error}.</p>
       : <>
