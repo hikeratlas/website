@@ -8,6 +8,7 @@ import { DIFF_COLORS, SAC_WORDS, TERRAIN_COLORS, TERRAIN_TITLES, difficulty, gpx
 import { ElevationChart, type Mark } from './RoutePlanner';
 import RouteReportsList from './RouteReports';
 import { TerrainBar } from './ParkSheet';
+import { FaveButton } from '~/components/Account';
 
 const m = (n: number) => `${Math.round(n).toLocaleString('en-US')} m`;
 
@@ -140,6 +141,7 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
         className='tap flex h-11 flex-1 items-center justify-center rounded-xl bg-green-900 text-sm font-semibold text-white hover:bg-green-800'>Directions to the trailhead</a>
       <button type='button' onClick={download} className='tap h-11 rounded-xl border border-stone-300 px-4 text-sm font-semibold hover:bg-stone-50'>GPX</button>
       <button type='button' onClick={share} className='tap h-11 rounded-xl border border-stone-300 px-4 text-sm font-semibold hover:bg-stone-50'>{shared ? 'Copied' : 'Share'}</button>
+      <FaveButton title={title} line={r.line} shape={shape} />
     </div>
   </div>;
 }
