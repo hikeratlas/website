@@ -47,9 +47,8 @@ export default function Person() {
       .catch(() => { if (live) setFound(new Map()); });
     return () => { live = false; };
   }, [build, faves]);
-  return <main className='mx-auto max-w-2xl px-4 py-6 font-sans text-stone-900'>
-    <a href='/map' className='text-sm text-blue-700 hover:underline'>← Hiker Atlas</a>
-    <h1 className='mt-2 font-display text-3xl font-extrabold'>@{name}</h1>
+  return <main className='frame'>
+    <h1>@{name}</h1>
     {error
       ? <p className='mt-2 text-stone-600'>{error}.</p>
       : <>
@@ -57,7 +56,7 @@ export default function Person() {
           {faves.length ? `${faves.length} faved ${faves.length === 1 ? 'hike' : 'hikes'}` : 'No faved hikes yet.'}{' '}
           Saved in {handle ? `@${handle}'s` : 'their'} own account (<code className='text-xs'>{FAVE}</code> records), so they can take them anywhere.
         </p>
-        {faves.length > 0 && <ul className='mt-4 flex flex-col gap-2'>
+        {faves.length > 0 && <ul className='mt-4 ml-0 flex list-none flex-col gap-2'>
           {faves.map((f) => {
             const h = found?.get(f.key);
             return <li key={f.key} className='rounded-xl border border-stone-200 bg-white p-3'>
@@ -73,8 +72,5 @@ export default function Person() {
           })}
         </ul>}
       </>}
-    <footer className='mt-8 border-t border-stone-200 pt-3 text-xs text-stone-500'>
-      <a href='/terms' className='hover:underline'>Terms of service</a> · <a href='/terms#privacy' className='hover:underline'>Privacy policy</a>
-    </footer>
   </main>;
 }
