@@ -1,5 +1,6 @@
 // Phones: the map page has no title bar, so its links (home, your saved hikes
-// or signing in, OpenStreetMap, terms) are in a drawer, opened by the menu
+// or signing in, terms; signing out and OpenStreetMap at the bottom) are in a
+// drawer, opened by the menu
 // button beside the search box. Closed by its ×, by tapping the map beside
 // it, or by Escape.
 import { useEffect, useState } from 'react';
@@ -49,9 +50,14 @@ export default function MapMenu({ map }: { map: MaplibreMap | null }) {
             <Avatar src={at.avatar} name={at.handle ?? '?'} />Your saved hikes
           </a>
           : at.status === 'out' && <button type='button' className={item} onClick={() => { setOpen(false); setAsking(true); }}>Sign in</button>}
-        <div className='tap-row'><OsmLink map={map} label='Open in OpenStreetMap' className='inline-flex items-center gap-1 text-base text-blue-700 hover:underline' /></div>
         <a href='/terms' className={item}>Terms &amp; privacy</a>
-        {at.status === 'in' && <button type='button' className={`${item} mt-auto`} onClick={() => { setOpen(false); signOut(); }}>Sign out</button>}
+        {/* The bottom line: Sign out, and (niche) this view on OpenStreetMap. */}
+        <div className='mt-auto flex items-center justify-between'>
+          {at.status === 'in'
+            ? <button type='button' className={item} onClick={() => { setOpen(false); signOut(); }}>Sign out</button>
+            : <span />}
+          <OsmLink map={map} className='tap inline-flex items-center justify-end gap-0.5 text-sm text-blue-700 hover:underline' />
+        </div>
       </nav>
     </div>}
     {asking && <SignInDialog onClose={() => setAsking(false)} />}
