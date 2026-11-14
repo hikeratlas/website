@@ -77,9 +77,9 @@ export function AccountButton() {
       {open && <SignInDialog onClose={() => setOpen(false)} />}
     </>;
   }
-  const who = at.handle ?? at.did;
+  // To your page once your handle is known (its address).
   return <span className='flex items-center gap-2 text-sm'>
-    <a href={profilePath(who)} title='Your hikes' className='flex items-center gap-1.5 text-blue-700 hover:underline'>
+    <a href={at.handle ? profilePath(at.handle) : undefined} title='Your hikes' className='flex items-center gap-1.5 text-blue-700 hover:underline'>
       <Avatar src={at.avatar} name={at.handle ?? '?'} />
       <span className='hidden sm:inline'>@{at.handle ?? 'you'}</span>
     </a>

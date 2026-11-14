@@ -1,13 +1,13 @@
-// Someone's page (/@<handle or DID>): their reviews, tracks and faved
+// Someone's page (/@<handle>): their reviews, tracks and faved
 // hikes (Overview, $handle._index.tsx), and on your own page, your settings
 // ($handle.settings.tsx). Read from their own repository, on their PDS, not
 // from anything of ours: they're public records (com.hikeratlas.temp.*), so
 // anyone can see them, here or in any other app.
 //
 // The route matches any one-segment path; only /@... is a person.
-import { data, NavLink, Outlet, useLoaderData, useParams, useRouteLoaderData, type LoaderFunctionArgs, type MetaFunction } from 'react-router';
+import { data, NavLink, Outlet, useLoaderData, useRouteLoaderData, type LoaderFunctionArgs, type MetaFunction } from 'react-router';
 import { buildFor } from '~/build';
-import { describeDid, isDid, profilePath, resolveHandle } from '~/atproto/identity';
+import { describeDid, isHandle, profilePath, resolveHandle } from '~/atproto/identity';
 import { listFaves, type Fave } from '~/atproto/faves';
 import { getSettings, listRecords, type Rec, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
 import { REVIEW, TRACK } from '~/atproto/scope';
@@ -22,7 +22,9 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   if (!(params.handle ?? '').startsWith('@')) throw data(null, { status: 404 });
   const build = buildFor(new URL(request.url)) ?? 'north-america';
   const who = (params.handle ?? '').replace(/^@/, '').toLowerCase();
-  const did = isDid(who) ? who : await resolveHandle(who);
+  // By handle only (not DID): one address per person.
+  if (!isHandle(who)) throw data(null, { status: 404 });
+  const did = await resolveHandle(who);
   const doc = did ? await describeDid(did) : null;
   const none = { who, did: null as string | null, pds: null as string | null, build, handle: null as string | null,
     faves: [] as Fave[], tracks: [] as Rec<TrackRecord>[], reviews: [] as Rec<ReviewRecord>[], license: null as string | null };
@@ -66,8 +68,7 @@ export default function Profile() {
   const name = handle ?? who;
   const at = useAtSession();
   const mine = at.status === 'in' && !!did && at.did === did;
-  // The address as given (a handle or a DID).
-  const base = profilePath(useParams().handle ?? name);
+  const base = profilePath(name);
   return <main className='frame'>
     <h1>@{name}</h1>
     {mine && <p><button type='button' onClick={() => signOut()} className='text-sm text-blue-700 hover:underline'>Sign out</button></p>}

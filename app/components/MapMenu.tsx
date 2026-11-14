@@ -21,7 +21,8 @@ export default function MapMenu({ map }: { map: MaplibreMap | null }) {
     window.addEventListener('keydown', esc);
     return () => window.removeEventListener('keydown', esc);
   }, [open]);
-  const who = at.status === 'in' ? at.handle ?? at.did : null;
+  // Your page's address is your handle: linked once it's known.
+  const who = at.status === 'in' ? at.handle : null;
   return <>
     <button type='button' onClick={() => setOpen(true)} aria-label='Menu' aria-expanded={open}
       className='map-menu-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-stone-700 shadow-[0_1px_4px_rgba(0,0,0,0.25)]'>
