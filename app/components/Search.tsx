@@ -2,6 +2,7 @@ import React from 'react';
 
 import { useCombobox } from 'downshift';
 
+import { area, distance, distanceValue, elevation, METRIC, useUnits, type Units } from '~/units';
 import SearchIcon from './SearchIcon';
 
 function cx(...xs: unknown[]): string {
@@ -46,9 +47,8 @@ function regionLabel(item: Item): string {
 
 const HIKE_LABEL: Record<string, string> = { day: 'Day hike', base: 'Base camp', multi: 'Multi-day', stop: 'Stop' };
 
-function kmText(km: number): string {
-  return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
-}
+// In the reader's units (units.ts): describe() and away() take them.
+const kmText = (km: number, u: Units) => distance(km, u);
 
 const KIND_LABEL: Record<string, string> = {
   lake: 'Lake',
@@ -69,7 +69,7 @@ const KIND_LABEL: Record<string, string> = {
 // "Lake · 1.1 km² · Banff NP, Alberta", "Park · 14 hikes · Alberta",
 // "Multi-day · 36 km · ↑ 1,150 m · Sleeping Giant PP, Ontario",
 // "Province · 2,641 hikes · Canada".
-export function describe(item: Item): string {
+export function describe(item: Item, u: Units = METRIC): string {
   const what: string[] = [];
   if (item.kind === 'state') {
     what.push(regionLabel(item));
@@ -77,18 +77,18 @@ export function describe(item: Item): string {
     return [...what, item.country].filter(x => x).join(' · ');
   }
   if (item.kind === 'peak') {
-    if (item.ele) what.push(`${item.ele.toLocaleString('en-US')} m`);
+    if (item.ele) what.push(elevation(item.ele, u));
   } else if (item.kind === 'trail') {
-    if (item.km) what.push(kmText(item.km));
+    if (item.km) what.push(kmText(item.km, u));
   } else if (item.kind === 'hike') {
     what.push(HIKE_LABEL[item.hike ?? ''] ?? 'Hike');
-    if (item.km) what.push(kmText(item.km));
-    if (item.gain) what.push(`↑ ${item.gain.toLocaleString('en-US')} m`);
+    if (item.km) what.push(kmText(item.km, u));
+    if (item.gain) what.push(`↑ ${elevation(item.gain, u)}`);
   } else if (KIND_LABEL[item.kind]) {
     what.push(KIND_LABEL[item.kind]);
     if (item.kind === 'park' && item.hikes) what.push(`${item.hikes} hike${item.hikes === 1 ? '' : 's'}`);
     if (item.kind === 'lake' && item.area && item.area >= 100_000)
-      what.push(`${(item.area / 1e6).toFixed(item.area < 10e6 ? 1 : 0)} km²`);
+      what.push(area(item.area, u));
   }
   const where = [item.park, item.state].filter(x => x).join(', ');
   return [...what, where].filter(x => x).join(' · ');
@@ -115,11 +115,12 @@ function kmBetween(a: LatLon, b: LatLon): number {
 // "38 km away" for a result well away from where you're looking, so
 // same-named places can be told apart; nothing for ones nearby, or for a
 // state (its middle is no measure of how far it is).
-export function away(item: Item, near: LatLon | null): string {
+export function away(item: Item, near: LatLon | null, u: Units = METRIC): string {
   if (!near || item.kind === 'state') return '';
   const km = kmBetween(near, item);
   if (km < 25) return '';
-  return `${km < 100 ? Math.round(km) : Math.round(km / 10) * 10} km away`;
+  const d = distanceValue(km, u);
+  return `${d < 100 ? Math.round(d) : Math.round(d / 10) * 10} ${u.distance} away`;
 }
 
 // Lowercase, without accents, for matching typed text to names.
@@ -172,8 +173,8 @@ function latLonText(p: LatLon): string {
 // Each result's second line. Where two would read the same (two "Lake
 // Agnes" lakes, both "Lake · 0.5 km² · Ontario"), add their countries if
 // those differ, else roughly where they are, so they can be told apart.
-function secondLines(items: Item[], near: LatLon | null): string[] {
-  const lines = items.map((item) => [describe(item), away(item, near)].filter(x => x).join(' · '));
+function secondLines(items: Item[], near: LatLon | null, u: Units): string[] {
+  const lines = items.map((item) => [describe(item, u), away(item, near, u)].filter(x => x).join(' · '));
   const groups = new Map<string, number[]>();
   items.forEach((item, i) => {
     const k = `${item.name}\n${lines[i]}`;
@@ -189,6 +190,7 @@ function secondLines(items: Item[], near: LatLon | null): string[] {
 }
 
 export default function Search(props: Props) {
+  const units = useUnits();
   let seq = 0;
   function ComboBox() {
     const [items, setItems] = React.useState<Item[]>([])
@@ -298,7 +300,7 @@ export default function Search(props: Props) {
           {isOpen && recent && items.length > 0 &&
             <li className="px-3 pt-2 pb-1 text-xs uppercase tracking-wide text-gray-500">Recent</li>}
           {isOpen &&
-            (() => { const lines = secondLines(items, recent ? null : nearRef.current); return items.map((item, index) => (
+            (() => { const lines = secondLines(items, recent ? null : nearRef.current, units); return items.map((item, index) => (
               <li
                 className={cx(
                   highlightedIndex === index && 'bg-blue-300',

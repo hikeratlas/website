@@ -8,6 +8,7 @@ import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource } from 'maplibre-gl';
 import type { LngLat } from '~/routing/graph';
 import { profile, type Profile } from '~/routing/elevation';
+import { kmPerUnit, useFormat } from '~/units';
 import { useWaypoints } from '~/components/useWaypoints';
 
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -89,12 +90,13 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
 }
 
 function RouteSummary({ r, onHover }: { r: Result; onHover: (p: LngLat | null) => void }) {
+  const { dist, elev } = useFormat();
   const pts = r.profile.points;
   const elevs = pts.map(([, e]) => e);
   const hi = Math.max(...elevs), lo = Math.min(...elevs);
   return <div className='mt-1'>
     <div className='font-semibold text-base'>
-      {(r.metres / 1000).toFixed(1)} km · ↑ {Math.round(r.profile.gain)} m · ↓ {Math.round(r.profile.loss)} m · high point {Math.round(hi)} m
+      {dist(r.metres / 1000, 1)} · ↑ {elev(r.profile.gain)} · ↓ {elev(r.profile.loss)} · high point {elev(hi)}
     </div>
     <ElevationChart points={pts} lo={lo} hi={hi} onHover={(i) => onHover(i === null ? null : r.profile.coords[i])} />
   </div>;
@@ -108,6 +110,7 @@ export interface Mark { at: number; label: string }
 export function ElevationChart({ points, lo, hi, onHover, marks = [], pins = [] }: { points: [number, number][]; lo: number; hi: number; onHover: (i: number | null) => void; marks?: Mark[]; pins?: { at: number; n: number }[] }) {
   // Drawn at the SVG's own width in px (measured), so its 10 px text is 10 px
   // on a phone too; a fixed box scaled to the panel shrank it to ~5 px.
+  const { units, dist, elev } = useFormat();
   const ref = useRef<SVGSVGElement>(null);
   const [W, setW] = useState(576);
   useEffect(() => {
@@ -124,12 +127,17 @@ export function ElevationChart({ points, lo, hi, onHover, marks = [], pins = [] 
   const x = (d: number) => L + (d / total) * (W - L - 4);
   const y = (e: number) => T + (1 - (e - yMin) / (yMax - yMin)) * (H - T - B);
   const line = points.map(([d, e]) => `${x(d).toFixed(1)},${y(e).toFixed(1)}`).join(' ');
-  // About one km label per 60 px.
-  const kmStep = [1, 2, 5, 10, 20, 50].find((s) => (total / 1000 / s) * 60 <= W - L) ?? 100;
-  const xTicks = Array.from({ length: Math.floor(total / 1000 / kmStep) + 1 }, (_, i) => i * kmStep);
-  const yStep = (yMax - yMin) > 1500 ? 500 : (yMax - yMin) > 600 ? 200 : 100;
+  // Ticks in the reader's units (km or mi, m or ft), placed in metres.
+  const unitM = kmPerUnit(units) * 1000;
+  const elevM = units.elevation === 'ft' ? 0.3048 : 1;
+  // About one distance label per 60 px.
+  const kmStep = [1, 2, 5, 10, 20, 50].find((s) => (total / unitM / s) * 60 <= W - L) ?? 100;
+  const xTicks = Array.from({ length: Math.floor(total / unitM / kmStep) + 1 }, (_, i) => i * kmStep);
+  // At most about 7 elevation lines.
+  const span = (yMax - yMin) / elevM;
+  const yStep = [100, 200, 500, 1000, 2000, 5000].find((s) => span / s <= 7) ?? 10000;
   const yTicks: number[] = [];
-  for (let e = Math.ceil(yMin / yStep) * yStep; e <= yMax; e += yStep) yTicks.push(e);
+  for (let e = Math.ceil(yMin / elevM / yStep) * yStep; e * elevM <= yMax; e += yStep) yTicks.push(e);
 
   // The sample nearest the pointer. Samples are evenly spaced (10 m), so the
   // index is about proportional to the distance along the route.
@@ -146,7 +154,7 @@ export function ElevationChart({ points, lo, hi, onHover, marks = [], pins = [] 
   };
   const onLeave = () => { setHover(null); onHover(null); };
   const hp = hover === null ? null : points[hover];
-  const label = hp && `${(hp[0] / 1000).toFixed(1)} km of ${(total / 1000).toFixed(1)} km · ${Math.round(hp[1]).toLocaleString()} m`;
+  const label = hp && `${dist(hp[0] / 1000, 1).split(' ')[0]} of ${dist(total / 1000, 1)} · ${elev(hp[1])}`;
   const labelW = 170;
   const labelX = hp && Math.min(Math.max(x(hp[0]) - labelW / 2, L), W - 4 - labelW);
   // Label a mark only if it isn't crowding the last labelled one.
@@ -162,10 +170,10 @@ export function ElevationChart({ points, lo, hi, onHover, marks = [], pins = [] 
   return <svg ref={ref} viewBox={`0 0 ${W} ${H}`} width='100%' className='mt-1 block' role='img' aria-label='Elevation profile'
     style={{ touchAction: 'pan-y', cursor: 'crosshair' }} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={onLeave} onPointerCancel={onLeave}>
     {yTicks.map((e) => <g key={e}>
-      <line x1={L} x2={W - 4} y1={y(e)} y2={y(e)} stroke='#e1e0d9' />
-      <text x={L - 6} y={y(e) + 4} textAnchor='end' fontSize='10' fill='#898781'>{e}</text>
+      <line x1={L} x2={W - 4} y1={y(e * elevM)} y2={y(e * elevM)} stroke='#e1e0d9' />
+      <text x={L - 6} y={y(e * elevM) + 4} textAnchor='end' fontSize='10' fill='#898781'>{e.toLocaleString('en-US')}</text>
     </g>)}
-    {xTicks.map((k) => <text key={k} x={x(k * 1000)} y={H - 5} textAnchor='middle' fontSize='10' fill='#898781'>{k} km</text>)}
+    {xTicks.map((k) => <text key={k} x={x(k * unitM)} y={H - 5} textAnchor='middle' fontSize='10' fill='#898781'>{k} {units.distance}</text>)}
     <polygon points={`${x(0)},${y(yMin)} ${line} ${x(total)},${y(yMin)}`} fill='#2a78d6' fillOpacity='0.12' />
     <polyline points={line} fill='none' stroke='#2a78d6' strokeWidth='2' strokeLinejoin='round' />
     {marks.map((m, i) => {

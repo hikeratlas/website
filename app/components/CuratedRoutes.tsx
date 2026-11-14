@@ -20,6 +20,7 @@ import { withZstd, type Decompress } from '~/zstd';
 import { ElevationChart } from './RoutePlanner';
 import ParkSheet, { type NearbyPark } from './ParkSheet';
 import { isSmall, shapeWords, trailhead } from '~/park';
+import { distance, elevation, getUnits, useFormat } from '~/units';
 import HikeSheet, { alongOf } from './HikeSheet';
 
 declare const pmtiles: {
@@ -162,7 +163,7 @@ function walk(h: Stop): string {
   // An unnamed road's end is "Road's end" in hikeratlas/routes.
   const end = h.from === "Road's end";
   if (km < 0.05) return end ? 'by the road' : `by the road at ${h.from}`;
-  return `${km.toFixed(1)} km walk from ${end ? "the road's end" : h.from}`;
+  return `${distance(km, getUnits(), 1)} walk from ${end ? "the road's end" : h.from}`;
 }
 
 // A route in a list: the routes under a click, in view, or in a park. Items
@@ -197,7 +198,8 @@ const TYPE_LABEL: Record<string, string> = { day: 'Day hike', approach: 'Base ca
 const TYPE_ORDER: Record<string, number> = { day: 0, approach: 1, 'multi-day': 2, 'from-camp': 3, stop: 4 };
 
 function meta(type: string, km: number, gain: number, sac?: number): string {
-  return `${TYPE_LABEL[type] ?? type} · ${km.toFixed(1)} km · ↑ ${Math.round(gain).toLocaleString()} m${(sac ?? 0) >= 4 ? ' · scramble' : ''}`;
+  const u = getUnits();
+  return `${TYPE_LABEL[type] ?? type} · ${distance(km, u, 1)} · ↑ ${elevation(gain, u)}${(sac ?? 0) >= 4 ? ' · scramble' : ''}`;
 }
 
 // Items from the route layer's features (properties as in hikeratlas/routes'
@@ -223,7 +225,7 @@ function itemsFromPark(doc: ParkDoc): Item[] {
   const park = String(doc.park!.id);
   return [
     ...doc.day_hikes.map((h, i) => ({ park, id: `${park}/day/${i}`, title: named(h, `${h.dest} from ${h.from}`), meta: meta('day', h.route.km, h.route.gain, h.route.max_sac) })),
-    ...doc.base_camps.map((b, i) => ({ park, id: `${park}/base/${i}`, title: `Base camp: ${b.camp} from ${b.from}`, meta: `${b.hikes.length} day hikes from camp · walk in ${b.approach.km.toFixed(1)} km` })),
+    ...doc.base_camps.map((b, i) => ({ park, id: `${park}/base/${i}`, title: `Base camp: ${b.camp} from ${b.from}`, meta: `${b.hikes.length} day hikes from camp · walk in ${distance(b.approach.km, getUnits(), 1)}` })),
     ...doc.point_to_points.map((t, i) => ({ park, id: `${park}/multi/${i}`, title: named(t, `${t.from} to ${t.to}`), meta: meta('multi-day', t.route.km, t.route.gain, t.route.max_sac) })),
     // Multi-day trips of a smaller park inside this one (hikeratlas/routes:
     // Guadalupe Mountains NP lists its Wilderness's), opened in that park.
@@ -296,9 +298,9 @@ function TrailBody({ trail, onHover, onHike, onPark }: {
   trail: TrailState; onHover: (c: [number, number] | null) => void; onHike: (park: string, id: string) => void; onPark?: () => void;
 }) {
   const { prof, range, along, loading, hikes, geom } = trail;
-  const m = (x: number) => `${Math.round(x).toLocaleString()} m`;
+  const { dist, elev: m } = useFormat();
   return <>
-    {prof && <div className='mt-1'>↑ {m(prof.gain)} · ↓ {m(prof.loss)} {along ? `along ${(along / 1000).toFixed(1)} km of it` : 'end to end'}{range && ` · high point ${m(range[1])} · low point ${m(range[0])}`}</div>}
+    {prof && <div className='mt-1'>↑ {m(prof.gain)} · ↓ {m(prof.loss)} {along ? `along ${dist(along / 1000, 1)} of it` : 'end to end'}{range && ` · high point ${m(range[1])} · low point ${m(range[0])}`}</div>}
     {!prof && range && <div className='mt-1'>High point {m(range[1])} · low point {m(range[0])}</div>}
     {prof
       ? <ElevationChart points={prof.points} lo={range![0]} hi={range![1]} onHover={(i) => onHover(i === null ? null : prof.coords[i])} />
@@ -319,6 +321,7 @@ function TrailBody({ trail, onHover, onHike, onPark }: {
 }
 
 export default function CuratedRoutes(props: Props) {
+  const fmt = useFormat();
   // Consts, so checks of map hold in the handlers below.
   const { map, build, focusPark, focusTrail, onShowing, crumbs, region, onNavigate, closeAt, note, onPark } = props;
   const [sel, setSel] = useState<Selected | null>(null);
@@ -692,7 +695,7 @@ export default function CuratedRoutes(props: Props) {
           : <div className='font-semibold text-base'>{list.heading}</div>)}
         {mode === 'trail' && trailInfo && <>
           <div className='font-semibold text-base'>{trailInfo.focus.name}</div>
-          <div className='text-gray-600'>{['Trail', trailInfo.focus.km ? `${trailInfo.focus.km.toFixed(1)} km` : null,
+          <div className='text-gray-600'>{['Trail', trailInfo.focus.km ? fmt.dist(trailInfo.focus.km, 1) : null,
             [trailInfo.focus.park, trailInfo.focus.state].filter((x) => x).join(', ') || null].filter((x) => x).join(' · ')}</div>
         </>}
         {mode === 'list' && list?.about && <About about={list.about} />}
@@ -725,7 +728,7 @@ export default function CuratedRoutes(props: Props) {
           {sel.base.hikes.map((h, j) => <li key={j} className='border-b border-stone-100 py-2 text-sm'>
             <button className='tap text-left font-semibold text-blue-700 hover:underline' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}/${j}`)}>
               {named(h, h.dest)}
-            </button> <span className='text-stone-600'>{h.route.km.toFixed(1)} km · ↑ {Math.round(h.route.gain)} m{(h.route.max_sac ?? 0) >= 4 ? ' · scramble' : ''}</span>
+            </button> <span className='text-stone-600'>{fmt.dist(h.route.km, 1)} · ↑ {fmt.elev(h.route.gain)}{(h.route.max_sac ?? 0) >= 4 ? ' · scramble' : ''}</span>
           </li>)}
           <li className='py-2 text-sm'><button className='tap font-semibold text-blue-700 hover:underline' onClick={() => select(sel.id.split('/')[0], `${sel.id.split('/')[0]}/base/${sel.baseIndex}`)}>The walk in</button></li>
         </ul>
