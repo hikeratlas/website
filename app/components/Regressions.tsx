@@ -132,6 +132,9 @@ export default function Regressions({ build }: { build: string | null }) {
   // Add a trail: its name and source (its length and note are km and note).
   const [newName, setNewName] = useState('');
   const [newSource, setNewSource] = useState('');
+  // The name a hike is blessed under, and an entry's (to rename it).
+  const [blessName, setBlessName] = useState('');
+  const [entryName, setEntryName] = useState('');
   // A park picked in search, to open here.
   const [searchPark, setSearchPark] = useState<Item | null>(null);
   // The hikes routes offers in the park open (Hikes), by its stem.
@@ -345,7 +348,7 @@ export default function Regressions({ build }: { build: string | null }) {
     const traces = entry ? entryTraces(entry) : [];
     const trace = traces[0] ?? null;
     if (prop) { setKm(String(dec?.km ?? prop.suggest_km ?? prop.km)); setNote(dec?.note ?? ''); }
-    else { setKm(String((edit?.action === 'update' ? edit.km : undefined) ?? entry!.km ?? '')); setNote(edit?.note ?? ''); }
+    else { setKm(String((edit?.action === 'update' ? edit.km : undefined) ?? entry!.km ?? '')); setNote(edit?.note ?? ''); setEntryName((edit?.action === 'update' ? edit.name : undefined) ?? entry!.name); }
     if (map.getSource('rg-trace')) {
       map.getSource<GeoJSONSource>('rg-trace')!.setData(traces.length ? { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: traces } } : EMPTY);
     }
@@ -388,7 +391,7 @@ export default function Regressions({ build }: { build: string | null }) {
   useEffect(() => {
     if (!map || !hike || !map.getSource('rg-trace')) return;
     setTrail(null); setDrawing(false); draw.clear();
-    setOffered([hike]); setPick(0);
+    setOffered([hike]); setPick(0); setBlessName(hike.title);
     const trace = hikeEntry?.trace;
     map.getSource<GeoJSONSource>('rg-trace')!.setData(trace ? { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: trace } } : EMPTY);
     map.fitBounds(bounds([hike.line]), { padding: 70, maxZoom: 15, duration: 0 });
@@ -472,8 +475,10 @@ export default function Regressions({ build }: { build: string | null }) {
     const t = newTrace();
     if (addTrace && !t) return;
     const kmChanged = kmNum > 0 && kmNum !== entry.km;
-    if (!t && !kmChanged && !note.trim()) return;
-    setEdit({ action: 'update', ...(kmChanged ? { km: kmNum } : {}), ...(t ? { trace: t[0], how: t[1], ...(addTrace ? { addTrace } : {}) } : {}), note: note.trim() || undefined });
+    const name = entryName.trim();
+    const renamed = !!name && name !== entry.name;
+    if (!t && !kmChanged && !renamed && !note.trim()) return;
+    setEdit({ action: 'update', ...(renamed ? { name } : {}), ...(kmChanged ? { km: kmNum } : {}), ...(t ? { trace: t[0], how: t[1], ...(addTrace ? { addTrace } : {}) } : {}), note: note.trim() || undefined });
     setDrawing(false);
   };
 
@@ -523,6 +528,7 @@ export default function Regressions({ build }: { build: string | null }) {
             continue;
           }
           const e = { ...entries[at] };
+          if (x.name) e.name = x.name;
           if (x.km !== undefined) e.km = x.km;
           if (x.trace && x.addTrace) e.traces = [...(e.traces ?? []), x.trace];
           else if (x.trace) e.trace = x.trace;
@@ -582,7 +588,7 @@ export default function Regressions({ build }: { build: string | null }) {
     return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'no entries yet';
   };
   const t = newTrace();
-  const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `${x.addTrace ? 'another' : 'new'} trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
+  const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.name && `renamed ${x.name}`, x.trace && `${x.addTrace ? 'another' : 'new'} trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
 
   // Search (as on the map page): results near the map's centre, and a pick
   // framed by its box, or at zoom 13.
@@ -682,6 +688,8 @@ export default function Regressions({ build }: { build: string | null }) {
           {prop.suggest_why && <div className='text-xs bg-amber-50 text-amber-800 rounded px-2 py-1'>{prop.suggest_why}</div>}
         </div>}
         {entry && <div className='flex flex-col gap-1.5'>
+          {(entry.kind ?? 'dest') === 'trail' && <label className='flex items-center gap-2 text-xs text-gray-600'>Name
+            <input className='border border-gray-300 rounded px-2 py-0.5 text-sm text-gray-900 flex-1 min-w-0' value={entryName} onChange={(e) => setEntryName(e.target.value)} /></label>}
           <div className='font-semibold text-base'>{entry.name} <span className='font-normal text-gray-500 text-xs'>{entry.blessed ? `blessed ${entry.blessed.date ?? ''} (${entry.blessed.build ?? 'routes'})` : `${entry.kind ?? 'dest'} entry · ${entry.issue ?? ''}`}</span></div>
           {(entry.kind ?? 'dest') === 'trail'
             ? <div>Expects <b>{entry.km} km</b> (±{Math.round((entry.km_tolerance ?? (entry.blessed ? 0.15 : 0.3)) * 100)}%){entry.trace ? `, following its trace (${entry.trace.length} points, dashed, its start and end labelled; to move them, press Edit the trace and drag)` : entry.trail ? `, walking the OSM trail ${entry.trail}` : ', walking the OSM trail of its name'}. {entry.why}</div>
@@ -713,6 +721,16 @@ export default function Regressions({ build }: { build: string | null }) {
           <div className='font-semibold text-base'>{hike.label} <span className='font-normal text-gray-500 text-xs'>{hike.km} km</span></div>
           <div>Bless it to keep it as routes offers it now: an entry named <b>{hike.title}</b>, its line the trace, expecting {hike.km} km (±15%). The checks then flag it if it’s renamed, gets longer or shorter, starts or ends elsewhere, takes another line, or goes.</div>
           {hike.key ? <div className='text-xs text-gray-500 break-all'>Route key: {hike.key}</div> : <div className='text-xs text-amber-800 bg-amber-50 rounded px-2 py-1'>This build has no route keys, so it can’t be blessed.</div>}
+          <label className='flex flex-col gap-0.5 text-xs text-gray-600'>Bless it under this name (change it to the name it should have)
+            <input className='border border-gray-300 rounded px-2 py-1 text-sm text-gray-900' value={blessName} onChange={(e) => setBlessName(e.target.value)} /></label>
+          <div className='flex flex-col gap-1.5 border border-gray-200 rounded p-2'>
+            <div className='flex items-center gap-1.5 flex-wrap'>
+              {!draw.points.length && <button type='button' className={btn} onClick={() => editLine(hike.line)}>Edit this hike</button>}
+              <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.undo}>Undo point</button>
+              <button type='button' className={btn} disabled={!draw.points.length} onClick={() => { draw.clear(); setDrawing(false); setPick(0); }}>Back to as offered</button>
+            </div>
+            <div className='text-xs text-gray-600'>{draw.points.length ? (draw.error ?? (draw.busy ? 'Routing…' : `Adjusted: ${(draw.metres / 1000).toFixed(1)} km. Drag any point to move it; Start and End stay where you drop them.`)) : 'To bless it along a better line, press Edit this hike and drag its points.'}</div>
+          </div>
           {hikeEntry && <div className='text-xs text-gray-600'>Blessed already{hikeEntry.blessed?.date ? ` on ${hikeEntry.blessed.date}` : ''}, as {hikeEntry.name} ({hikeEntry.km} km): blessing it again replaces that.</div>}
         </div>}
         {(prop || entry) && <>
@@ -763,7 +781,7 @@ export default function Regressions({ build }: { build: string | null }) {
         </>}
         {entry && <>
           <div className='flex gap-1.5'>
-            {(entry.kind ?? 'dest') === 'trail' && <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={draw.busy || !(t || (kmNum > 0 && kmNum !== entry.km) || note.trim())} onClick={() => saveEntry()}>
+            {(entry.kind ?? 'dest') === 'trail' && <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={draw.busy || !(t || (kmNum > 0 && kmNum !== entry.km) || (entryName.trim() && entryName.trim() !== entry.name) || note.trim())} onClick={() => saveEntry()}>
               {t ? `Use ${draw.coords.length > 1 ? 'drawn hike' : 'this hike'} as its trace` : 'Save changes'}</button>}
             {(entry.kind ?? 'dest') === 'trail' && t && entry.trace && <button type='button' className={btn} disabled={draw.busy} onClick={() => saveEntry(true)}
               title='The same hike another way, e.g. from another lot: the entry passes on any of its traces'>Add as another trace</button>}
@@ -789,8 +807,13 @@ export default function Regressions({ build }: { build: string | null }) {
         </>}
         {hike && park && <>
           <div className='flex gap-1.5'>
-            <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={!hike.key || !hike.line.length}
-              onClick={() => setBlessing(blessedEntry(park, { title: hike.title, key: hike.key!, km: hike.km, line: hike.line }, routesBuild))}>{hikeEntry ? 'Bless it again' : 'Bless this hike'}</button>
+            <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`}
+              disabled={!hike.key || !hike.line.length || draw.busy || (draw.points.length > 0 && draw.coords.length < 2)}
+              onClick={() => {
+                const adjusted = draw.coords.length > 1;
+                setBlessing(blessedEntry(park, { title: hike.title, key: hike.key!, km: hike.km, line: hike.line }, routesBuild,
+                  { name: blessName.trim() || undefined, ...(adjusted ? { line: draw.coords, km: +(draw.metres / 1000).toFixed(1) } : {}) }));
+              }}>{blessName.trim() && blessName.trim() !== hike.title ? `Bless as “${blessName.trim()}”` : hikeEntry ? 'Bless it again' : 'Bless this hike'}{draw.coords.length > 1 ? ' (adjusted)' : ''}</button>
             {blessing && <button type='button' className={btn} onClick={() => setBlessing(null)}>Undo</button>}
           </div>
           <div className='text-xs text-gray-600'>{blessing ? <>To bless: <b>{blessing.name}, {blessing.km} km</b></> : 'Not blessed.'}</div>

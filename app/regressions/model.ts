@@ -176,9 +176,13 @@ export function hikeTitle(name: string | null | undefined, dest: string, from: s
 // The entry that keeps a hike routes offers now as it is (routes' expect.py,
 // "blessed"): named as the site calls it, its length, its line as the trace,
 // and which route it was.
-export function blessedEntry(park: { park: string; park_id: string }, h: { title: string; key: string; km: number; line: LngLat[] }, build: string): Entry {
+// `as`: blessed under another name, or along an adjusted line (its length
+// then the line's): the hike as it should be, still remembering the route it
+// came from, so a failure says what routes offers instead.
+export function blessedEntry(park: { park: string; park_id: string }, h: { title: string; key: string; km: number; line: LngLat[] }, build: string,
+  as: { name?: string; km?: number; line?: LngLat[] } = {}): Entry {
   return {
-    kind: 'trail', park: park.park, park_id: park.park_id, name: h.title, km: h.km, trace: simplify(h.line),
+    kind: 'trail', park: park.park, park_id: park.park_id, name: as.name || h.title, km: as.km ?? h.km, trace: simplify(as.line ?? h.line),
     blessed: { key: h.key, km: h.km, date: new Date().toISOString().slice(0, 10), build },
   };
 }
@@ -186,7 +190,7 @@ export const entryKey = (e: Pick<Entry, 'kind' | 'name'>) => `${e.kind ?? 'dest'
 
 // A change to an existing entry, kept until committed.
 export type EntryEdit =
-  | { action: 'update'; km?: number; trace?: LngLat[]; addTrace?: boolean; how?: string; note?: string }
+  | { action: 'update'; name?: string; km?: number; trace?: LngLat[]; addTrace?: boolean; how?: string; note?: string }
   | { action: 'delete'; note?: string };
 
 // A name to compare, as routes' expectations.norm: 'The "Crack" Trail' and
