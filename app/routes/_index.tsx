@@ -5,6 +5,7 @@ import Home from '~/content/home.mdx';
 import Featured from '~/components/Featured';
 import { buildFor, styleUrl } from '~/build';
 import { featured } from '~/featured';
+import { posts } from '~/blog.server';
 
 // The map's PMTiles script, for the featured park's map, in the site's frame.
 import { handle as mapHandle } from './map';
@@ -33,7 +34,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // ?shots: the cards drawn live, for basemap's bin/home-images.mjs to
   // picture them.
   const shots = url.searchParams.has('shots');
-  return { featured: await featured(build, at, day, showcase).catch(() => null), style: styleUrl(preview), search: url.search, shots };
+  return { featured: await featured(build, at, day, showcase).catch(() => null), style: styleUrl(preview), search: url.search, shots, latest: posts[0] ?? null };
 };
 
 // The featured cards, for home.mdx's <Featured />: one component for good,
@@ -44,7 +45,30 @@ function FeaturedSlot() {
   const { featured: data, style, search, shots } = useLoaderData<typeof loader>();
   return <Featured data={data} style={style} search={search} shots={shots} />;
 }
-const components = { Featured: FeaturedSlot };
+
+// The page's two columns from lg: the text, and the featured cards beside it.
+// Narrower, one column, the cards before the blog (home.mdx's text column is
+// display: contents there, its blog last). Not for ?shots, whose cards are
+// drawn at their pictures' sizes, wider than the side column.
+function Columns({ children }: { children: React.ReactNode }) {
+  const { shots } = useLoaderData<typeof loader>();
+  return <div className={shots ? undefined : 'flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-x-12'}>{children}</div>;
+}
+
+// The newest blog post, and the way to the rest.
+function LatestPost() {
+  const { latest } = useLoaderData<typeof loader>();
+  return <>
+    {latest && <a href={latest.path} className='group mb-3 block rounded-2xl border border-stone-200 p-4 !text-stone-900 !no-underline shadow-sm transition hover:border-stone-400 hover:shadow-md'>
+      <span className='text-xs font-semibold uppercase tracking-wider text-lime-800'>Latest post · {latest.date}</span>
+      <span className='block font-display text-xl font-bold leading-snug group-hover:underline'>{latest.title}</span>
+      <span className='block text-stone-700'>{latest.description}</span>
+    </a>}
+    <p><a href='/blog'>More posts →</a></p>
+  </>;
+}
+
+const components = { Featured: FeaturedSlot, Columns, LatestPost };
 
 export default function Index() {
   // home.mdx has the page's frame.
