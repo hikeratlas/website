@@ -85,6 +85,12 @@ function offeredIn(doc: ParkDoc): { label: string; name: string | null; dest: st
   return [
     ...doc.day_hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${h.from}`, name: n(h), dest: h.dest ?? null, title: hikeTitle(n(h), h.dest, h.from), key: h.key ?? null, route: h.route })),
     ...doc.base_camps.flatMap((b) => b.hikes.map((h) => ({ label: n(h) ?? `${h.dest} from ${b.camp}`, name: n(h), dest: h.dest ?? null, title: hikeTitle(n(h), h.dest, b.camp), key: h.key ?? null, route: h.route }))),
+    // Quick stops, a short walk from the car, as routes' expect.py checks them
+    // (Bruce Peninsula's Halfway Log Dump).
+    ...(doc.stops ?? []).map((h) => ({ label: `${n(h) ?? `${h.dest} from ${h.from}`} (stop)`, name: n(h), dest: h.dest ?? null, title: hikeTitle(n(h), h.dest, h.from), key: h.key ?? null, route: h.route })),
+    // A base camp's walk in, as routes' expect.py checks it: a hike out to
+    // the camp and back is the base camp's (Bruce Peninsula's High Dump).
+    ...doc.base_camps.map((b) => ({ label: `${b.camp} from ${b.from} (walk in)`, name: null, dest: b.camp, title: hikeTitle(null, b.camp, b.from), key: null, route: b.approach })),
     ...doc.point_to_points.map((t) => ({ label: `${n(t) ?? `${t.from} to ${t.to}`} (multi-day)`, name: n(t), dest: t.to ?? null, title: hikeTitle(n(t), t.to, t.from), key: t.key ?? null, route: t.route })),
   ];
 }
