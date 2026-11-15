@@ -3,13 +3,14 @@
 // listed, posted alone or with a review, and a review shows its track too
 // (website#158). Each is tied to a hike by its route key, and the browser
 // finds which hikes they are (findRoutes). On your own page, you can delete
-// your posts; a review and its track go together.
+// your posts (a review and its track go together), and edit your reviews.
 import { useEffect, useMemo, useState } from 'react';
 import { useRevalidator } from 'react-router';
 import { deletePost, tagLabel, type Rec, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
 import { deleteTargets, profileLists } from '~/atproto/postLists';
 import { findRoutes, type Found } from '~/atproto/findRoutes';
 import { LICENSE_LABEL } from '~/components/PostDialog';
+import { EditReviewDialog } from '~/components/EditReview';
 import { Photos, TrackView, day } from '~/components/Posts';
 import { isRouteKey, useProfile } from './$handle';
 
@@ -18,6 +19,7 @@ export default function Overview() {
   const revalidator = useRevalidator();
 
   const lists = useMemo(() => profileLists(reviews, tracks), [reviews, tracks]);
+  const [editing, setEditing] = useState<Rec<ReviewRecord> | null>(null);
 
   // Which hikes they're of, once found: null while looking.
   const keys = useMemo(() => [...new Set([
@@ -64,7 +66,10 @@ export default function Overview() {
   const footer = (lic: string | undefined, what: Parameters<typeof remove>[0]) =>
     <div className='flex items-center justify-between gap-2 text-xs text-stone-500'>
       <span>Shared under {LICENSE_LABEL[lic ?? 'hikeratlas-only'] ?? lic}{lic ? '' : ' (no licence given)'}</span>
-      {session && <button type='button' onClick={() => remove(what)} className='text-red-700 hover:underline'>Delete</button>}
+      {session && <span className='flex gap-3'>
+        {'review' in what && pds && <button type='button' onClick={() => setEditing(what.review)} className='text-blue-700 hover:underline'>Edit</button>}
+        <button type='button' onClick={() => remove(what)} className='text-red-700 hover:underline'>Delete</button>
+      </span>}
     </div>;
 
   const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
@@ -104,6 +109,9 @@ export default function Overview() {
             </li>;
           })}
         </ul>}
+
+        {editing && session && pds && <EditReviewDialog review={editing} session={session} pds={pds}
+          onClose={() => setEditing(null)} onSaved={() => revalidator.revalidate()} />}
 
         <h2>Faved hikes</h2>
         <p className='mt-1 text-stone-600'>{faves.length ? `${faves.length} faved ${faves.length === 1 ? 'hike' : 'hikes'}` : 'No faved hikes yet.'}</p>

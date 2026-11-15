@@ -143,6 +143,45 @@ export async function publishReview(session: OAuthSession, pds: string, v: Revie
   return ref;
 }
 
+// What editing a review can change, its licence included (from then on:
+// copies already made keep the licence they came with). Everything else
+// (when it was posted, its route, its track) stays as it was.
+export interface ReviewEdit { text: string; hikedAt?: string; tags: string[]; photos: Photo[]; license?: string }
+
+// Saves an edited review over the old one, at the same record key, so its
+// at:// URI (and anything pointing at it) stays the same. swapRecord makes
+// it fail, rather than overwrite, if the review changed since it was read.
+// The edited record: the edit's fields, and everything else as it was.
+export function editedReview(value: ReviewRecord, edit: ReviewEdit): ReviewRecord & { $type: string } {
+  const kept: Partial<ReviewRecord> = { ...value };
+  delete kept.hikedAt; delete kept.tags; delete kept.photos;
+  return {
+    ...kept, $type: REVIEW, text: edit.text, createdAt: value.createdAt,
+    ...(edit.license ? { license: edit.license } : {}),
+    ...(edit.hikedAt ? { hikedAt: edit.hikedAt } : {}),
+    ...(edit.tags.length ? { tags: edit.tags } : {}),
+    ...(edit.photos.length ? { photos: edit.photos } : {}),
+  };
+}
+
+export async function editReview(session: OAuthSession, review: Rec<ReviewRecord>, edit: ReviewEdit): Promise<StrongRef> {
+  const rkey = review.uri.split('/').pop()!;
+  const record = editedReview(review.value, edit);
+  const r = await session.fetchHandler('/xrpc/com.atproto.repo.putRecord', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ repo: session.did, collection: REVIEW, rkey, record, swapRecord: review.cid }),
+  });
+  if (!r.ok) {
+    let err: { error?: string; message?: string } = {};
+    try { err = await r.json(); } catch { /* no body */ }
+    if (err.error === 'InvalidSwap') throw new Error('This review changed since you opened it: reload the page and try again.');
+    throw new Error(`Saving failed (${r.status})${err.message ? `: ${err.message}` : ''}`);
+  }
+  const ref = (await r.json()) as StrongRef;
+  notifyIndexer(ref.uri, review.value.routeKey);
+  return ref;
+}
+
 export async function deletePost(session: OAuthSession, uri: string): Promise<void> {
   const [, , , collection, rkey] = uri.split('/');
   await call(session, 'com.atproto.repo.deleteRecord', { repo: session.did, collection, rkey });

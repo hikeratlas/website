@@ -13,7 +13,7 @@ import { useAtSession } from '~/atproto/session';
 import { distance, elevation, METRIC, useUnits, type Units } from '~/units';
 import { SignInDialog } from '~/components/Account';
 
-const MAX_TEXT = 3000;
+export const MAX_TEXT = 3000;
 const MAX_PHOTOS = 10;
 
 export const LICENSE_LABEL: Record<string, string> = {
@@ -22,14 +22,14 @@ export const LICENSE_LABEL: Record<string, string> = {
   'hikeratlas-only': 'Hiker Atlas only',
 };
 
-const today = () => {
+export const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 // A date as a datetime: noon local time, so it reads as the same day
 // anywhere near (AT Protocol has no date-only format).
-const noonOf = (day: string) => new Date(`${day}T12:00:00`).toISOString();
-const localDay = (iso: string) => {
+export const noonOf = (day: string) => new Date(`${day}T12:00:00`).toISOString();
+export const localDay = (iso: string) => {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };

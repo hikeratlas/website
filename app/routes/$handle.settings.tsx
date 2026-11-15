@@ -75,7 +75,7 @@ function LicenseSetting({ current, onSave }: { current: string | null; onSave: (
         <input type='radio' name='license' value={l} checked={value === l} onChange={() => save(l)} disabled={state === 'saving'} />
         <span>{l === 'CC0-1.0' ? 'Anything: public domain (CC0)' : l === 'CC-BY-4.0' ? 'Anything, crediting you (CC BY 4.0)' : 'Nothing beyond Hiker Atlas showing them'}</span>
       </label>)}
-      <span className='text-sm text-stone-500'>{state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved. Posts you’ve already made keep their existing license.' : state === 'idle' ? 'Posts you’ve already made keep their existing license.' : state}</span>
+      <span className='text-sm text-stone-500'>{state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved. Posts you’ve already made keep theirs; edit a post to change its own.' : state === 'idle' ? 'Posts you’ve already made keep theirs; edit a post to change its own.' : state}</span>
     </fieldset>
   </section>;
 }
