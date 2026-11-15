@@ -54,29 +54,46 @@ describe('a profile’s lists', () => {
 
 describe('deleting', () => {
   it('deletes a review and its track', () => {
-    expect(deleteTargets({ review: reviewed }, reviews, tracks)).toEqual({
+    expect(deleteTargets({ review: reviewed }, reviews, DID)).toEqual({
       uris: [reviewed.uri, withReview.uri], confirm: 'Deleting this review also deletes its track.',
     });
   });
 
   it('deletes a track and its review', () => {
-    expect(deleteTargets({ track: withReview }, reviews, tracks)).toEqual({
+    expect(deleteTargets({ track: withReview }, reviews, DID)).toEqual({
       uris: [reviewed.uri, withReview.uri], confirm: 'Deleting this track also deletes its review.',
     });
   });
 
   it('deletes a review alone', () => {
-    expect(deleteTargets({ review: plain }, reviews, tracks)).toEqual({ uris: [plain.uri], confirm: 'Delete this review?' });
+    expect(deleteTargets({ review: plain }, reviews, DID)).toEqual({ uris: [plain.uri], confirm: 'Delete this review?' });
   });
 
   it('deletes a track alone', () => {
-    expect(deleteTargets({ track: alone }, reviews, tracks)).toEqual({ uris: [alone.uri], confirm: 'Delete this track?' });
+    expect(deleteTargets({ track: alone }, reviews, DID)).toEqual({ uris: [alone.uri], confirm: 'Delete this track?' });
   });
 
-  // Deleting by the ref alone could delete a different record: deleteRecord
-  // takes only the collection and rkey, in your own repository.
-  it('deletes only the review when its track isn’t loaded', () => {
-    expect(deleteTargets({ review: orphan }, reviews, tracks)).toEqual({ uris: [orphan.uri], confirm: 'Delete this review?' });
+  // Past the first 200, a review's own track isn't loaded: it goes all the same, by its URI.
+  it('deletes a review’s own track by its URI when it isn’t loaded', () => {
+    expect(deleteTargets({ review: orphan }, reviews, DID)).toEqual({
+      uris: [orphan.uri, uri('track', 'deleted')], confirm: 'Deleting this review also deletes its track.',
+    });
+  });
+
+  // deleteRecord takes only the collection and rkey, in your own repository:
+  // a ref into someone else's would hit a different record of yours.
+  it('never follows a ref into someone else’s repository', () => {
+    const theirs = review('r4', '2026-09-02', 'at://did:plc:other/com.hikeratlas.temp.track/t2');
+    expect(deleteTargets({ review: theirs }, [theirs], DID)).toEqual({ uris: [theirs.uri], confirm: 'Delete this review?' });
+  });
+
+  it('deletes every review of the track, from either side', () => {
+    const second = review('r5', '2026-08-02', withReview);
+    const all = [...reviews, second];
+    expect(deleteTargets({ review: reviewed }, all, DID).uris).toEqual([reviewed.uri, second.uri, withReview.uri]);
+    expect(deleteTargets({ track: withReview }, all, DID)).toEqual({
+      uris: [reviewed.uri, second.uri, withReview.uri], confirm: 'Deleting this track also deletes its review.',
+    });
   });
 });
 

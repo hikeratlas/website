@@ -6,6 +6,7 @@
 //
 // Plain functions, so they can be tested without React.
 import type { Rec, ReviewRecord, TrackRecord } from './posts';
+import { TRACK } from './scope';
 
 export interface ReviewItem { at: string; review: Rec<ReviewRecord>; track?: Rec<TrackRecord> }
 export interface TrackItem { at: string; track: Rec<TrackRecord> }
@@ -28,20 +29,23 @@ export function findTrack<T extends { uri: string }>(uri: string | undefined, tr
   return uri ? tracks.find((t) => t.uri === uri) : undefined;
 }
 
-// What a Delete removes, in order, and how the confirmation says so. Only
-// loaded records, which are all the author's own: a strongRef could name a
-// record in someone else's repository, and deleteRecord takes just the
-// collection and rkey, so deleting by the ref alone could hit a different
-// record of yours.
+// What a Delete removes, in order, and how the confirmation says so. One
+// post deletes as one: a review, its track, and every review pointing at
+// that track. A review's track goes by its URI even when it isn't among the
+// loaded tracks (past the first 200), but only if the URI names the
+// author's own track collection: deleteRecord takes just the collection
+// and rkey, so a strongRef into someone else's repository is never
+// followed (it could hit a different record of the author's).
 export function deleteTargets(
   what: { review: Rec<ReviewRecord> } | { track: Rec<TrackRecord> },
-  reviews: Rec<ReviewRecord>[], tracks: Rec<TrackRecord>[],
+  reviews: Rec<ReviewRecord>[], did: string,
 ): { uris: string[]; confirm: string } {
   if ('review' in what) {
-    const track = findTrack(what.review.value.track?.uri, tracks);
-    return track
-      ? { uris: [what.review.uri, track.uri], confirm: 'Deleting this review also deletes its track.' }
-      : { uris: [what.review.uri], confirm: 'Delete this review?' };
+    const ref = what.review.value.track?.uri;
+    const at = ref ? parseAtUri(ref) : null;
+    if (!ref || !at || at.repo !== did || at.collection !== TRACK) return { uris: [what.review.uri], confirm: 'Delete this review?' };
+    const others = reviews.filter((r) => r.uri !== what.review.uri && r.value.track?.uri === ref);
+    return { uris: [what.review.uri, ...others.map((r) => r.uri), ref], confirm: 'Deleting this review also deletes its track.' };
   }
   // Reviews first: none is left pointing at a track that's gone.
   const pointing = reviews.filter((r) => r.value.track?.uri === what.track.uri);

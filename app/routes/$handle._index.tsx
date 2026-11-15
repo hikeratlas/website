@@ -36,7 +36,7 @@ export default function Overview() {
 
   const remove = async (what: { review: Rec<ReviewRecord> } | { track: Rec<TrackRecord> }) => {
     if (!session) return;
-    const { uris, confirm } = deleteTargets(what, reviews, tracks);
+    const { uris, confirm } = deleteTargets(what, reviews, session.did);
     if (!window.confirm(confirm)) return;
     try {
       for (const uri of uris) await deletePost(session, uri);
