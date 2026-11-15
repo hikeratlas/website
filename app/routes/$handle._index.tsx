@@ -1,40 +1,29 @@
-// Someone's page, its Overview tab (/@<handle>): their reviews and tracks,
-// newest hike first, and their faved hikes. Each is tied to a hike by its
-// route key, and the browser finds which hikes they are (findRoutes). On
-// your own page, you can delete your posts.
+// Someone's page, its Overview tab (/@<handle>): their reviews and their
+// tracks, each newest hike first, and their faved hikes. Every track is
+// listed, posted alone or with a review, and a review shows its track too
+// (website#158). Each is tied to a hike by its route key, and the browser
+// finds which hikes they are (findRoutes). On your own page, you can delete
+// your posts; a review and its track go together.
 import { useEffect, useMemo, useState } from 'react';
 import { useRevalidator } from 'react-router';
 import { deletePost, tagLabel, type Rec, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
+import { deleteTargets, profileLists } from '~/atproto/postLists';
 import { findRoutes, type Found } from '~/atproto/findRoutes';
 import { LICENSE_LABEL } from '~/components/PostDialog';
 import { Photos, TrackView, day } from '~/components/Posts';
 import { isRouteKey, useProfile } from './$handle';
 
-// One entry in someone's list: a review (with its track, if it has one),
-// or a track on its own.
-interface Post { at: string; review?: Rec<ReviewRecord>; track?: Rec<TrackRecord> }
-
 export default function Overview() {
   const { did, pds, build, faves, tracks, reviews, session, mine } = useProfile();
   const revalidator = useRevalidator();
 
-  const posts = useMemo(() => {
-    const byUri = new Map(tracks.map((t) => [t.uri, t]));
-    const used = new Set<string>();
-    const out: Post[] = reviews.map((r) => {
-      const track = r.value.track?.uri ? byUri.get(r.value.track.uri) : undefined;
-      if (track) used.add(track.uri);
-      return { at: r.value.hikedAt ?? track?.value.startedAt ?? r.value.createdAt, review: r, track };
-    });
-    for (const t of tracks) if (!used.has(t.uri)) out.push({ at: t.value.startedAt ?? t.value.createdAt, track: t });
-    return out.sort((a, b) => b.at.localeCompare(a.at));
-  }, [tracks, reviews]);
+  const lists = useMemo(() => profileLists(reviews, tracks), [reviews, tracks]);
 
   // Which hikes they're of, once found: null while looking.
   const keys = useMemo(() => [...new Set([
     ...faves.map((f) => f.key),
-    ...posts.map((p) => p.review?.value.routeKey ?? p.track?.value.routeKey).filter((k): k is string => !!k && isRouteKey(k)),
-  ])], [faves, posts]);
+    ...[...reviews, ...tracks].map((p) => p.value.routeKey).filter((k): k is string => !!k && isRouteKey(k)),
+  ])], [faves, reviews, tracks]);
   const [found, setFound] = useState<Map<string, Found> | null>(null);
   useEffect(() => {
     let live = true;
@@ -45,13 +34,12 @@ export default function Overview() {
     return () => { live = false; };
   }, [build, keys]);
 
-  const remove = async (p: Post) => {
+  const remove = async (what: { review: Rec<ReviewRecord> } | { track: Rec<TrackRecord> }) => {
     if (!session) return;
-    const what = p.review && p.track ? 'this review and its track' : p.review ? 'this review' : 'this track';
-    if (!window.confirm(`Delete ${what}?`)) return;
+    const { uris, confirm } = deleteTargets(what, reviews, tracks);
+    if (!window.confirm(confirm)) return;
     try {
-      if (p.review) await deletePost(session, p.review.uri);
-      if (p.track) await deletePost(session, p.track.uri);
+      for (const uri of uris) await deletePost(session, uri);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : String(e));
     }
@@ -68,33 +56,51 @@ export default function Overview() {
     </span>;
   };
 
+  const heading = (key: string | undefined, at: string) => <div>
+    {hikeTitle(key)}
+    <div className='text-sm text-stone-600'>{[key ? found?.get(key)?.park : undefined, day(at)].filter(Boolean).join(' · ')}</div>
+  </div>;
+
+  const footer = (lic: string | undefined, what: Parameters<typeof remove>[0]) =>
+    <div className='flex items-center justify-between gap-2 text-xs text-stone-500'>
+      <span>Shared under {LICENSE_LABEL[lic ?? 'hikeratlas-only'] ?? lic}{lic ? '' : ' (no licence given)'}</span>
+      {session && <button type='button' onClick={() => remove(what)} className='text-red-700 hover:underline'>Delete</button>}
+    </div>;
+
+  const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
+
   return <>
-        <h2>Hikes</h2>
-        <p className='mt-1 text-stone-600'>{posts.length
-          ? `${posts.length} ${posts.length === 1 ? 'post' : 'posts'}`
-          : mine ? 'Nothing posted yet. Open a hike and choose Post to add a review or your track.' : 'Nothing posted yet.'}</p>
-        {posts.length > 0 && <ul className='mt-4 flex flex-col gap-3'>
-          {posts.map((p) => {
-            const key = p.review?.value.routeKey ?? p.track?.value.routeKey;
-            const h = key ? found?.get(key) : undefined;
-            const t = p.track?.value;
-            const lic = p.review?.value.license ?? t?.license;
-            const photos = [...(p.review?.value.photos ?? []), ...(t?.photos ?? [])];
-            return <li key={p.review?.uri ?? p.track!.uri} className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
-              <div>
-                {hikeTitle(key)}
-                <div className='text-sm text-stone-600'>{[h?.park, day(p.at)].filter(Boolean).join(' · ')}</div>
-              </div>
-              {p.review?.value.tags?.length ? <div className='flex flex-wrap gap-1.5'>
-                {p.review.value.tags.slice(0, 10).map((g) => <span key={g} className='rounded-full bg-green-50 px-2.5 py-0.5 text-[13px] text-green-900'>{tagLabel(g)}</span>)}
+        <h2>Reviews</h2>
+        <p className='mt-1 text-stone-600'>{lists.reviews.length
+          ? count(lists.reviews.length, 'review')
+          : mine && !lists.tracks.length ? 'Nothing posted yet. Open a hike and choose Post to add a review or your track.' : 'No reviews yet.'}</p>
+        {lists.reviews.length > 0 && <ul className='mt-4 flex flex-col gap-3'>
+          {lists.reviews.map(({ at, review, track }) => {
+            const r = review.value;
+            return <li key={review.uri} className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
+              {heading(r.routeKey ?? track?.value.routeKey, at)}
+              {r.tags?.length ? <div className='flex flex-wrap gap-1.5'>
+                {r.tags.slice(0, 10).map((g) => <span key={g} className='rounded-full bg-green-50 px-2.5 py-0.5 text-[13px] text-green-900'>{tagLabel(g)}</span>)}
               </div> : null}
-              {p.review && <p className='whitespace-pre-line text-[15px] text-stone-800'>{p.review.value.text.slice(0, 3000)}</p>}
-              {photos.length > 0 && pds && did && <Photos photos={photos} pds={pds} did={did} />}
-              {t && pds && did && <TrackView track={t} pds={pds} did={did} />}
-              <div className='flex items-center justify-between gap-2 text-xs text-stone-500'>
-                <span>Shared under {LICENSE_LABEL[lic ?? 'hikeratlas-only'] ?? lic}{lic ? '' : ' (no licence given)'}</span>
-                {session && <button type='button' onClick={() => remove(p)} className='text-red-700 hover:underline'>Delete</button>}
-              </div>
+              <p className='whitespace-pre-line text-[15px] text-stone-800'>{r.text.slice(0, 3000)}</p>
+              {r.photos?.length && pds && did ? <Photos photos={r.photos} pds={pds} did={did} /> : null}
+              {/* Its track is in Tracks too, with its photos; here, its line and stats. */}
+              {track && pds && did && <TrackView track={track.value} pds={pds} did={did} />}
+              {footer(r.license, { review })}
+            </li>;
+          })}
+        </ul>}
+
+        <h2>Tracks</h2>
+        <p className='mt-1 text-stone-600'>{lists.tracks.length ? count(lists.tracks.length, 'track') : 'No tracks yet.'}</p>
+        {lists.tracks.length > 0 && <ul className='mt-4 flex flex-col gap-3'>
+          {lists.tracks.map(({ at, track }) => {
+            const t = track.value;
+            return <li key={track.uri} className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
+              {heading(t.routeKey, at)}
+              {pds && did && <TrackView track={t} pds={pds} did={did} />}
+              {t.photos?.length && pds && did ? <Photos photos={t.photos} pds={pds} did={did} /> : null}
+              {footer(t.license, { track })}
             </li>;
           })}
         </ul>}

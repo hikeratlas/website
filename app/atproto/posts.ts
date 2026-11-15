@@ -10,6 +10,7 @@
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { PROFILE, REVIEW, TRACK } from './scope';
 import { gzip } from './gpx';
+import { parseAtUri } from './postLists';
 import type { PreparedPhoto } from './photos';
 import { notifyIndexer } from './indexer';
 
@@ -158,6 +159,18 @@ async function getRecord(pds: string, did: string, collection: string, rkey: str
 }
 
 export interface Rec<T> { uri: string; cid: string; value: T }
+
+// A record by its at:// URI, from the PDS given (the author's): null if it's
+// gone, unreadable or not a record URI.
+export async function getRecordByUri(pds: string, uri: string): Promise<Rec<unknown> | null> {
+  const at = parseAtUri(uri);
+  if (!at) return null;
+  try {
+    return await getRecord(pds, at.repo, at.collection, at.rkey) as Rec<unknown> | null;
+  } catch {
+    return null;
+  }
+}
 
 // A collection's records, newest first (TIDs sort by time): up to max.
 export async function listRecords<T>(pds: string, did: string, collection: string, max = 200): Promise<Rec<T>[]> {
