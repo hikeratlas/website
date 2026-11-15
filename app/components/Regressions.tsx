@@ -8,7 +8,9 @@
 // becomes a trail entry with a trace; or reject it. An entry: redraw or
 // re-pick its trace, change the length it expects, or delete it. A hike
 // routes offers (Hikes): bless it, to keep it as it is (a blessed entry,
-// routes' expect.py).
+// routes' expect.py). A trail routes doesn't offer: add it (Add a trail),
+// drawn on the map, as a trail entry with that trace. Any park the site's
+// search finds can be opened here, files or not.
 // Changes are kept in this browser until committed: one commit to a working
 // branch in routes, and a pull request from it, so routes' CI checks them.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -47,6 +49,7 @@ const SETTINGS_KEY = 'regressions:settings';
 const DECISIONS_KEY = 'regressions:decisions';
 const EDITS_KEY = 'regressions:entry-edits';
 const BLESS_KEY = 'regressions:blessings';
+const ADD_KEY = 'regressions:added';
 
 interface Settings { branch: string; base: string }
 type Box = [number, number, number, number];
@@ -57,8 +60,9 @@ interface Offered { label: string; name: string | null; title: string; key: stri
 type Decisions = Record<string, Record<string, Decision>>;   // stem -> proposal key -> decision
 type Edits = Record<string, Record<string, EntryEdit>>;      // stem -> entry key -> edit
 type Blessings = Record<string, Record<string, Entry>>;      // stem -> route key -> blessed entry
+type Added = Record<string, Record<string, Entry>>;          // stem -> name -> new entry
 // What's selected: a proposal, an entry or an offered hike, by index in its list.
-type Subject = { type: 'proposal'; i: number } | { type: 'entry'; i: number } | { type: 'hike'; i: number };
+type Subject = { type: 'proposal'; i: number } | { type: 'entry'; i: number } | { type: 'hike'; i: number } | { type: 'new' };
 type Tab = 'proposals' | 'entries' | 'hikes';
 
 function stored<T>(k: string, fallback: T): T {
@@ -124,6 +128,12 @@ export default function Regressions({ build }: { build: string | null }) {
   const [decisions, setDecisions] = useState<Decisions>({});
   const [edits, setEdits] = useState<Edits>({});
   const [blessings, setBlessings] = useState<Blessings>({});
+  const [added, setAdded] = useState<Added>({});
+  // Add a trail: its name and source (its length and note are km and note).
+  const [newName, setNewName] = useState('');
+  const [newSource, setNewSource] = useState('');
+  // A park picked in search, to open here.
+  const [searchPark, setSearchPark] = useState<Item | null>(null);
   // The hikes routes offers in the park open (Hikes), by its stem.
   const [hikes, setHikes] = useState<{ stem: string; list: Offered[] } | null>(null);
   const [trail, setTrail] = useState<LngLat[][] | null>(null);
@@ -143,6 +153,7 @@ export default function Regressions({ build }: { build: string | null }) {
     setDecisions(stored(DECISIONS_KEY, {}));
     setEdits(stored(EDITS_KEY, {}));
     setBlessings(stored(BLESS_KEY, {}));
+    setAdded(stored(ADD_KEY, {}));
   }, []);
   const gh = useMemo(() => new GitHub(token || null), [token]);
   useEffect(() => { gh.user().then(setLogin).catch(() => setLogin(null)); }, [gh]);
@@ -291,6 +302,10 @@ export default function Regressions({ build }: { build: string | null }) {
     const next = mergeEdits(blessings, park.stem, hike.key, e);
     setBlessings(next); store(BLESS_KEY, next);
   };
+  const addEntry = (stem: string, name: string, e: Entry | null) => {
+    const next = mergeEdits(added, stem, name, e);
+    setAdded(next); store(ADD_KEY, next);
+  };
   const setEdit = (x: EntryEdit | null) => {
     if (!park || !entry) return;
     const next = mergeEdits(edits, park.stem, entryKey(entry), x);
@@ -379,6 +394,15 @@ export default function Regressions({ build }: { build: string | null }) {
     map.fitBounds(bounds([hike.line]), { padding: 70, maxZoom: 15, duration: 0 });
   }, [map, hike]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Add a trail: a clean map to draw on, the park in view if nothing is.
+  useEffect(() => {
+    if (!map || subject?.type !== 'new' || !map.getSource('rg-trace')) return;
+    setTrail(null); setOffered([]); setPick(null); draw.clear(); setDrawing(true);
+    setNewName(''); setNewSource(''); setKm(''); setNote('');
+    map.getSource<GeoJSONSource>('rg-trace')!.setData(EMPTY);
+    if (park?.bbox && map.getZoom() < 11) map.fitBounds([[park.bbox[0], park.bbox[1]], [park.bbox[2], park.bbox[3]]], { padding: 40, duration: 0 });
+  }, [map, subject]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The start and end of the entry's trace (or a dest entry's trailhead),
   // and of the hike picked, labelled.
   useEffect(() => {
@@ -453,7 +477,7 @@ export default function Regressions({ build }: { build: string | null }) {
     setDrawing(false);
   };
 
-  const nChanges = [decisions, edits, blessings].reduce((n, all) => n + Object.values(all).reduce((s, d) => s + Object.keys(d).length, 0), 0);
+  const nChanges = [decisions, edits, blessings, added].reduce((n, all) => n + Object.values(all).reduce((s, d) => s + Object.keys(d).length, 0), 0);
 
   // Commit every change: proposals' statuses, the entries accepted ones
   // become, edited and deleted entries, and a fixture for each park that
@@ -469,7 +493,8 @@ export default function Regressions({ build }: { build: string | null }) {
       const files: Record<string, string> = {};
       const fixtures = JSON.parse(await gh.read('fixtures/parks.json', base) ?? '[]') as { key: string; id?: string; park: string; bbox: number[] }[];
       let addedFixtures = 0, accepted = 0, rejected = 0, updated = 0, deleted = 0, blessed = 0;
-      const stems = [...new Set([...Object.keys(decisions), ...Object.keys(edits), ...Object.keys(blessings)])];
+      const stems = [...new Set([...Object.keys(decisions), ...Object.keys(edits), ...Object.keys(blessings), ...Object.keys(added)])];
+      let nAdded = 0;
       for (const st of stems) {
         const pText = await gh.read(`fixtures/proposals/${st}.jsonl`, base);
         const pf = parseJsonl<Proposal>(pText);
@@ -512,6 +537,12 @@ export default function Regressions({ build }: { build: string | null }) {
           if (at >= 0) entries[at] = e; else entries.push(e);
           blessed++;
         }
+        // Added: in place of an entry of the same name, else added.
+        for (const e of Object.values(added[st] ?? {})) {
+          const at = entries.findIndex((x) => entryKey(x) === entryKey(e));
+          if (at >= 0) entries[at] = e; else entries.push(e);
+          nAdded++;
+        }
         if (pText !== null && toJsonl(pf) !== toJsonl(parseJsonl(pText))) files[`fixtures/proposals/${st}.jsonl`] = toJsonl(pf);
         if (toJsonl(entries) !== before) files[`fixtures/expect/${st}.jsonl`] = entries.length ? toJsonl(entries) : '';
         const pk = parks.find((x) => x.stem === st);
@@ -525,7 +556,7 @@ export default function Regressions({ build }: { build: string | null }) {
       }
       if (addedFixtures) files['fixtures/parks.json'] = JSON.stringify(fixtures, null, 2) + '\n';
       const parkNames = stems.map((st) => parks.find((x) => x.stem === st)?.park ?? st);
-      const what = [accepted && `${accepted} accepted`, rejected && `${rejected} rejected`, updated && `${updated} entr${updated === 1 ? 'y' : 'ies'} edited`, deleted && `${deleted} deleted`, blessed && `${blessed} blessed`].filter(Boolean).join(', ');
+      const what = [accepted && `${accepted} accepted`, rejected && `${rejected} rejected`, updated && `${updated} entr${updated === 1 ? 'y' : 'ies'} edited`, deleted && `${deleted} deleted`, blessed && `${blessed} blessed`, nAdded && `${nAdded} added`].filter(Boolean).join(', ');
       const msg = `Named regressions: ${what} (${parkNames.join(', ')})\n\nFrom the website's /dev/regressions page${login ? `, by ${login}` : ''}.` +
         (addedFixtures ? ` ${addedFixtures} park(s) added to fixtures/parks.json.` : '');
       await gh.commit(settings.branch, base, files, msg);
@@ -533,6 +564,7 @@ export default function Regressions({ build }: { build: string | null }) {
         'Proposals accepted (as trail entries with traces) or rejected, entries edited, and hikes blessed, on the website\'s /dev/regressions page (routes#95). Each commit says what it changed.');
       setDecisions({}); store(DECISIONS_KEY, {});
       setBlessings({}); store(BLESS_KEY, {});
+      setAdded({}); store(ADD_KEY, {});
       setEdits({}); store(EDITS_KEY, {});
       setCommitting(`Committed to ${settings.branch}: pull request #${pr.number}.`);
       setPull(pr);
@@ -546,8 +578,8 @@ export default function Regressions({ build }: { build: string | null }) {
   const chip = (on: boolean) => `tap px-2.5 py-0.5 rounded-full border text-xs ${on ? 'bg-emerald-800 border-emerald-800 text-white' : 'border-gray-300 bg-white text-gray-800'}`;
   const counts = (pf: Park) => {
     const open = pf.proposals.filter((p) => p.status === 'open').length;
-    const changed = Object.keys(decisions[pf.stem] ?? {}).length + Object.keys(edits[pf.stem] ?? {}).length + Object.keys(blessings[pf.stem] ?? {}).length;
-    return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'fixture';
+    const changed = Object.keys(decisions[pf.stem] ?? {}).length + Object.keys(edits[pf.stem] ?? {}).length + Object.keys(blessings[pf.stem] ?? {}).length + Object.keys(added[pf.stem] ?? {}).length;
+    return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'no entries yet';
   };
   const t = newTrace();
   const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `${x.addTrace ? 'another' : 'new'} trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
@@ -560,6 +592,7 @@ export default function Regressions({ build }: { build: string | null }) {
     return { lat: c.lat, lon: c.lng };
   };
   const goTo = (item: Item) => {
+    setSearchPark(item.kind === 'park' && item.state ? item : null);
     if (!map) return;
     if (item.min_lon != null && item.min_lat != null && item.max_lon != null && item.max_lat != null) {
       map.fitBounds([[item.min_lon, item.min_lat], [item.max_lon, item.max_lat]], { padding: 70, maxZoom: 15, duration: 0 });
@@ -567,6 +600,22 @@ export default function Regressions({ build }: { build: string | null }) {
       map.jumpTo({ center: [item.lon, item.lat], zoom: 13 });
     }
   };
+
+  // Open a park search found: as it is here, else as a new one (no files
+  // yet; the first commit with entries makes them, and its fixture).
+  const openPark = (item: Item) => {
+    const id = String(item.osm_id);
+    const have = parks.find((x) => x.park_id === id);
+    if (have) { setStem(have.stem); setSearchPark(null); return; }
+    const box: Box | undefined = item.min_lon != null && item.min_lat != null && item.max_lon != null && item.max_lat != null
+      ? [item.min_lon, item.min_lat, item.max_lon, item.max_lat] : undefined;
+    const pk: Park = { stem: `${slug(item.state!)}-${slug(item.name)}`, park: item.name, park_id: id, region: item.state!, proposals: [], entries: [], bbox: box };
+    setParks((ps) => [...ps.filter((x) => x.stem !== pk.stem), pk].sort((a, b) => a.park.localeCompare(b.park)));
+    setStem(pk.stem);
+    setSearchPark(null);
+  };
+  const isNew = subject?.type === 'new';
+  const pendingAdds = park ? Object.values(added[park.stem] ?? {}) : [];
 
   return <div className='flex flex-col md:flex-row h-[100dvh]'>
     <aside className={`md:w-[400px] md:h-full ${bigMap ? 'h-[30%]' : 'h-1/2'} overflow-y-auto border-r border-gray-200 bg-white text-sm flex flex-col order-2 md:order-1`}>
@@ -599,6 +648,7 @@ export default function Regressions({ build }: { build: string | null }) {
             <button type='button' className={chip(tab === 'proposals')} disabled={!park?.proposals.length} onClick={() => setTab('proposals')}>Proposals ({park?.proposals.length ?? 0})</button>
             <button type='button' className={chip(tab === 'entries')} disabled={!park?.entries.length} onClick={() => setTab('entries')}>Entries ({park?.entries.length ?? 0})</button>
             <button type='button' className={chip(tab === 'hikes')} disabled={!parkHikes?.length} onClick={() => setTab('hikes')}>Hikes ({parkHikes?.length ?? '…'})</button>
+            <button type='button' className={chip(isNew)} disabled={!park} onClick={() => setSubject({ type: 'new' })}>+ Add a trail</button>
             {tab === 'proposals' && <span className='ml-auto flex gap-1'>
               {(['open', 'all'] as const).map((f) => <button key={f} type='button' onClick={() => setFilter(f)} className={`tap px-2 rounded border ${filter === f ? 'border-gray-500' : 'border-transparent text-gray-500'}`}>{f === 'open' ? 'Open' : 'All'}</button>)}
             </span>}
@@ -641,6 +691,24 @@ export default function Regressions({ build }: { build: string | null }) {
           {entryProp?.quote && <blockquote className='border-l-2 border-gray-300 pl-2 text-xs text-gray-700 break-words'>{entryProp.quote}</blockquote>}
           {(entry.kind ?? 'dest') === 'dest' && <div className='text-xs text-gray-500'>This page edits trail entries; a dest entry can only be deleted here.</div>}
         </div>}
+        {isNew && park && <div className='flex flex-col gap-1.5'>
+          <div className='font-semibold text-base'>Add a trail to {park.park}</div>
+          <div className='text-xs text-gray-600'>For a hike routes should offer and doesn’t: name it as it’s known, give its length, and draw it on the map from its trailhead to where it ends. It becomes a trail entry with that trace, so the checks flag it until routes offers it.</div>
+          <label className='flex flex-col gap-0.5 text-xs text-gray-600'>Name
+            <input className='border border-gray-300 rounded px-2 py-1 text-sm text-gray-900' value={newName} onChange={(e) => setNewName(e.target.value)} placeholder='e.g. Lion’s Head Lookout' /></label>
+          <label className='flex flex-col gap-0.5 text-xs text-gray-600'>Source (optional: where it’s listed)
+            <input className='border border-gray-300 rounded px-2 py-1 text-sm text-gray-900' value={newSource} onChange={(e) => setNewSource(e.target.value)} placeholder='https://…' /></label>
+          <div className='flex flex-col gap-1.5 border border-gray-200 rounded p-2'>
+            <div className='flex items-center gap-1.5 flex-wrap'>
+              <button type='button' className={drawing ? `${btn} !bg-violet-700 !border-violet-700 !text-white` : btn} onClick={() => setDrawing(!drawing)}>{drawing ? 'Drawing: click along the hike' : 'Draw it'}</button>
+              <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.undo}>Undo point</button>
+              <button type='button' className={btn} disabled={!draw.points.length} onClick={draw.clear}>Clear</button>
+              {draw.coords.length > 1 && <button type='button' className={btn} onClick={() => setKm((draw.metres / 1000).toFixed(1))}>Use its length</button>}
+            </div>
+            <div className='text-xs text-gray-600'>{draw.error ?? (draw.busy ? 'Routing…' : draw.points.length < 2 ? 'Click exactly where the hike starts (its trailhead), then along it: each click is routed along trails.' : `${(draw.metres / 1000).toFixed(1)} km through ${draw.points.length} points. Drag any point to move it.`)}</div>
+          </div>
+          {pendingAdds.length > 0 && <div className='text-xs text-gray-600'>To add here: {pendingAdds.map((e) => <span key={e.name} className='inline-flex items-center gap-1 mr-2'><b>{e.name}</b> ({e.km} km)<button type='button' className='underline' onClick={() => addEntry(park.stem, e.name, null)}>undo</button></span>)}</div>}
+        </div>}
         {hike && <div className='flex flex-col gap-1.5'>
           <div className='font-semibold text-base'>{hike.label} <span className='font-normal text-gray-500 text-xs'>{hike.km} km</span></div>
           <div>Bless it to keep it as routes offers it now: an entry named <b>{hike.title}</b>, its line the trace, expecting {hike.km} km (±15%). The checks then flag it if it’s renamed, gets longer or shorter, starts or ends elsewhere, takes another line, or goes.</div>
@@ -680,8 +748,8 @@ export default function Regressions({ build }: { build: string | null }) {
           </div>}
         </>}
       </div>
-      {(prop || entry || hike) && <div className='mt-auto md:sticky md:bottom-0 bg-white border-t border-gray-200 p-2 md:p-3 flex flex-col gap-1.5'>
-        {(prop || (entry?.kind ?? 'dest') === 'trail') && <div className='flex items-center gap-2'>
+      {(prop || entry || hike || isNew) && <div className='mt-auto md:sticky md:bottom-0 bg-white border-t border-gray-200 p-2 md:p-3 flex flex-col gap-1.5'>
+        {(prop || isNew || (entry?.kind ?? 'dest') === 'trail') && <div className='flex items-center gap-2'>
           <label className='text-xs text-gray-600 flex items-center gap-1'>Expect <input type='number' step='0.1' min='0' className='border border-gray-300 rounded px-1.5 py-0.5 w-20' value={km} onChange={(e) => setKm(e.target.value)} /> km</label>
           <input className='border border-gray-300 rounded px-2 py-0.5 text-sm flex-1 min-w-0' placeholder='Note (optional)' value={note} onChange={(e) => setNote(e.target.value)} />
         </div>}
@@ -704,6 +772,21 @@ export default function Regressions({ build }: { build: string | null }) {
           </div>
           <div className='text-xs text-gray-600'>{edit ? <>Changed: <b>{editSummary(edit)}</b>{edit.note ? ` · ${edit.note}` : ''}</> : 'Unchanged.'}</div>
         </>}
+        {isNew && park && <>
+          <div className='flex gap-1.5'>
+            <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={!newName.trim() || !(kmNum > 0) || draw.busy || draw.coords.length < 2}
+              onClick={() => {
+                const name = newName.trim();
+                addEntry(park.stem, name, {
+                  kind: 'trail', park: park.park, park_id: park.park_id, issue: 'routes#95',
+                  ...(newSource.trim() ? { source: newSource.trim() } : {}), name, km: kmNum, trace: simplify(draw.coords),
+                  ...(note.trim() ? { trace_note: note.trim() } : {}),
+                });
+                draw.clear(); setNewName(''); setNewSource(''); setKm(''); setNote('');
+              }}>Add this trail</button>
+          </div>
+          <div className='text-xs text-gray-600'>{!newName.trim() ? 'Name it' : !(kmNum > 0) ? 'Give its length' : draw.coords.length < 2 ? 'Draw it' : 'Ready to add.'}</div>
+        </>}
         {hike && park && <>
           <div className='flex gap-1.5'>
             <button type='button' className={`${btn} flex-1 !bg-emerald-800 !border-emerald-800 !text-white`} disabled={!hike.key || !hike.line.length}
@@ -724,6 +807,7 @@ export default function Regressions({ build }: { build: string | null }) {
           view on openstreetmap.org, to check what's mapped. */}
       <div className='absolute left-2 top-2 flex flex-col items-start gap-1.5 w-72 max-w-[calc(100%-4rem)]' style={{ zIndex: 2 }}>
         <div className='w-full'><Search onSelect={goTo} build={build} near={searchNear} /></div>
+        {searchPark && searchPark.state && String(searchPark.osm_id) !== park?.park_id && <button type='button' className='bg-white rounded shadow px-2 py-1 text-sm text-emerald-800 underline' onClick={() => openPark(searchPark)}>Open {searchPark.name} here</button>}
         <div className='bg-white/90 rounded shadow px-2 py-0.5'><OsmLink map={map} /></div>
       </div>
     </div>
