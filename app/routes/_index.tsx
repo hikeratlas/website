@@ -47,12 +47,11 @@ function FeaturedSlot() {
 }
 
 // The page's two columns from lg: the text, and the featured cards beside it.
-// Narrower, one column, the cards before the blog (home.mdx's text column is
-// display: contents there, its blog last). Not for ?shots, whose cards are
+// Narrower, one column, the cards last. Not for ?shots, whose cards are
 // drawn at their pictures' sizes, wider than the side column.
 function Columns({ children }: { children: React.ReactNode }) {
   const { shots } = useLoaderData<typeof loader>();
-  return <div className={shots ? undefined : 'flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-x-12'}>{children}</div>;
+  return <div className={shots ? undefined : 'lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-x-12'}>{children}</div>;
 }
 
 // The newest blog post, and the way to the rest.
