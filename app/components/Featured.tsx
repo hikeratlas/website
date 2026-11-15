@@ -31,7 +31,7 @@ const CTA = 'mt-auto inline-flex items-center gap-1.5 self-start rounded-xl bg-g
 // it's too long), the featured one marked: a reader can switch the cards to
 // another park (?showcase=N, keeping the rest of the query, a preview's
 // ?build=). Remix links, so only the cards' data loads, and the page stays put.
-function ParkSwitcher({ showcase, search }: { showcase: Data['showcase']; search: string }) {
+function ParkSwitcher({ showcase, search, side }: { showcase: Data['showcase']; search: string; side: string }) {
   const { index, names } = showcase;
   const row = useRef<HTMLDivElement>(null);
   const to = (i: number) => {
@@ -49,7 +49,7 @@ function ParkSwitcher({ showcase, search }: { showcase: Data['showcase']; search
     r.scrollTo({ left: left - r.clientWidth / 2 + el.offsetWidth / 2, behavior: 'smooth' });
   }, [index]);
   const arrow = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-300 !text-stone-700 !no-underline hover:bg-stone-100';
-  return <nav aria-label='Showcase parks' className='mt-6 -mb-3 flex items-center gap-2'>
+  return <nav aria-label='Showcase parks' className={`mt-6 -mb-3 flex items-center gap-2 ${side && 'lg:mt-0'}`}>
     <Link to={to(index - 1)} preventScrollReset aria-label='Previous park' className={arrow}>«</Link>
     <div ref={row} className='flex min-w-0 flex-1 gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'>
       {names.map((n, i) => <Link key={n} to={to(i)} preventScrollReset aria-current={i === index ? 'true' : undefined}
@@ -77,6 +77,9 @@ export default function Featured({ data, style, search = '', shots = false }: { 
   const { park, hike } = data;
   const days = park.counts.find(([, w]) => w === 'day hike')?.[0] ?? 0;
   const images = shots ? null : data.images;
+  // From lg, the homepage has the cards in a side column (not for ?shots,
+  // whose cards are drawn wider): one above the other.
+  const side = shots ? '' : 'lg:grid-cols-1';
   const parkArt = images
     ? <img src={images.park} alt={`A map of ${park.name}`} width={PARK_ART.w} height={PARK_ART.h} className='block aspect-[8/5] w-full object-cover' />
     : shots
@@ -98,8 +101,8 @@ export default function Featured({ data, style, search = '', shots = false }: { 
       <div className='min-w-0 flex-1 px-1 py-2'><HikeGraphic hike={hike} /></div>
     </div>;
   return <>
-  <ParkSwitcher showcase={data.showcase} search={search} />
-  <section aria-label='Featured' className='my-6 grid gap-4 md:grid-cols-2'>
+  <ParkSwitcher showcase={data.showcase} search={search} side={side} />
+  <section aria-label='Featured' className={`my-6 grid gap-4 md:grid-cols-2 ${side}`}>
     <Card href={park.path} eyebrow={`${data.near ? 'A park near you' : 'Featured park'} · ${park.region}`}
       art={parkArt}>
       <span className='font-display text-2xl font-extrabold leading-tight tracking-tight'>{park.name}</span>
@@ -123,7 +126,7 @@ export default function Featured({ data, style, search = '', shots = false }: { 
       </span>
       <TerrainBar landcover={hike.landcover} className='h-[5px] w-40' />
       {hike.along.length > 0
-        ? <ol className='!m-0 !list-none !p-0 grid grid-cols-1 gap-x-4 gap-y-0.5 text-sm text-stone-700 sm:grid-cols-2'>
+        ? <ol className={`!m-0 !list-none !p-0 grid grid-cols-1 gap-x-4 gap-y-0.5 text-sm text-stone-700 sm:grid-cols-2 ${side}`}>
           {hike.along.map((f) => <li key={f.n} className='flex items-center gap-1.5'>
             <span className='flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-fuchsia-700 text-[9px] font-bold text-white'>{f.n}</span>
             <span className='truncate'>{f.name}</span>

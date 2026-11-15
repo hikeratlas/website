@@ -16,7 +16,7 @@ export function SiteHeader() {
       </a>
       <nav className='ml-auto flex items-center gap-4'>
         <a href='/map' className={nav}>Map</a>
-        <a href='/#blog' className={nav}>Blog</a>
+        <a href='/blog' className={nav}>Blog</a>
         <AccountButton />
       </nav>
     </div>
