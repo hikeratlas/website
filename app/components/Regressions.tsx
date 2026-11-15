@@ -579,7 +579,7 @@ export default function Regressions({ build }: { build: string | null }) {
   const counts = (pf: Park) => {
     const open = pf.proposals.filter((p) => p.status === 'open').length;
     const changed = Object.keys(decisions[pf.stem] ?? {}).length + Object.keys(edits[pf.stem] ?? {}).length + Object.keys(blessings[pf.stem] ?? {}).length + Object.keys(added[pf.stem] ?? {}).length;
-    return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'fixture';
+    return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'no entries yet';
   };
   const t = newTrace();
   const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.trace && `${x.addTrace ? 'another' : 'new'} trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
