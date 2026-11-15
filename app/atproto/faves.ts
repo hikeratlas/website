@@ -6,6 +6,7 @@
 // people page).
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { FAVE } from './scope';
+import { notifyIndexer } from './indexer';
 
 const xrpc = (session: OAuthSession, method: string, body?: unknown) =>
   session.fetchHandler(`/xrpc/${method}`, body === undefined ? undefined : {
@@ -25,6 +26,7 @@ export async function setFave(session: OAuthSession, key: string, on: boolean): 
     })
     : await xrpc(session, 'com.atproto.repo.deleteRecord', { repo: session.did, collection: FAVE, rkey: key });
   if (!r.ok) throw new Error(`${on ? 'Saving' : 'Removing'} the fave failed (${r.status})`);
+  notifyIndexer(`at://${session.did}/${FAVE}/${key}`, key);
 }
 
 // Someone's faves, newest first, from their PDS (public records: no session

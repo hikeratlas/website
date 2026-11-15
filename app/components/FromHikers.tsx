@@ -5,7 +5,7 @@
 // indexer, both render nothing.
 import { useEffect, useState } from 'react';
 import { describeDid } from '~/atproto/identity';
-import { type ActorView, type PostView, type RouteStats, getRouteReviews, getRouteStats, getRouteTracks, reportUrl } from '~/atproto/indexer';
+import { type ActorView, type PostView, type RouteStats, getRouteReviews, getRouteStats, getRouteTracks, reportUrl, useFresh } from '~/atproto/indexer';
 import { tagLabel, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
 import { LICENSE_LABEL } from '~/components/PostDialog';
 import { Photos, TrackView, day } from '~/components/Posts';
@@ -15,13 +15,15 @@ const PAGE = 10;
 
 export function useRouteStats(key: string | null): RouteStats | null {
   const [stats, setStats] = useState<RouteStats | null>(null);
+  // After one of our writes to this route: refetch, past the cache.
+  const fresh = useFresh(key);
   useEffect(() => {
-    setStats(null);
+    if (!fresh) setStats(null);
     if (!key) return;
     let live = true;
-    getRouteStats([key]).then((m) => { if (live) setStats(m?.get(key) ?? null); });
+    getRouteStats([key], fresh).then((m) => { if (live && m) setStats(m.get(key) ?? null); });
     return () => { live = false; };
-  }, [key]);
+  }, [key, fresh]);
   return stats;
 }
 
@@ -94,17 +96,17 @@ function Track({ post }: { post: PostView<TrackRecord> }) {
 }
 
 // A list that shows FIRST posts, then pages through the rest.
-function usePosts<T>(key: string, count: number, load: (key: string, limit: number, cursor?: string) => Promise<{ items: T[]; cursor?: string } | null>) {
+function usePosts<T>(key: string, count: number, load: (key: string, limit: number, cursor?: string, fresh?: number) => Promise<{ items: T[]; cursor?: string } | null>) {
   const [items, setItems] = useState<T[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const fresh = useFresh(key);
   useEffect(() => {
-    setItems([]); setCursor(undefined);
-    if (!count) return;
+    if (!count) { setItems([]); setCursor(undefined); return; }
     let live = true;
-    load(key, FIRST).then((r) => { if (live && r) { setItems(r.items); setCursor(r.cursor); } });
+    load(key, FIRST, undefined, fresh).then((r) => { if (live && r) { setItems(r.items); setCursor(r.cursor); } });
     return () => { live = false; };
-  }, [key, count, load]);
+  }, [key, count, load, fresh]);
   const more = async () => {
     setBusy(true);
     const r = await load(key, PAGE, cursor);
@@ -114,12 +116,12 @@ function usePosts<T>(key: string, count: number, load: (key: string, limit: numb
   return { items, more: cursor ? more : null, busy };
 }
 
-const loadReviews = async (key: string, limit: number, cursor?: string) => {
-  const r = await getRouteReviews(key, limit, cursor);
+const loadReviews = async (key: string, limit: number, cursor?: string, fresh = 0) => {
+  const r = await getRouteReviews(key, limit, cursor, fresh);
   return r && { items: r.reviews, cursor: r.cursor };
 };
-const loadTracks = async (key: string, limit: number, cursor?: string) => {
-  const r = await getRouteTracks(key, limit, cursor);
+const loadTracks = async (key: string, limit: number, cursor?: string, fresh = 0) => {
+  const r = await getRouteTracks(key, limit, cursor, fresh);
   return r && { items: r.tracks, cursor: r.cursor };
 };
 
