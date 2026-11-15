@@ -24,4 +24,12 @@ describe('editedReview', () => {
     expect(out).not.toHaveProperty('hikedAt');
     expect(out.license).toBe('CC-BY-4.0');
   });
+
+  it('changes the licence when the edit gives one', () => {
+    expect(editedReview(review, { text: 'x', tags: [], photos: [], license: 'CC0-1.0' }).license).toBe('CC0-1.0');
+    const unlicensed: ReviewRecord = { ...review };
+    delete unlicensed.license;
+    const none = editedReview(unlicensed, { text: 'x', tags: [], photos: [] });
+    expect(none).not.toHaveProperty('license');
+  });
 });

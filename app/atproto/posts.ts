@@ -143,9 +143,10 @@ export async function publishReview(session: OAuthSession, pds: string, v: Revie
   return ref;
 }
 
-// What editing a review can change. Everything else (when it was posted, its
-// licence, its route, its track) stays as it was.
-export interface ReviewEdit { text: string; hikedAt?: string; tags: string[]; photos: Photo[] }
+// What editing a review can change, its licence included (from then on:
+// copies already made keep the licence they came with). Everything else
+// (when it was posted, its route, its track) stays as it was.
+export interface ReviewEdit { text: string; hikedAt?: string; tags: string[]; photos: Photo[]; license?: string }
 
 // Saves an edited review over the old one, at the same record key, so its
 // at:// URI (and anything pointing at it) stays the same. swapRecord makes
@@ -156,6 +157,7 @@ export function editedReview(value: ReviewRecord, edit: ReviewEdit): ReviewRecor
   delete kept.hikedAt; delete kept.tags; delete kept.photos;
   return {
     ...kept, $type: REVIEW, text: edit.text, createdAt: value.createdAt,
+    ...(edit.license ? { license: edit.license } : {}),
     ...(edit.hikedAt ? { hikedAt: edit.hikedAt } : {}),
     ...(edit.tags.length ? { tags: edit.tags } : {}),
     ...(edit.photos.length ? { photos: edit.photos } : {}),
