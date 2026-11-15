@@ -3,10 +3,15 @@
 // top of a hike's sheet, and "From hikers", their reviews and tracks. Each
 // post links to its author's profile and to a report form. Without the
 // indexer, both render nothing.
+//
+// A review shows its track (website#158): drawn in the review on a wide
+// screen; on a phone, where the sheet is tight, a "Has a track" line that
+// takes you to it in Tracks.
 import { useEffect, useState } from 'react';
 import { describeDid } from '~/atproto/identity';
 import { type ActorView, type PostView, type RouteStats, getRouteReviews, getRouteStats, getRouteTracks, reportUrl, useFresh } from '~/atproto/indexer';
-import { tagLabel, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
+import { getRecordByUri, tagLabel, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
+import { addNew, findTrack, isTrack, parseAtUri } from '~/atproto/postLists';
 import { LICENSE_LABEL } from '~/components/PostDialog';
 import { Photos, TrackView, day } from '~/components/Posts';
 
@@ -70,9 +75,37 @@ function Footer({ uri, license }: { uri: string; license?: string }) {
   </div>;
 }
 
-function Review({ post }: { post: PostView<ReviewRecord> }) {
+// A track's element id in Tracks, for a review's "Has a track" to go to.
+const trackId = (uri: string) => `track-${uri.replace(/[^\w-]+/g, '-')}`;
+
+// A review's track: from the loaded Tracks if it's there, else from the
+// author's PDS by the review's strongRef. Null if it has none, or it's gone
+// or unreadable.
+function useReviewTrack(post: PostView<ReviewRecord>, pds: string | null, loaded: PostView<TrackRecord>[]): PostView<TrackRecord> | null {
+  const uri = typeof post.record.track?.uri === 'string' ? post.record.track.uri : undefined;
+  const hit = findTrack(uri, loaded) ?? null;
+  const inLoaded = !!hit;
+  const [fetched, setFetched] = useState<PostView<TrackRecord> | null>(null);
+  useEffect(() => {
+    setFetched(null);
+    if (inLoaded || !uri || !pds) return;
+    let live = true;
+    getRecordByUri(pds, uri).then((rec) => {
+      if (live && rec && isTrack(rec.value)) setFetched({ uri: rec.uri, cid: rec.cid, author: post.author, record: rec.value, indexedAt: '' });
+    });
+    return () => { live = false; };
+  }, [uri, pds, inLoaded, post.author]);
+  return hit ?? fetched;
+}
+
+function Review({ post, phone, tracks, showTrack }: {
+  post: PostView<ReviewRecord>; phone: boolean; tracks: PostView<TrackRecord>[]; showTrack: (t: PostView<TrackRecord>) => void;
+}) {
   const pds = usePds(post.author);
   const r = post.record;
+  const track = useReviewTrack(post, pds, tracks);
+  // Its blobs are in the repository the record is in.
+  const trackDid = track ? parseAtUri(track.uri)?.repo ?? post.author.did : null;
   return <li className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
     <div className='text-sm text-stone-600'><Author author={post.author} />{` · ${day(r.hikedAt ?? r.createdAt)}`}</div>
     {r.tags?.length ? <div className='flex flex-wrap gap-1.5'>
@@ -80,6 +113,11 @@ function Review({ post }: { post: PostView<ReviewRecord> }) {
     </div> : null}
     <p className='whitespace-pre-line text-[15px] text-stone-800'>{String(r.text ?? '').slice(0, 3000)}</p>
     {r.photos?.length && pds ? <Photos photos={r.photos} pds={pds} did={post.author.did} /> : null}
+    {track && pds && trackDid && (phone
+      // Not a #hash link: the map keeps its position in the hash.
+      ? <a href={`#${trackId(track.uri)}`} onClick={(e) => { e.preventDefault(); showTrack(track); }}
+        className='self-start text-sm text-blue-700 hover:underline'>Has a track</a>
+      : <TrackView track={track.record} pds={pds} did={trackDid} />)}
     <Footer uri={post.uri} license={r.license} />
   </li>;
 }
@@ -87,7 +125,7 @@ function Review({ post }: { post: PostView<ReviewRecord> }) {
 function Track({ post }: { post: PostView<TrackRecord> }) {
   const pds = usePds(post.author);
   const t = post.record;
-  return <li className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
+  return <li id={trackId(post.uri)} className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
     <div className='text-sm text-stone-600'><Author author={post.author} />{` · ${day(t.startedAt ?? t.createdAt)}`}{t.title ? ` · ${t.title}` : ''}</div>
     {pds && <TrackView track={t} pds={pds} did={post.author.did} />}
     {t.photos?.length && pds ? <Photos photos={t.photos} pds={pds} did={post.author.did} /> : null}
@@ -96,7 +134,7 @@ function Track({ post }: { post: PostView<TrackRecord> }) {
 }
 
 // A list that shows FIRST posts, then pages through the rest.
-function usePosts<T>(key: string, count: number, load: (key: string, limit: number, cursor?: string, fresh?: number) => Promise<{ items: T[]; cursor?: string } | null>) {
+function usePosts<T extends { uri: string }>(key: string, count: number, load: (key: string, limit: number, cursor?: string, fresh?: number) => Promise<{ items: T[]; cursor?: string } | null>) {
   const [items, setItems] = useState<T[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
@@ -110,10 +148,12 @@ function usePosts<T>(key: string, count: number, load: (key: string, limit: numb
   const more = async () => {
     setBusy(true);
     const r = await load(key, PAGE, cursor);
-    if (r) { setItems((xs) => [...xs, ...r.items]); setCursor(r.cursor); }
+    if (r) { setItems((xs) => addNew(xs, r.items)); setCursor(r.cursor); }
     setBusy(false);
   };
-  return { items, more: cursor ? more : null, busy };
+  // One added out of turn: a review's track that isn't on the pages loaded.
+  const add = (x: T) => setItems((xs) => addNew(xs, [x]));
+  return { items, more: cursor ? more : null, busy, add };
 }
 
 const loadReviews = async (key: string, limit: number, cursor?: string, fresh = 0) => {
@@ -132,16 +172,27 @@ function More({ more, busy, what }: { more: (() => void) | null; busy: boolean; 
   </button>;
 }
 
-export function FromHikers({ routeKey, stats }: { routeKey: string; stats: RouteStats | null }) {
+// phone: the sheet is a phone's bottom sheet (CuratedRoutes' useIsPhone),
+// too tight to draw a review's track in it.
+export function FromHikers({ routeKey, stats, phone }: { routeKey: string; stats: RouteStats | null; phone: boolean }) {
   const reviews = usePosts(routeKey, stats?.reviews ?? 0, loadReviews);
   const tracks = usePosts(routeKey, stats?.tracks ?? 0, loadTracks);
+  // A "Has a track" tapped: its track, to scroll to once it's in Tracks.
+  const [goTo, setGoTo] = useState<string | null>(null);
+  useEffect(() => {
+    if (!goTo) return;
+    document.getElementById(trackId(goTo))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setGoTo(null);
+  }, [goTo, tracks.items]);
+  const showTrack = (t: PostView<TrackRecord>) => { tracks.add(t); setGoTo(t.uri); };
   if (!reviews.items.length && !tracks.items.length) return null;
   return <section id='from-hikers' className='flex flex-col gap-2'>
     <h2 className='font-display text-base font-bold'>From hikers</h2>
     {stats?.recentTags?.length ? <div className='text-[13px] text-stone-700'>
       Reported in the last month: {stats.recentTags.slice(0, 6).map(tagLabel).join(', ')}
     </div> : null}
-    {reviews.items.length > 0 && <ul className='flex flex-col gap-2'>{reviews.items.map((p) => <Review key={p.uri} post={p} />)}</ul>}
+    {reviews.items.length > 0 && <ul className='flex flex-col gap-2'>{reviews.items.map((p) =>
+      <Review key={p.uri} post={p} phone={phone} tracks={tracks.items} showTrack={showTrack} />)}</ul>}
     <More more={reviews.more} busy={reviews.busy} what='reviews' />
     {tracks.items.length > 0 && <>
       <h3 className='mt-1 text-sm font-semibold text-stone-700'>Tracks</h3>

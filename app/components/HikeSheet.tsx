@@ -33,9 +33,11 @@ interface Props {
   onHover: (c: [number, number] | null) => void;
   // A day hike from a base camp has its camp's other hikes here.
   children?: React.ReactNode;
+  // Shown in a phone's bottom sheet, not the desktop panel.
+  phone: boolean;
 }
 
-export default function HikeSheet({ title, route: r, shape, why, prof, reports, dest, campLabel, onHover, children }: Props) {
+export default function HikeSheet({ title, route: r, shape, why, prof, reports, dest, campLabel, onHover, children, phone }: Props) {
   const { units, dist, elev: m } = useFormat();
   // Where along it: "km 3.4", "mi 2.1".
   const at = (km: number) => `${units.distance} ${distanceValue(km, units).toFixed(1)}`;
@@ -144,7 +146,7 @@ export default function HikeSheet({ title, route: r, shape, why, prof, reports, 
 
     <PostButton title={title} line={r.line} shape={shape} />
 
-    {key && <FromHikers routeKey={key} stats={stats} />}
+    {key && <FromHikers routeKey={key} stats={stats} phone={phone} />}
 
     <RouteReportsList reports={reports} dest={dest} />
 

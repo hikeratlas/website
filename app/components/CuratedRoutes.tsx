@@ -718,7 +718,7 @@ export default function CuratedRoutes(props: Props) {
         <div className='text-gray-500 text-xs'>{c.meta}</div>
       </li>)}
     </ul>}
-    {mode === 'detail' && r && sel && <HikeSheet title={sel.title} route={r} shape={sel.shape} why={sel.why} prof={prof}
+    {mode === 'detail' && r && sel && <HikeSheet title={sel.title} route={r} shape={sel.shape} why={sel.why} prof={prof} phone={phone}
       reports={reps?.id === sel.id ? reps.reports : null} dest={reps?.id === sel.id ? reps.dest : undefined}
       campLabel={sel.base && !sel.id.split('/')[3] ? 'Camp' : 'Campsites along it'}
       onHover={(c) => setData('curated-hover', c ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } } : EMPTY)}>

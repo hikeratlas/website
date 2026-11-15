@@ -10,6 +10,7 @@ import { buildFor } from '~/build';
 import { describeDid, isHandle, profilePath, resolveHandle } from '~/atproto/identity';
 import { listFaves, type Fave } from '~/atproto/faves';
 import { getSettings, listRecords, type Rec, type ReviewRecord, type TrackRecord } from '~/atproto/posts';
+import { isTrack } from '~/atproto/postLists';
 import { REVIEW, TRACK } from '~/atproto/scope';
 import { signOut, useAtSession } from '~/atproto/session';
 
@@ -40,7 +41,7 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
     ...none, did, pds: doc.pds, handle: doc.handle ?? null, error: null as string | null,
     faves: faves.filter((f) => isRouteKey(f.key)),
     // Only well-formed ones: these are other people's records.
-    tracks: tracks.filter((t) => t.value && typeof t.value.createdAt === 'string' && t.value.gpx?.ref?.$link),
+    tracks: tracks.filter((t) => isTrack(t.value)),
     reviews: reviews.filter((r) => r.value && typeof r.value.text === 'string' && typeof r.value.createdAt === 'string'),
     license: settings.license ?? null,
     units: settings.units ?? null,
