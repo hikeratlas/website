@@ -11,6 +11,7 @@ import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { PROFILE, REVIEW, TRACK } from './scope';
 import { gzip } from './gpx';
 import type { PreparedPhoto } from './photos';
+import { notifyIndexer } from './indexer';
 
 export const LICENSES = ['CC0-1.0', 'CC-BY-4.0', 'hikeratlas-only'] as const;
 export type License = typeof LICENSES[number];
@@ -110,7 +111,9 @@ export async function publishTrack(session: OAuthSession, pds: string, t: TrackI
     ...(photos.length ? { photos } : {}),
   };
   const r = await call(session, 'com.atproto.repo.createRecord', { repo: session.did, collection: TRACK, record });
-  return (await r.json()) as StrongRef;
+  const ref = (await r.json()) as StrongRef;
+  notifyIndexer(ref.uri, t.routeKey);
+  return ref;
 }
 
 export interface ReviewInput {
@@ -134,12 +137,15 @@ export async function publishReview(session: OAuthSession, pds: string, v: Revie
     ...(photos.length ? { photos } : {}),
   };
   const r = await call(session, 'com.atproto.repo.createRecord', { repo: session.did, collection: REVIEW, record });
-  return (await r.json()) as StrongRef;
+  const ref = (await r.json()) as StrongRef;
+  notifyIndexer(ref.uri, v.routeKey);
+  return ref;
 }
 
 export async function deletePost(session: OAuthSession, uri: string): Promise<void> {
   const [, , , collection, rkey] = uri.split('/');
   await call(session, 'com.atproto.repo.deleteRecord', { repo: session.did, collection, rkey });
+  notifyIndexer(uri);
 }
 
 async function getRecord(pds: string, did: string, collection: string, rkey: string): Promise<{ uri: string; cid: string; value: unknown } | null> {
