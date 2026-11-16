@@ -5,7 +5,8 @@
 // record (editReview), so links to it keep working; when it was posted, its
 // hike and its track stay as they were.
 import { useEffect, useRef, useState } from 'react';
-import { blobUrl, editReview, LICENSES, TAGS, type Rec, type ReviewRecord } from '~/atproto/posts';
+import { editReview, LICENSES, TAGS, type Rec, type ReviewRecord } from '~/atproto/posts';
+import { PhotoImg } from '~/components/Posts';
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { LICENSE_LABEL, localDay, MAX_TEXT, noonOf, today } from '~/components/PostDialog';
 
@@ -86,7 +87,7 @@ export function EditReviewDialog({ review, session, pds, onClose, onSaved }: {
           <span className={label}>Photos</span>
           <ul className='flex flex-col gap-2'>
             {photos.map((p, i) => <li key={p.image.ref.$link} className='flex items-center gap-2'>
-              <img src={blobUrl(pds, session.did, p.image)} alt='' className='h-14 w-14 shrink-0 rounded-lg object-cover' />
+              <PhotoImg photo={p} pds={pds} did={session.did} alt='' className='h-14 w-14 shrink-0 rounded-lg object-cover' />
               <input value={p.alt ?? ''} placeholder='Describe it (for people who can’t see it)' aria-label={`Description of photo ${i + 1}`}
                 onChange={(e) => setPhotos(photos.map((q, j) => (j === i ? { ...q, alt: e.target.value } : q)))}
                 className='h-10 min-w-0 flex-1 rounded-lg border border-stone-300 px-2 text-sm' />

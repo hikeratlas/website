@@ -14,6 +14,17 @@ import type { ReviewRecord, TrackRecord } from './posts';
 export const INDEXER = 'https://indexer.hikeratlas.com';
 const TIMEOUT_MS = 5000;
 
+// A photo through the indexer's cache (com.hikeratlas.temp.getPhoto,
+// website#177): a thumbnail (at most 640 px a side), or as uploaded. Only for
+// photos of records it has; see PhotoImg for the fallback.
+export function photoUrl(did: string, cid: string, size: 'thumbnail' | 'fullsize' = 'thumbnail'): string {
+  const u = new URL('/xrpc/com.hikeratlas.temp.getPhoto', INDEXER);
+  u.searchParams.set('did', did);
+  u.searchParams.set('cid', cid);
+  if (size !== 'thumbnail') u.searchParams.set('size', size);
+  return u.toString();
+}
+
 export interface RouteStats {
   routeKey: string; faves: number; reviews: number; tracks: number;
   lastActivity?: string; recentTags?: string[];

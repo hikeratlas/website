@@ -19,14 +19,26 @@ export interface PreparedPhoto {
   takenAt: string | null;
   // Whether takenAt came with its time zone (EXIF often has local time only).
   offsetKnown: boolean;
+  // Its size as displayed (EXIF orientation applied), for the record's
+  // aspectRatio (website#177); 0 if it couldn't be read.
+  width: number;
+  height: number;
 }
 
 export async function preparePhoto(file: File): Promise<PreparedPhoto> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const exif = readExif(bytes);
   const info = { lat: exif.lat, lon: exif.lon, takenAt: exif.takenAt, offsetKnown: exif.offsetKnown };
-  if (file.type === 'image/jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8 && file.size <= MAX_BYTES)
-    return { blob: file, ...info };
+  if (file.type === 'image/jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8 && file.size <= MAX_BYTES) {
+    // Uploaded as it is; decoded only for its size, as displayed.
+    let width = 0, height = 0;
+    try {
+      const b = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      [width, height] = [b.width, b.height];
+      b.close();
+    } catch { /* no aspectRatio, then */ }
+    return { blob: file, ...info, width, height };
+  }
 
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   let scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
@@ -40,9 +52,9 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
     if (!blob) throw new Error(`Couldn't read ${file.name}`);
     if (blob.size <= room) {
       bitmap.close();
-      if (!exif.segment) return { blob, ...info };
+      if (!exif.segment) return { blob, ...info, width: w, height: h };
       const out = withExif(new Uint8Array(await blob.arrayBuffer()), exif.segment);
-      return { blob: new Blob([out as BlobPart], { type: 'image/jpeg' }), ...info };
+      return { blob: new Blob([out as BlobPart], { type: 'image/jpeg' }), ...info, width: w, height: h };
     }
     if (quality > 0.6) quality -= 0.1; else scale *= 0.8;
   }
