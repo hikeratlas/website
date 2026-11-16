@@ -2,6 +2,7 @@
 // pages' "From hikers": photos, and a track's stats, line and GPX.
 import { useEffect, useState } from 'react';
 import { lines, readBlob } from '~/atproto/gpx';
+import { photoUrl } from '~/atproto/indexer';
 import { blobUrl, type Photo, type TrackRecord } from '~/atproto/posts';
 import { stepsText } from '~/atproto/postLists';
 import { durationText, kmText } from '~/components/PostDialog';
@@ -9,13 +10,26 @@ import { elevation, useUnits } from '~/units';
 
 export const day = (s?: string) => (s ? new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
+// A photo's thumbnail, through the indexer's cache (website#177): at most
+// 640 px a side, where the photo itself is up to 2 MB. If the indexer can't
+// give it (a record it hasn't indexed yet, or no thumbnails there), the photo
+// from its author's PDS instead. Lazy, so photos out of view wait.
+export function PhotoImg({ photo, pds, did, alt, className }: { photo: Photo; pds: string; did: string; alt?: string; className?: string }) {
+  const [fallback, setFallback] = useState(false);
+  const size = photo.aspectRatio;
+  return <img src={fallback ? blobUrl(pds, did, photo.image) : photoUrl(did, photo.image.ref.$link)}
+    onError={() => setFallback(true)} alt={alt ?? photo.alt ?? ''} loading='lazy' decoding='async'
+    {...(size ? { width: size.width, height: size.height } : {})} className={className} />;
+}
+
 export function Photos({ photos, pds, did }: { photos: Photo[]; pds: string; did: string }) {
   return <div className='grid grid-cols-3 gap-1.5 sm:grid-cols-4'>
     {photos.filter((ph) => ph?.image?.ref?.$link).slice(0, 70).map((ph) => {
+      // The link opens the photo as uploaded, from its author's PDS.
       const url = blobUrl(pds, did, ph.image);
       return <a key={ph.image.ref.$link} href={url} target='_blank' rel='noreferrer' className='block aspect-square overflow-hidden rounded-lg bg-stone-100'>
         {/* !h-full: .frame img is h-auto */}
-        <img src={url} alt={ph.alt ?? ''} loading='lazy' className='!h-full w-full object-cover' />
+        <PhotoImg photo={ph} pds={pds} did={did} className='!h-full w-full object-cover' />
       </a>;
     })}
   </div>;
