@@ -15,7 +15,7 @@ import { Photos, TrackView, day } from '~/components/Posts';
 import { isRouteKey, useProfile } from './$handle';
 
 export default function Overview() {
-  const { did, pds, build, faves, tracks, reviews, session, mine } = useProfile();
+  const { did, pds, build, faves, tracks, reviews, session, mine, handle } = useProfile();
   const revalidator = useRevalidator();
 
   const lists = useMemo(() => profileLists(reviews, tracks), [reviews, tracks]);
@@ -88,7 +88,7 @@ export default function Overview() {
                 {r.tags.slice(0, 10).map((g) => <span key={g} className='rounded-full bg-green-50 px-2.5 py-0.5 text-[13px] text-green-900'>{tagLabel(g)}</span>)}
               </div> : null}
               <p className='whitespace-pre-line text-[15px] text-stone-800'>{r.text.slice(0, 3000)}</p>
-              {r.photos?.length && pds && did ? <Photos photos={r.photos} pds={pds} did={did} /> : null}
+              {r.photos?.length && pds && did ? <Photos photos={r.photos} pds={pds} did={did} credit={{ did, handle, license: r.license }} /> : null}
               {/* Its track is in Tracks too, with its photos; here, its line and stats. */}
               {track && pds && did && <TrackView track={track.value} pds={pds} did={did} />}
               {footer(r.license, { review })}
@@ -104,7 +104,7 @@ export default function Overview() {
             return <li key={track.uri} className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
               {heading(t.routeKey, at)}
               {pds && did && <TrackView track={t} pds={pds} did={did} />}
-              {t.photos?.length && pds && did ? <Photos photos={t.photos} pds={pds} did={did} /> : null}
+              {t.photos?.length && pds && did ? <Photos photos={t.photos} pds={pds} did={did} credit={{ did, handle, license: t.license }} /> : null}
               {footer(t.license, { track })}
             </li>;
           })}
