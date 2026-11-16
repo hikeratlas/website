@@ -11,7 +11,9 @@
 // match in the park, else the park (see findHike).
 import { TILES_ROOT } from '~/build';
 
-export interface Area { slug: string; id: string; ids: string[]; name: string; hikes: number; bbox: Bbox | null }
+// rank: the park's QRank (Wikidata popularity, basemap's hike-paths.py), for
+// ordering a state's parks by fame (#168); absent before builds had it.
+export interface Area { slug: string; id: string; ids: string[]; name: string; hikes: number; bbox: Bbox | null; rank?: number }
 export interface State { slug: string; name: string; hikes: number; parks: number; bbox: Bbox | null; areas: Area[] }
 export interface Country { slug: string; name: string; hikes: number; parks: number; bbox: Bbox | null; states: State[] }
 export interface Regions { countries: Country[] }
@@ -414,7 +416,7 @@ const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString(
 // A /hikes index page's entries: a state's parks (id: the park's), or a
 // country's states, or the countries (parks, and top: the one with most hikes
 // in it).
-export interface RegionItem { name: string; path: string; meta?: string; hikes?: number; id?: string; parks?: number; top?: string }
+export interface RegionItem { name: string; path: string; meta?: string; hikes?: number; id?: string; parks?: number; top?: string; rank?: number }
 
 // What a /hikes index page lists. cards: the state's key in the build's
 // cards (BundleIndex.cards), on a state's page.
@@ -427,7 +429,7 @@ export function regionList(regions: Regions, r: Resolved): RegionListing {
       bbox: r.state.bbox,
       cards: `${r.country.slug}/${r.state.slug}`,
       items: r.state.areas.map((a) => ({
-        name: a.name, path: hikesPath([r.country!.slug, r.state!.slug, a.slug]), meta: count(a.hikes, 'hike'), hikes: a.hikes, id: a.id,
+        name: a.name, path: hikesPath([r.country!.slug, r.state!.slug, a.slug]), meta: count(a.hikes, 'hike'), hikes: a.hikes, id: a.id, rank: a.rank,
       })),
     };
   }
@@ -449,6 +451,21 @@ export function regionList(regions: Regions, r: Resolved): RegionListing {
       hikes: c.hikes, parks: c.parks, top: [...c.states].sort((a, b) => b.hikes - a.hikes)[0]?.name,
     })),
   };
+}
+
+// How a state's parks are ordered (#168): by fame (QRank), then hikes; by
+// hikes; or by name as the card shows it ("Algonquin", not "Algonquin
+// Provincial Park"). Ties fall back to hikes, then name.
+export type ParkOrder = 'popular' | 'hikes' | 'name';
+export function sortParks(items: RegionItem[], order: ParkOrder): RegionItem[] {
+  const name = (i: RegionItem) => parkLabel(i.name, i.id).name;
+  const byName = (a: RegionItem, b: RegionItem) => name(a).localeCompare(name(b), 'en', { sensitivity: 'base' });
+  const byHikes = (a: RegionItem, b: RegionItem) => (b.hikes ?? 0) - (a.hikes ?? 0);
+  const byRank = (a: RegionItem, b: RegionItem) => (b.rank ?? 0) - (a.rank ?? 0);
+  const cmp = order === 'name' ? byName
+    : order === 'hikes' ? (a: RegionItem, b: RegionItem) => byHikes(a, b) || byName(a, b)
+      : (a: RegionItem, b: RegionItem) => byRank(a, b) || byHikes(a, b) || byName(a, b);
+  return [...items].sort(cmp);
 }
 
 // A park's name as a card shows it: shorter, with what kind of park it is

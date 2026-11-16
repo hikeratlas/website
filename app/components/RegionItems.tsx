@@ -3,10 +3,30 @@
 // country's states (or the countries) as tiles comparing their hikes. The
 // cards' extras come from the build's routes bundle (basemap's
 // hike-paths.py); until they're in, or in a build without them, a card
-// shows what regions.json has.
+// shows what regions.json has. A state's parks can be ordered by fame,
+// hikes or name (#168); the choice is kept for the next state.
 import { useEffect, useState } from 'react';
 import { bundleIndex } from '~/components/CuratedRoutes';
-import { parkLabel, stateCards, type Card, type RegionItem } from '~/hikes';
+import { parkLabel, sortParks, stateCards, type Card, type ParkOrder, type RegionItem } from '~/hikes';
+
+const ORDER_KEY = 'hikeratlas.parkOrder';
+const ORDERS: [ParkOrder, string][] = [['popular', 'Popular'], ['hikes', 'Most hikes'], ['name', 'A–Z']];
+
+// The saved order, read after hydration (the server renders the default).
+function useParkOrder(): [ParkOrder, (o: ParkOrder) => void] {
+  const [order, setOrder] = useState<ParkOrder>('popular');
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(ORDER_KEY);
+      if (v && ORDERS.some(([o]) => o === v)) setOrder(v as ParkOrder);
+    } catch { /* storage blocked */ }
+  }, []);
+  const set = (o: ParkOrder) => {
+    setOrder(o);
+    try { window.localStorage.setItem(ORDER_KEY, o); } catch { /* storage blocked */ }
+  };
+  return [order, set];
+}
 
 export default function RegionItems({ items, build, cards, onNavigate }: {
   items: RegionItem[];
@@ -16,6 +36,7 @@ export default function RegionItems({ items, build, cards, onNavigate }: {
   onNavigate?: (path: string) => void;
 }) {
   const [extra, setExtra] = useState<Record<string, Card> | null>(null);
+  const [order, setOrder] = useParkOrder();
   useEffect(() => {
     setExtra(null);
     if (!cards) return;
@@ -28,9 +49,20 @@ export default function RegionItems({ items, build, cards, onNavigate }: {
     if (onNavigate && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); onNavigate(path); }
   };
 
-  // Parks, as cards.
+  // Parks, as cards. "Popular" only once regions.json has their ranks
+  // (until then, most hikes first, as it lists them).
   if (items.some((i) => i.id)) {
-    return <ul className='mt-2 flex flex-col gap-2'>
+    const ranked = items.some((i) => (i.rank ?? 0) > 0);
+    const orders = ranked ? ORDERS : ORDERS.filter(([o]) => o !== 'popular');
+    const shown = order === 'popular' && !ranked ? 'hikes' : order;
+    const sorted = sortParks(items, shown);
+    return <>
+    {items.length > 1 && <div className='mt-2 flex items-center gap-1 text-[13px]' role='group' aria-label='Order parks by'>
+      <span className='mr-1 text-stone-500'>Sort</span>
+      {orders.map(([o, label]) => <button key={o} type='button' onClick={() => setOrder(o)} aria-pressed={shown === o}
+        className={`rounded-full px-2.5 py-0.5 ${shown === o ? 'bg-green-900 font-semibold text-white' : 'text-stone-700 hover:bg-stone-100'}`}>{label}</button>)}
+    </div>}
+    <ul className='mt-2 flex flex-col gap-2'>
       {/* One edge filter for every outline: the area grown, less the area,
           so tile seams between an outline's pieces never show. */}
       <svg width='0' height='0' className='absolute' aria-hidden='true'>
@@ -41,7 +73,7 @@ export default function RegionItems({ items, build, cards, onNavigate }: {
           <feComposite in2='ring' operator='in' />
         </filter>
       </svg>
-      {items.map((it) => {
+      {sorted.map((it) => {
         const c = it.id ? extra?.[it.id] : undefined;
         const l = parkLabel(it.name, it.id);
         return <li key={it.path}>
@@ -72,7 +104,8 @@ export default function RegionItems({ items, build, cards, onNavigate }: {
           </a>
         </li>;
       })}
-    </ul>;
+    </ul>
+    </>;
   }
 
   // States or countries, as tiles: a bar for their hikes against the most.
