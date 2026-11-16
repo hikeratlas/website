@@ -35,7 +35,7 @@ export function Photos({ photos, pds, did, credit }: { photos: Photo[]; pds: str
       {shown.map((ph, i) =>
         <button type='button' key={ph.image.ref.$link} onClick={() => setOpen(i)}
           aria-label={ph.alt ? `Open photo: ${ph.alt}` : `Open photo ${i + 1} of ${shown.length}`}
-          className='block aspect-square cursor-zoom-in overflow-hidden rounded-lg bg-stone-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600'>
+          className='block aspect-square cursor-pointer overflow-hidden rounded-lg bg-stone-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600'>
           {/* !h-full: .frame img is h-auto */}
           <PhotoImg photo={ph} pds={pds} did={did} className='!h-full w-full object-cover' />
         </button>)}
