@@ -687,7 +687,7 @@ export default function Regressions({ build }: { build: string | null }) {
         </>}
         {prop && <div className='flex flex-col gap-1.5'>
           <div className='font-semibold text-base'>{prop.name} <span className='font-normal text-gray-500 text-xs'>{prop.status !== 'open' ? `(${prop.status})` : ''}</span></div>
-          <div>The park says <b>{prop.km} km</b>{prop.km_basis ? ` (${prop.km_basis})` : ''}{prop.hours ? ` · ${prop.hours} h` : ''}. {prop.why}</div>
+          <div>The park says <b>{prop.km} km</b>{prop.km_basis ? ` (${prop.km_basis})` : ''}{prop.shape ? `, a ${prop.shape}` : ''}{prop.hours ? ` · ${prop.hours} h` : ''}. {prop.why}</div>
           {prop.quote && <blockquote className='border-l-2 border-gray-300 pl-2 text-xs text-gray-700 break-words'>{prop.quote}</blockquote>}
           <a className='text-emerald-800 underline text-xs break-all' href={prop.source} target='_blank' rel='noreferrer'>{prop.source.replace(/^https?:\/\/(www\.)?/, '')}</a>
           <div className='text-xs text-gray-500'>OSM trail: {prop.osm_trail ? `${prop.osm_trail}${prop.osm_km ? ` (${prop.osm_km} km)` : ''}${trail === null && prop.osm_bbox ? ' · too long to draw here' : ''}` : `none of this name: draw it${prop.near_bbox ? ` (shown: around ${prop.near})` : ''}`}</div>
