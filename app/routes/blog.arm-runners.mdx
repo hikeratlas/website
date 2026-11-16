@@ -12,34 +12,34 @@ headers:
 # GitHub Actions: ARM runners are 1.5x faster for tilemaker (Nov 2, 2026)
 
 
-_Disclosure: Claude Code ran the experiments described here, and Claude wrote the post's initial draft._
+_Disclosure: Claude Code ran the experiments described here, and Claude wrote the post's initial draft. It was reviewed and edited by me._
 
 The Hiker Atlas map is built on [GitHub Actions](/blog/github-actions), using the free runners you get for a public repo. Their stated specs are the same whether you ask for x64 (`ubuntu-latest`) or ARM (`ubuntu-24.04-arm`): 4 vCPUs and 16 GB of RAM.
 
-It turns out those 4 vCPUs aren't the same thing.
+Of course, 4 vCPUs on ARM and 4 vCPUs on x64 are two very different things. (And, it turns out, the "same" 4 vCPUs on x64 on repeated runs are several very different things!)
 
 ## The x64 lottery
 
-I added a step that logs the hardware each job lands on. `ubuntu-latest` isn't one machine, it's a pool. In one run, the 9 layer jobs landed on four different Azure VM types:
+I added a step that logs the hardware each job lands on. GitHub serves VMs for `ubuntu-latest` runners from a pool of instance types. In one run, the 9 layer jobs landed on four different Azure VM kinds:
 
 - `D4ads_v5`: AMD EPYC 7763
 - `D4ads_v6`: AMD EPYC 9V74
 - `D4ads_v7`: AMD EPYC 9V45
 - `D4ds_v5`: Intel Xeon 8370C
 
-You don't get to pick, and it matters. The same tilemaker job takes about 1.5x longer on an older v5 than on a v7:
+As the saying goes, you get what you get, and you don't get upset.
+
+But it kind of sucks: the same tilemaker job takes about 1.5x longer on an older v5 than on a v7:
 
 <div className="flex justify-center items-center">
   <img src="/arm-runners-x64-lottery.png"/>
 </div>
 
-This explained something that had been bugging me. The same layer would take wildly different times from one build to the next: water took anywhere from 15 to 39 minutes. The slowest job decides how long the whole build takes, so a build's time mostly came down to which VMs it drew.
-
-All of these have 4 vCPUs, but that's 2 physical cores with 2 hyperthreads each.
+This makes it a bit challenging to benchmark build times to catch regressions. How fast a build performs is like 50% the code it ran and 50% the machine running the code.
 
 ## ARM
 
-GitHub's ARM runners also have 4 vCPUs, but they're 4 full Neoverse-N2 cores.
+GitHub also offers ARM runners. Maybe they perform better? Or at least more consistently, for profiling?
 
 I built all 9 North America layers on both runner types, side by side:
 
@@ -51,12 +51,13 @@ ARM was faster on every layer, **1.48x overall**. The `ways` layer, which decide
 
 Look at `parks`: only 1.12x. Its x64 job happened to draw a v7, the fastest x64 VM. Against the slower v5s, ARM was 1.4–1.6x faster.
 
-The other thing I noticed: all 9 ARM jobs landed on the same VM type, `D4pds_v6`, and so has every ARM job I've checked since. So builds aren't just faster, they're more predictable.
+So, faster! That's great.
+
+But also, more predictable: all 9 ARM jobs landed on the same VM type, `D4pds_v6`, and so has every ARM job I've checked since. I'm sure eventually GitHub's
+collection of ARM runners will become heterogeneous, but for now, it's a nice bonus that they're predictable.
 
 ## Caveats
 
-This was one run of each. With the x64 lottery in play, the exact numbers will move around. But it wasn't close, so I switched every job in the pipeline to `ubuntu-24.04-arm`.
-
-If you're running something CPU-heavy on GitHub's free runners, try the ARM ones.
+Today, as long as your code can run on ARM, there's no downside to switching to the `ubuntu-24.04-arm` runners.
 
 </div>
