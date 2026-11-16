@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { lines, readBlob } from '~/atproto/gpx';
 import { blobUrl, type Photo, type TrackRecord } from '~/atproto/posts';
+import { stepsText } from '~/atproto/postLists';
 import { durationText, kmText } from '~/components/PostDialog';
 import { elevation, useUnits } from '~/units';
 
@@ -42,6 +43,7 @@ export function TrackView({ track, pds, did }: { track: TrackRecord; pds: string
     typeof track.distance === 'number' && kmText(track.distance, units),
     typeof track.gain === 'number' && `↑ ${elevation(track.gain, units)}`,
     typeof track.duration === 'number' && durationText(track.duration),
+    stepsText(track.steps),
   ].filter(Boolean).join(' · ');
   const download = () => {
     if (!gpxText) return;
