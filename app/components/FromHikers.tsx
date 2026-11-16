@@ -112,7 +112,7 @@ function Review({ post, phone, tracks, showTrack }: {
       {r.tags.slice(0, 10).map((g) => <span key={g} className='rounded-full bg-green-50 px-2.5 py-0.5 text-[13px] text-green-900'>{tagLabel(g)}</span>)}
     </div> : null}
     <p className='whitespace-pre-line text-[15px] text-stone-800'>{String(r.text ?? '').slice(0, 3000)}</p>
-    {r.photos?.length && pds ? <Photos photos={r.photos} pds={pds} did={post.author.did} /> : null}
+    {r.photos?.length && pds ? <Photos photos={r.photos} pds={pds} did={post.author.did} credit={{ did: post.author.did, handle: post.author.handle, license: r.license }} /> : null}
     {track && pds && trackDid && (phone
       // Not a #hash link: the map keeps its position in the hash.
       ? <a href={`#${trackId(track.uri)}`} onClick={(e) => { e.preventDefault(); showTrack(track); }}
@@ -128,7 +128,7 @@ function Track({ post }: { post: PostView<TrackRecord> }) {
   return <li id={trackId(post.uri)} className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
     <div className='text-sm text-stone-600'><Author author={post.author} />{` · ${day(t.startedAt ?? t.createdAt)}`}{t.title ? ` · ${t.title}` : ''}</div>
     {pds && <TrackView track={t} pds={pds} did={post.author.did} />}
-    {t.photos?.length && pds ? <Photos photos={t.photos} pds={pds} did={post.author.did} /> : null}
+    {t.photos?.length && pds ? <Photos photos={t.photos} pds={pds} did={post.author.did} credit={{ did: post.author.did, handle: post.author.handle, license: t.license }} /> : null}
     <Footer uri={post.uri} license={t.license} />
   </li>;
 }
