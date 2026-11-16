@@ -144,6 +144,34 @@ export function walks(trail: LngLat[][], line: LngLat[], m = 60): number {
   return near / pts.length;
 }
 
+// How many metres of a route's line are more than `m` metres from the
+// trace's line (the straight lines between its points), as routes'
+// expect.py off_trace: each piece of at most 25 m judged by its middle.
+export function offTrace(trace: LngLat[], line: LngLat[], m = 50): number {
+  if (trace.length < 2 || line.length < 2) return 0;
+  const kx = Math.cos((trace[0][1] * Math.PI) / 180) * 111320, ky = 110570;
+  const seg = trace.map(([x, y]) => [x * kx, y * ky]);
+  const near = (px: number, py: number) => {
+    for (let i = 1; i < seg.length; i++) {
+      const [ax, ay] = seg[i - 1], [bx, by] = seg[i];
+      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+      if (Math.hypot(px - ax - t * dx, py - ay - t * dy) <= m) return true;
+    }
+    return false;
+  };
+  let off = 0;
+  for (let i = 1; i < line.length; i++) {
+    const [a, b] = [line[i - 1], line[i]];
+    const len = haversine(a, b), n = Math.max(1, Math.ceil(len / 25));
+    for (let j = 0; j < n; j++) {
+      const t = (j + 0.5) / n;
+      if (!near((a[0] + (b[0] - a[0]) * t) * kx, (a[1] + (b[1] - a[1]) * t) * ky)) off += len / n;
+    }
+  }
+  return off;
+}
+
 export const lineKm = (line: LngLat[]) => line.slice(1).reduce((s, p, i) => s + haversine(line[i], p), 0) / 1000;
 
 // A fixture for routes' fixtures/parks.json, for a park that gets entries
@@ -160,7 +188,7 @@ export interface Entry {
   kind?: 'trail' | 'dest' | 'featured'; name: string; park: string; park_id: string; issue?: string;
   km?: number; km_tolerance?: number; trail?: string; aka?: string[]; source?: string; why?: string;
   shape?: Shape;
-  trace?: LngLat[]; traces?: LngLat[][]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_end_m?: number | null; trace_note?: string;
+  trace?: LngLat[]; traces?: LngLat[][]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_end_m?: number | null; trace_off_m?: number; trace_note?: string;
   dest?: string; start?: LngLat; start_within_m?: number; max_km?: number;
   // A featured entry: names the homepage's featured hike mustn't be, or
   // should be one of.
@@ -215,8 +243,10 @@ export function norm(s: string | null | undefined): string {
 // corners, so it's shorter than the hike), starting (its line's first point) within trace_start_m
 // of the trace's first point, the trailhead (null: not checked), ending (its
 // last point) within trace_end_m of the trace's last point (null: not
-// checked), and within
-// trace_within_m of trace_cover of the trace's points.
+// checked), within
+// trace_within_m of trace_cover of the trace's points, and, with
+// trace_off_m, no more than that many metres of it more than trace_within_m
+// from the trace (stays: no detour the trace doesn't take).
 export const TRACE_KM: [number, number] = [0.85, 1.4];
 export const BLESSED_TOLERANCE = 0.15;
 // An entry's traces: `trace`, then `traces`, the same hike other ways (from
@@ -224,13 +254,13 @@ export const BLESSED_TOLERANCE = 0.15;
 export function entryTraces(e: Entry): LngLat[][] {
   return e.trace?.length ? [e.trace, ...(e.traces ?? [])] : (e.traces ?? []);
 }
-export type Check = { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; end: boolean | null; endOff: number | null; follows: number; ok: boolean; trace?: number };
+export type Check = { name: boolean; length: boolean; byTrace: boolean; start: boolean | null; startOff: number | null; end: boolean | null; endOff: number | null; stays: boolean | null; offM: number | null; follows: number; ok: boolean; trace?: number };
 // Against each of the entry's traces, keeping the best, as expect.py does:
 // passing, else the fewest failed checks. `trace` is which one (0-based).
 export function passes(e: Entry, label: string | null, km: number, line: LngLat[], dest: string | null = null): Check {
   const ts = entryTraces(e);
   if (ts.length < 2) return passesOne(e, ts[0], label, km, line, dest);
-  const failed = (c: Check) => [c.name, c.length, c.start, c.end, c.follows >= (e.trace_cover ?? 0.7)].filter((v) => v === false).length;
+  const failed = (c: Check) => [c.name, c.length, c.start, c.end, c.stays, c.follows >= (e.trace_cover ?? 0.7)].filter((v) => v === false).length;
   let best: Check | null = null;
   ts.forEach((t, i) => {
     const c = { ...passesOne(e, t, label, km, line, dest), trace: i };
@@ -254,5 +284,7 @@ function passesOne(e: Entry, trace: LngLat[] | undefined, label: string | null, 
   const endM = e.trace_end_m === undefined ? 150 : e.trace_end_m;
   const endOff = trace?.length && line.length ? haversine(trace[trace.length - 1], line[line.length - 1]) : null;
   const end = endM === null ? null : endOff !== null && endOff <= endM;
-  return { name, length, byTrace, start, startOff, end, endOff, follows, ok: name && length && start !== false && end !== false && follows >= (e.trace_cover ?? 0.7) };
+  const offM = e.trace_off_m !== undefined && trace?.length ? offTrace(trace, line, e.trace_within_m ?? 50) : null;
+  const stays = offM === null ? null : offM <= e.trace_off_m!;
+  return { name, length, byTrace, start, startOff, end, endOff, stays, offM, follows, ok: name && length && start !== false && end !== false && stays !== false && follows >= (e.trace_cover ?? 0.7) };
 }
