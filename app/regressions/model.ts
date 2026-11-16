@@ -14,7 +14,13 @@ export interface Proposal {
   // No OSM trail of its name: the place its name goes to, and a box around
   // it to frame (routes' locate-proposals.py).
   near?: string; near_bbox?: [number, number, number, number];
+  // The hike's shape the park gives, as routes' kind: the entry's `shape`
+  // once accepted (routes' expect.py checks the matching hike is that shape).
+  shape?: Shape;
 }
+
+export const SHAPES = ['loop', 'out-and-back', 'one-way'] as const;
+export type Shape = (typeof SHAPES)[number];
 
 // A park's file: <region>-<park>, as both directories name them.
 export interface ParkFile { stem: string; park: string; park_id: string; region: string; proposals: Proposal[] }
@@ -81,7 +87,7 @@ export const toJsonl = (rows: unknown[]) => rows.map((r) => (r && typeof r === '
 export function entryFor(p: Proposal, d: Decision): Record<string, unknown> {
   return {
     kind: 'trail', park: p.park, park_id: p.park_id, issue: p.issue ?? 'routes#95', source: p.source,
-    name: p.name, km: d.km ?? p.km, ...(p.why ? { why: p.why } : {}), trace: d.trace,
+    name: p.name, km: d.km ?? p.km, ...(p.why ? { why: p.why } : {}), ...(p.shape ? { shape: p.shape } : {}), trace: d.trace,
     ...(d.note ? { trace_note: d.note } : {}),
   };
 }
@@ -153,6 +159,7 @@ export function fixtureFor(f: ParkFile, bbox: [number, number, number, number]) 
 export interface Entry {
   kind?: 'trail' | 'dest' | 'featured'; name: string; park: string; park_id: string; issue?: string;
   km?: number; km_tolerance?: number; trail?: string; aka?: string[]; source?: string; why?: string;
+  shape?: Shape;
   trace?: LngLat[]; traces?: LngLat[][]; trace_within_m?: number; trace_cover?: number; trace_start_m?: number | null; trace_end_m?: number | null; trace_note?: string;
   dest?: string; start?: LngLat; start_within_m?: number; max_km?: number;
   // A featured entry: names the homepage's featured hike mustn't be, or
