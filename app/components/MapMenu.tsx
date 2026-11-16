@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import type { Map as MaplibreMap } from 'maplibre-gl';
 import { Avatar, SignInDialog } from '~/components/Account';
-import OsmLink from '~/components/OsmLink';
+import OsmLink, { GoogleMapsLink } from '~/components/OsmLink';
 import { signOut, useAtSession } from '~/atproto/session';
 import { profilePath } from '~/atproto/identity';
 
@@ -57,12 +57,16 @@ export default function MapMenu({ map }: { map: MaplibreMap | null }) {
           ? <a href={profilePath(who)} className={item}>Your hikes</a>
           : at.status === 'out' && <button type='button' className={item} onClick={() => { setOpen(false); setAsking(true); }}>Sign in</button>}
         <a href='/terms' className={item}>Terms &amp; privacy</a>
-        {/* The bottom line: Sign out, and (niche) this view on OpenStreetMap. */}
+        {/* The bottom line: Sign out, and (niche) this view on OpenStreetMap
+            and Google Maps. */}
         <div className='mt-auto flex items-center justify-between'>
           {at.status === 'in'
             ? <button type='button' className='tap text-left text-base text-blue-700 hover:underline' onClick={() => { setOpen(false); signOut(); }}>Sign out</button>
             : <span />}
-          <OsmLink map={map} className='tap inline-flex items-center justify-end gap-0.5 text-sm text-blue-700 hover:underline' />
+          <span className='flex items-center gap-3'>
+            <OsmLink map={map} className='tap inline-flex items-center justify-end gap-0.5 text-sm text-blue-700 hover:underline' />
+            <GoogleMapsLink map={map} className='tap inline-flex items-center justify-end gap-0.5 text-sm text-blue-700 hover:underline' />
+          </span>
         </div>
       </nav>
     </div>}

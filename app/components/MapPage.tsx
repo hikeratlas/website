@@ -4,7 +4,7 @@ import type { Map as MaplibreMap, JumpToOptions } from 'maplibre-gl';
 import Map from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
 import CuratedRoutes, { bundleIndex, parkRoutes, prefetchRoute, refreshBundle, type Crumb, type FocusPark, type FocusTrail, type RegionList, type Showing } from '~/components/CuratedRoutes';
-import OsmLink from '~/components/OsmLink';
+import OsmLink, { GoogleMapsLink } from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
 import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, loadRegions, regionList, resolve } from '~/hikes';
@@ -350,7 +350,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
           <MapMenu map={map} />
           <div className='min-w-0 flex-1 md:max-w-xl'><Search onSelect={onSelect} build={build} near={near}/></div>
         </div>
-        <div className='map-header-osm ml-auto flex shrink-0 items-center gap-3'><AccountButton /><OsmLink map={map}/><TermsLink /></div>
+        <div className='map-header-osm ml-auto flex shrink-0 items-center gap-3'><AccountButton /><OsmLink map={map}/><GoogleMapsLink map={map}/><TermsLink /></div>
       </div>
       <div className='map-wrap'>
         {/* A build only covers its own area, so don't constrain it to North
