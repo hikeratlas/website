@@ -11,6 +11,7 @@ import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
 import { TILES_ROOT, tilesUrl } from '~/build';
 import RegionItems from '~/components/RegionItems';
+import { DESKTOP_PANEL_MAX_H } from '~/components/panel';
 import { hikeEntries, loadRegions, nearbyParks, parkReports, reportsKey, type BaseCamp, type BundleIndex, type ParkDoc, type ParkReports, type RegionItem, type Route, type RouteReports, type SeeAlso, type Stop } from '~/hikes';
 import AppLink from './AppLink';
 import { profile, type Profile } from '~/routing/elevation';
@@ -786,7 +787,10 @@ function Toolbar({ left, app, onClose }: { left?: React.ReactNode; app: boolean;
 
 const PHONE = '(max-width: 640px)';
 const PEEK_PX = 170;
-const FULL_GAP = 110;
+// A full sheet's top: below the search box and the map's top-right buttons
+// (geolocate and imagery end 134 px down on phones), with 10 px to spare
+// (#171: at 110 it covered the imagery button).
+const FULL_GAP = 144;
 type Snap = 'peek' | 'half' | 'full';
 const SNAPS: Snap[] = ['peek', 'half', 'full'];
 
@@ -837,7 +841,7 @@ function Sheet({ phone, snap, setSnap, children }: { phone: boolean; snap: Snap;
   if (!phone) {
     return <div
       className='absolute right-3 bottom-8 bg-white/95 rounded shadow p-3 text-sm overflow-y-auto'
-      style={{ zIndex: 2, width: 'min(480px, calc(100% - 24px))', maxHeight: 'calc(100% - 48px)' }}
+      style={{ zIndex: 2, width: 'min(480px, calc(100% - 24px))', maxHeight: DESKTOP_PANEL_MAX_H }}
     >{children}</div>;
   }
   // Heights in px, from the map's height (the sheet's offset parent).

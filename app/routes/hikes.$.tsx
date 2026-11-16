@@ -12,6 +12,7 @@ import {
 } from '~/hikes';
 import RouteReportsList from '~/components/RouteReports';
 import RegionItems from '~/components/RegionItems';
+import { DESKTOP_PANEL_MAX_H } from '~/components/panel';
 
 export { handle } from './map';
 
@@ -244,7 +245,7 @@ export default function Hikes() {
   // doesn't run the map): breadcrumbs, heading, facts and list, as links.
   const summary = <article
     className='absolute right-3 bottom-8 bg-white/95 rounded shadow p-3 text-sm overflow-y-auto'
-    style={{ zIndex: 2, width: 'min(480px, calc(100% - 24px))', maxHeight: 'calc(100% - 48px)' }}
+    style={{ zIndex: 2, width: 'min(480px, calc(100% - 24px))', maxHeight: DESKTOP_PANEL_MAX_H }}
   >
     {data.crumbs.length > 0 && <nav aria-label='Breadcrumb' className='text-xs text-gray-600 mb-0.5'>
       <ol className='flex flex-wrap gap-x-1'>
