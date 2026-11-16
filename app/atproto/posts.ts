@@ -233,6 +233,8 @@ export async function listRecords<T>(pds: string, did: string, collection: strin
 
 export interface TrackRecord {
   gpx: BlobRef; createdAt: string; startedAt?: string; duration?: number; distance?: number; gain?: number;
+  // Counted by the recording phone's step counter (android#53); absent when not counted.
+  steps?: number;
   title?: string; routeKey?: string; photos?: Photo[]; license?: string;
 }
 export interface ReviewRecord {

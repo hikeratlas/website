@@ -74,3 +74,11 @@ export function addNew<T extends { uri: string }>(list: T[], more: T[]): T[] {
   const have = new Set(list.map((x) => x.uri));
   return [...list, ...more.filter((x) => !have.has(x.uri) && have.add(x.uri))];
 }
+
+// A track's step count for its stats line, "3,120 steps" (grouped as the
+// other stats are): null when it wasn't counted, or isn't a count. Never
+// "0 steps" for a track that wasn't counted, since absent means that.
+export function stepsText(steps: unknown): string | null {
+  if (typeof steps !== 'number' || !Number.isInteger(steps) || steps < 0) return null;
+  return `${steps.toLocaleString('en-US')} ${steps === 1 ? 'step' : 'steps'}`;
+}

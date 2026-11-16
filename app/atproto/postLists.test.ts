@@ -2,7 +2,7 @@
 // (website#158).
 import { describe, expect, it } from 'vitest';
 import type { Rec, ReviewRecord, TrackRecord } from './posts';
-import { addNew, deleteTargets, parseAtUri, profileLists } from './postLists';
+import { addNew, deleteTargets, parseAtUri, profileLists, stepsText } from './postLists';
 
 const DID = 'did:plc:someone';
 const uri = (collection: string, rkey: string) => `at://${DID}/com.hikeratlas.temp.${collection}/${rkey}`;
@@ -106,5 +106,21 @@ describe('helpers', () => {
   it('adds to a list without repeating what’s in it', () => {
     const a = { uri: 'a' }, b = { uri: 'b' }, c = { uri: 'c' };
     expect(addNew([a, b], [b, c, c])).toEqual([a, b, c]);
+  });
+});
+
+describe('stepsText', () => {
+  it('counts a track’s steps, grouped as the other stats', () => {
+    expect(stepsText(3120)).toBe('3,120 steps');
+    expect(stepsText(1)).toBe('1 step');
+    expect(stepsText(0)).toBe('0 steps');
+  });
+
+  // Absent means not counted: nothing, never "0 steps".
+  it('shows nothing for a track not counted, or a bad value', () => {
+    expect(stepsText(undefined)).toBeNull();
+    expect(stepsText(-5)).toBeNull();
+    expect(stepsText(12.5)).toBeNull();
+    expect(stepsText('3120')).toBeNull();
   });
 });
