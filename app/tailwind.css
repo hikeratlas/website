@@ -3,11 +3,13 @@
 @tailwind utilities;
 
 @layer components {
-	/* Text pages (blog posts, terms, the profile page): a centred reading
-	   column in the site's frame (components/Site.tsx). The homepage is wider
-	   (frame-wide), for its cards. */
+	/* Text pages (blog posts, terms, the profile page): a reading column in
+	   the site's frame (components/Site.tsx), its left edge in line with the
+	   header's "Hiker Atlas", which is in a centred max-w-6xl. The homepage
+	   is wider (frame-wide), for its cards, so it's that whole width. */
 	.frame {
-		@apply mx-auto max-w-3xl px-4 py-8 leading-relaxed text-stone-800
+		@apply max-w-3xl px-4 py-8 leading-relaxed text-stone-800;
+		margin-left: max(0px, calc((100% - theme('maxWidth.6xl')) / 2));
 	}
 
 	.frame-wide {
