@@ -5,7 +5,8 @@
 // record (editReview), so links to it keep working; when it was posted, its
 // hike and its track stay as they were.
 import { useEffect, useRef, useState } from 'react';
-import { editReview, LICENSES, TAGS, type Rec, type ReviewRecord } from '~/atproto/posts';
+import { blobUrl, editReview, LICENSES, TAGS, type Rec, type ReviewRecord } from '~/atproto/posts';
+import { measurePhoto } from '~/atproto/photos';
 import { PhotoImg } from '~/components/Posts';
 import type { OAuthSession } from '@atproto/oauth-client-browser';
 import { LICENSE_LABEL, localDay, MAX_TEXT, noonOf, today } from '~/components/PostDialog';
@@ -35,11 +36,14 @@ export function EditReviewDialog({ review, session, pds, onClose, onSaved }: {
         // A review posted without a date keeps none, unless one is picked.
         hikedAt: day ? (r.hikedAt && localDay(r.hikedAt) === day ? r.hikedAt : noonOf(day)) : undefined,
         tags,
-        photos: photos.map((p) => {
+        photos: await Promise.all(photos.map(async (p) => {
           const out = { ...p };
           if (p.alt?.trim()) out.alt = p.alt.trim(); else delete out.alt;
+          // A photo posted before aspectRatio was required gets it now, or
+          // the review wouldn't validate (#177).
+          if (!p.aspectRatio) out.aspectRatio = await measurePhoto(blobUrl(pds, session.did, p.image));
           return out;
-        }),
+        })),
         // Written only when changed, so a review without one stays without.
         license: license !== was ? license : r.license,
       });

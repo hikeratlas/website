@@ -2,18 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { editedReview, type ReviewRecord } from './posts';
 
 const blob = (cid: string) => ({ $type: 'blob' as const, ref: { $link: cid }, mimeType: 'image/jpeg', size: 1 });
+const ratio = { width: 4, height: 3 };
 const review: ReviewRecord = {
   text: 'Muddy', createdAt: '2026-11-01T10:00:00.000Z', hikedAt: '2026-10-31T16:00:00.000Z', license: 'CC-BY-4.0',
   routeKey: '1E57E06gbDEBBBICDGF.tn3dBnAuR_Q', track: { uri: 'at://did:plc:x/com.hikeratlas.temp.track/3l', cid: 'bafy' },
-  tags: ['mud'], photos: [{ image: blob('a'), alt: 'one' }, { image: blob('b') }],
+  tags: ['mud'], photos: [{ image: blob('a'), alt: 'one', aspectRatio: ratio }, { image: blob('b'), aspectRatio: ratio }],
 };
 
 describe('editedReview', () => {
   it('changes only what the edit says', () => {
-    const out = editedReview(review, { text: 'Muddy, then snow', hikedAt: '2026-10-30T16:00:00.000Z', tags: ['mud', 'snow'], photos: [{ image: blob('b'), alt: 'two' }] });
+    const out = editedReview(review, { text: 'Muddy, then snow', hikedAt: '2026-10-30T16:00:00.000Z', tags: ['mud', 'snow'], photos: [{ image: blob('b'), alt: 'two', aspectRatio: ratio }] });
     expect(out).toEqual({
       $type: 'com.hikeratlas.temp.review', text: 'Muddy, then snow', createdAt: review.createdAt, hikedAt: '2026-10-30T16:00:00.000Z',
-      license: 'CC-BY-4.0', routeKey: review.routeKey, track: review.track, tags: ['mud', 'snow'], photos: [{ image: blob('b'), alt: 'two' }],
+      license: 'CC-BY-4.0', routeKey: review.routeKey, track: review.track, tags: ['mud', 'snow'], photos: [{ image: blob('b'), alt: 'two', aspectRatio: ratio }],
     });
   });
 

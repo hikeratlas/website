@@ -30,8 +30,9 @@ export const tagLabel = (t: string) => TAGS.find(([k]) => k === t)?.[1] ?? t;
 export interface BlobRef { $type: 'blob'; ref: { $link: string }; mimeType: string; size: number }
 export interface StrongRef { uri: string; cid: string }
 // aspectRatio: the image's width and height as displayed (defs#aspectRatio,
-// website#177), so a page can lay it out before fetching it.
-export interface Photo { image: BlobRef; alt?: string; takenAt?: string; at?: { lat: number; lon: number }; aspectRatio?: { width: number; height: number } }
+// required, website#177), so a page can lay it out before fetching it.
+// Photos posted before it have none (and their records no longer validate).
+export interface Photo { image: BlobRef; alt?: string; takenAt?: string; at?: { lat: number; lon: number }; aspectRatio: { width: number; height: number } }
 
 // Degrees as the lexicon's integer microdegrees (defs#point).
 const micro = (x: number) => Math.round(x * 1e6);
@@ -62,7 +63,7 @@ async function uploadPhotos(session: OAuthSession, photos: (PreparedPhoto & { al
     const image = await uploadBlob(session, p.blob, 'image/jpeg');
     out.push({
       image, ...(p.alt ? { alt: p.alt } : {}), ...(p.takenAt ? { takenAt: p.takenAt } : {}),
-      ...(p.width > 0 && p.height > 0 ? { aspectRatio: { width: p.width, height: p.height } } : {}),
+      aspectRatio: { width: p.width, height: p.height },
       ...(p.lat !== null && p.lon !== null ? { at: { lat: micro(p.lat), lon: micro(p.lon) } } : {}),
     });
   }

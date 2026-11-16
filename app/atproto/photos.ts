@@ -20,9 +20,23 @@ export interface PreparedPhoto {
   // Whether takenAt came with its time zone (EXIF often has local time only).
   offsetKnown: boolean;
   // Its size as displayed (EXIF orientation applied), for the record's
-  // aspectRatio (website#177); 0 if it couldn't be read.
+  // aspectRatio, which the lexicon requires (website#177).
   width: number;
   height: number;
+}
+
+// A photo's size as displayed, from its URL (an old photo, posted before
+// aspectRatio, when its review is edited): browsers apply its EXIF
+// orientation to the natural size.
+export function measurePhoto(url: string): Promise<{ width: number; height: number }> {
+  return new Promise((ok, fail) => {
+    const img = new Image();
+    img.onload = () => (img.naturalWidth > 0 && img.naturalHeight > 0
+      ? ok({ width: img.naturalWidth, height: img.naturalHeight })
+      : fail(new Error("Couldn't read a photo's size")));
+    img.onerror = () => fail(new Error("Couldn't load a photo to read its size"));
+    img.src = url;
+  });
 }
 
 export async function preparePhoto(file: File): Promise<PreparedPhoto> {
@@ -30,13 +44,12 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
   const exif = readExif(bytes);
   const info = { lat: exif.lat, lon: exif.lon, takenAt: exif.takenAt, offsetKnown: exif.offsetKnown };
   if (file.type === 'image/jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8 && file.size <= MAX_BYTES) {
-    // Uploaded as it is; decoded only for its size, as displayed.
-    let width = 0, height = 0;
-    try {
-      const b = await createImageBitmap(file, { imageOrientation: 'from-image' });
-      [width, height] = [b.width, b.height];
-      b.close();
-    } catch { /* no aspectRatio, then */ }
+    // Uploaded as it is; decoded only for its size, as displayed (the
+    // record's aspectRatio, which is required: a photo that can't be decoded
+    // isn't uploaded).
+    const b = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const [width, height] = [b.width, b.height];
+    b.close();
     return { blob: file, ...info, width, height };
   }
 
