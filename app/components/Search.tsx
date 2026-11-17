@@ -55,6 +55,8 @@ const KIND_LABEL: Record<string, string> = {
   // Bays and straits (basemap#317): most are mapped as a point.
   bay: 'Bay',
   strait: 'Strait',
+  // Beaches in parks (basemap#353).
+  beach: 'Beach',
   waterfall: 'Waterfall',
   camp_site: 'Campsite',
   cliff: 'Cliff',
