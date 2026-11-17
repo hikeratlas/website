@@ -37,6 +37,14 @@ const LAYER = 'routes-route';
 // mapt): clicking one with curated hikes lists them (#59).
 const PARK_LABEL = 'parks-label-park';
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+// The basemap's first layer of trail names (source-layer path_name,
+// path_name_15...), for the routes' lines to go under; undefined (on top)
+// in a style without one.
+function trailNamesLayer(map: MaplibreMap): string | undefined {
+  return map.getStyle().layers.find((l) => 'source-layer' in l && String(l['source-layer']).startsWith('path_name'))?.id;
+}
+
 const COLOR = '#c026d3';
 
 // A build's index of the parks' routes in its bundle.
@@ -370,15 +378,18 @@ export default function CuratedRoutes(props: Props) {
     // basemap's routes start at z9; a park's view is often wider.
     map.addSource('curated-park', { type: 'geojson', data: EMPTY });
     const round: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
-    map.addLayer({ id: 'curated-park-casing', type: 'line', source: 'curated-park', layout: round, filter: ['get', 'on'], paint: { 'line-color': '#ffffff', 'line-width': 4 } });
+    // The routes' lines go under the trails' names (#188): an opaque
+    // selected route hid them. Its stops, numbers and hover dot stay on top.
+    const under = trailNamesLayer(map);
+    map.addLayer({ id: 'curated-park-casing', type: 'line', source: 'curated-park', layout: round, filter: ['get', 'on'], paint: { 'line-color': '#ffffff', 'line-width': 4 } }, under);
     map.addLayer({
       id: 'curated-park', type: 'line', source: 'curated-park', layout: round,
       paint: { 'line-color': ['case', ['get', 'on'], COLOR, '#a8a29e'], 'line-width': ['case', ['get', 'on'], 2.5, 1.5], 'line-opacity': ['case', ['get', 'on'], 0.9, 0.6] },
-    });
-    map.addLayer({ id: 'curated-park-hl-casing', type: 'line', source: 'curated-park', layout: round, filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#ffffff', 'line-width': 9 } });
-    map.addLayer({ id: 'curated-park-hl', type: 'line', source: 'curated-park', layout: round, filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#a21caf', 'line-width': 5 } });
-    map.addLayer({ id: 'curated-sel-casing', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } });
-    map.addLayer({ id: 'curated-sel', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } });
+    }, under);
+    map.addLayer({ id: 'curated-park-hl-casing', type: 'line', source: 'curated-park', layout: round, filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#ffffff', 'line-width': 9 } }, under);
+    map.addLayer({ id: 'curated-park-hl', type: 'line', source: 'curated-park', layout: round, filter: ['==', ['get', 'id'], ''], paint: { 'line-color': '#a21caf', 'line-width': 5 } }, under);
+    map.addLayer({ id: 'curated-sel-casing', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 7 } }, under);
+    map.addLayer({ id: 'curated-sel', type: 'line', source: 'curated-sel', layout: round, paint: { 'line-color': COLOR, 'line-width': 4 } }, under);
     map.addLayer({
       id: 'curated-stops', type: 'circle', source: 'curated-sel', filter: ['all', ['==', ['geometry-type'], 'Point'], ['!', ['has', 'n']]],
       paint: { 'circle-radius': 6, 'circle-color': '#16a34a', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 },
