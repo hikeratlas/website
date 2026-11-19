@@ -8,7 +8,7 @@
 // Builds from before the bundle have <TILES_ROOT>/routes/<build>/<park>.json.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
-import type { Map as MaplibreMap, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
+import type { Map as MaplibreMap, FilterSpecification, GeoJSONSource, LineLayerSpecification, MapGeoJSONFeature, MapMouseEvent } from 'maplibre-gl';
 import { TILES_ROOT, tilesUrl } from '~/build';
 import RegionItems from '~/components/RegionItems';
 import { DESKTOP_PANEL_MAX_H } from '~/components/panel';
@@ -46,6 +46,31 @@ function trailNamesLayer(map: MaplibreMap): string | undefined {
 }
 
 const COLOR = '#c026d3';
+
+// A park outline filter: the parks with these OSM ids (a park mapped twice
+// has several), as the homepage's MiniMap draws its park.
+const parkFilter = (ids: string[]): FilterSpecification => ['in', ['to-string', ['get', 'osm_id']], ['literal', ids]];
+
+// The open park (#193), so it stands out among its neighbours (Yoho between
+// Banff and Kootenay), under the routes, as the homepage's MiniMap draws
+// its park: a light tint, and an outline darker and wider than the style's,
+// from park_outline (in the tiles from z5 since hikeratlas/basemap#372, z9
+// before; not drawn from the park's polygons, whose rings show the tile
+// edges). Made afresh for each park: a setFilter on a layer whose tiles had
+// loaded didn't always redraw them.
+const OUTLINE_LAYERS = ['curated-park-tint', 'curated-park-outline'];
+function showParkOutline(map: MaplibreMap, ids: string[]) {
+  for (const id of OUTLINE_LAYERS) if (map.getLayer(id)) map.removeLayer(id);
+  if (!ids.length || !map.getSource('tiles1') || !map.getLayer('curated-park-casing')) return;
+  const paint: LineLayerSpecification['paint'] = {
+    'line-color': '#14532d', 'line-opacity': 0.85,
+    'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 10, 2.5, 14, 3.5],
+  };
+  const layout: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
+  const filter = parkFilter(ids);
+  map.addLayer({ id: OUTLINE_LAYERS[0], type: 'fill', source: 'tiles1', 'source-layer': 'park', filter, paint: { 'fill-color': '#15803d', 'fill-opacity': 0.12 } }, 'curated-park-casing');
+  map.addLayer({ id: OUTLINE_LAYERS[1], type: 'line', source: 'tiles1', 'source-layer': 'park_outline', minzoom: 5, filter, layout, paint }, 'curated-park-casing');
+}
 
 // A build's index of the parks' routes in its bundle.
 const indexes = new Map<string, Promise<BundleIndex>>();
@@ -357,6 +382,8 @@ export default function CuratedRoutes(props: Props) {
 
   // The park whose list is open, if the list is a park's (not "in view").
   const [listPark, setListPark] = useState<{ id: string; name: string } | null>(null);
+  // The open park's OSM ids, for its outline (#193).
+  const outlineIds = useRef<string[]>([]);
   // That park's routes and trip reports, for its sheet (ParkSheet), and for
   // a small park, the parks near it with more hikes.
   const [parkView, setParkView] = useState<{ id: string; doc: ParkDoc; reports: ParkReports | null; nearby: NearbyPark[] | null } | null>(null);
@@ -401,6 +428,8 @@ export default function CuratedRoutes(props: Props) {
       paint: { 'text-color': '#ffffff' },
     });
     map.addLayer({ id: 'curated-hover', type: 'circle', source: 'curated-hover', paint: { 'circle-radius': 6, 'circle-color': '#0b0b0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
+    // A park opened before these layers were: its outline now.
+    showParkOutline(map, outlineIds.current);
   }, [props.map]);
 
   // fit: fit the map to the route (#90). Not for a route clicked on the map:
@@ -604,6 +633,27 @@ export default function CuratedRoutes(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [build, listPark?.id]);
   useEffect(() => { if (mode !== 'list') setData('curated-park', EMPTY); }, [mode, setData]);
+
+  // The open park's outline (#193): while its list, or one of its hikes, is
+  // open. Its ids: the one it was opened by, its routes' park, and those
+  // regions.json has for it.
+  const outlinePark = listPark?.id ?? null;
+  useEffect(() => {
+    if (!map) return;
+    const show = (ids: string[]) => { outlineIds.current = ids; showParkOutline(map, ids); };
+    if (!outlinePark) { show([]); return; }
+    let live = true;
+    const ids = new Set([outlinePark]);
+    show([...ids]);
+    (async () => {
+      const doc = await parkRoutes(build, outlinePark).catch(() => null);
+      if (doc?.park?.id) ids.add(String(doc.park.id));
+      const area = (await loadRegions(build))?.countries.flatMap((c) => c.states.flatMap((st) => st.areas)).find((a) => a.id === outlinePark || a.ids?.includes(outlinePark));
+      for (const id of [area?.id, ...(area?.ids ?? [])]) if (id) ids.add(id);
+      if (live) show([...ids]);
+    })();
+    return () => { live = false; };
+  }, [map, build, outlinePark]);
 
   // The park sheet's routes on the map: its day hikes, those in `ids`
   // highlighted; with ids null (another tab open), everything, base camps,

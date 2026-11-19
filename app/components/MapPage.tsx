@@ -7,7 +7,7 @@ import CuratedRoutes, { ROUTE_MAX_ZOOM, routePadding, bundleIndex, parkRoutes, p
 import OsmLink, { GoogleMapsLink } from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
-import { type Bbox, type BundleIndex, findHike, hikeEntries, hikesPath, parsePath, loadRegions, regionList, resolve } from '~/hikes';
+import { type Bbox, type BundleIndex, type ParkDoc, findHike, hikeEntries, hikesPath, parkBox, parsePath, loadRegions, regionList, resolve } from '~/hikes';
 import { AccountButton } from '~/components/Account';
 import MapMenu from '~/components/MapMenu';
 
@@ -95,9 +95,17 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     if (replace) window.history.replaceState(null, '', url);
     else window.history.pushState(null, '', url);
   };
-  const fit = (bbox: Bbox | null | undefined) => {
+  const fit = (bbox: Bbox | null | undefined, animate = false) => {
     if (!map || !bbox) return;
-    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: besideSheet(map), maxZoom: AREA_MAX_ZOOM, duration: 0 });
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: besideSheet(map), maxZoom: AREA_MAX_ZOOM, ...(animate ? {} : { duration: 0 }) });
+  };
+
+  // A park opened from a list or the map (#193): the map to all of it, its
+  // outline in context, as its page opens (routes/hikes.$.tsx).
+  const fitPark = async (id: string, doc?: ParkDoc) => {
+    const regions = await loadRegions(routesBuild);
+    const area = regions?.countries.flatMap((c) => c.states.flatMap((st) => st.areas)).find((a) => a.id === id || a.ids?.includes(id));
+    fit(parkBox(doc?.park ?? (await parkRoutes(routesBuild, id).catch(() => null))?.park, area?.bbox), true);
   };
 
   const onInitialized = (m: MaplibreMap) => setMap(m);
@@ -244,6 +252,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     const doc = await parkRoutes(routesBuild, park);
     if (parts.length === 3) {
       setFocusPark({ id: park, name: doc.park?.name ?? '', at: Date.now() });
+      fitPark(park, doc);
       return;
     }
     const found = findHike(hikeEntries(doc), parts.slice(3).join('/'));
@@ -266,10 +275,8 @@ export default function MapPage({ build, search, initial, summary }: Props) {
   const onPark = useCallback((id: string, name: string) => {
     setRegion(null);
     setFocusPark({ id, name, at: Date.now() });
-    loadRegions(routesBuild).then((regions) => {
-      const area = regions?.countries.flatMap((c) => c.states.flatMap((s) => s.areas)).find((a) => a.id === id || a.ids?.includes(id));
-      if (area?.bbox && map) map.fitBounds([[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]], { padding: besideSheet(map), maxZoom: AREA_MAX_ZOOM });
-    });
+    fitPark(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, routesBuild]);
 
   // Where search should prefer results near (#44): the map's centre, unless
