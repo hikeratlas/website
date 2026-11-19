@@ -821,20 +821,33 @@ function fitLine(map: MaplibreMap, line: [number, number][], padding: { top: num
   if (line.length < 2) return;
   let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
   for (const [x, y] of line) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
-  map.fitBounds([[w, s], [e, n]], { padding, duration: 600, maxZoom: 15 });
+  map.fitBounds([[w, s], [e, n]], { padding, duration: 600, maxZoom: ROUTE_MAX_ZOOM });
 }
+
+// A route's padding on a phone: above a bottom sheet of `bottom` px.
+const abovePadding = (bottom: number) => ({ top: 70, bottom: bottom + 20, left: 30, right: 30 });
 
 // Fit a route into the part of the map a bottom sheet of `bottom` px leaves.
 function fitAbove(map: MaplibreMap, line: [number, number][], bottom: number) {
-  fitLine(map, line, { top: 70, bottom: bottom + 20, left: 30, right: 30 });
+  fitLine(map, line, abovePadding(bottom));
 }
 
 // Fit a route into the part of the map left of the desktop panel (the box
 // below: 480 px wide, 12 px from the right), if that leaves room for it.
-function fitBeside(map: MaplibreMap, line: [number, number][]) {
-  const width = map.getContainer().clientWidth;
+function besidePadding(width: number) {
   const panel = Math.min(480, width - 24) + 12 + 20;
-  fitLine(map, line, { top: 70, bottom: 40, left: 30, right: width - panel - 30 >= 240 ? panel : 30 });
+  return { top: 70, bottom: 40, left: 30, right: width - panel - 30 >= 240 ? panel : 30 };
+}
+
+function fitBeside(map: MaplibreMap, line: [number, number][]) {
+  fitLine(map, line, besidePadding(map.getContainer().clientWidth));
+}
+
+// How a picked route is fitted (select, below): for the map to open there
+// already on a hike's page (website#189), so selecting it doesn't move it.
+export const ROUTE_MAX_ZOOM = 15;
+export function routePadding(width: number) {
+  return window.matchMedia(PHONE).matches ? abovePadding(PEEK_PX) : besidePadding(width);
 }
 
 // The panel: a box on the right on desktop; on phones a bottom sheet.
