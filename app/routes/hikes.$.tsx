@@ -7,7 +7,7 @@ import { data, redirect, useLoaderData, type LoaderFunctionArgs, type MetaFuncti
 import MapPage, { type Initial } from '~/components/MapPage';
 import { buildFor } from '~/build';
 import {
-  type Bbox, type BundleIndex, findHike, hikeCount, hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, parsePath,
+  type Bbox, type BundleIndex, findHike, parkBox, hikeCount, hikeEntries, hikesPath, indexUrl, parkDoc, parkReports, parsePath,
   regionList, regionsUrl, reportsKey, resolve, suggest, type RegionItem, type Regions, type RouteReports, type SeeAlso,
 } from '~/hikes';
 import RouteReportsList from '~/components/RouteReports';
@@ -154,7 +154,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       : j === undefined ? d.base_camps[+i]?.approach : d.base_camps[+i]?.hikes[+j]?.route;
     return r ? boxOf([r.line]) : null;
   };
-  const parkBox = area.bbox;
+  // The whole park, from its outline, and its hikes (#193).
+  const parkView = parkBox(doc?.park, area.bbox);
   const parkDescription = `${hikeCount(area.hikes)} in ${area.name}, ${r.state!.name}: day hikes${doc?.point_to_points?.length ? ', multi-day routes' : ''}${doc?.base_camps?.length ? ', base camps' : ''}, with maps and elevation profiles.`;
 
   if (r.rest.length === 0) {
@@ -166,7 +167,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       crumbs: parkTrail,
       items: parkItems,
       facts: [],
-      initial: { crumbs: parkTrail, focus: { id: area.id, name: area.name, at: 0 }, bbox: parkBox },
+      initial: { crumbs: parkTrail, focus: { id: area.id, name: area.name, at: 0 }, bbox: parkView },
     });
   }
 
@@ -184,7 +185,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       items: parkItems,
       facts: ['That hike has changed since the link was made. Here are the hikes in the park.'],
       initial: {
-        crumbs: parkTrail, focus: { id: area.id, name: area.name, at: 0 }, bbox: parkBox,
+        crumbs: parkTrail, focus: { id: area.id, name: area.name, at: 0 }, bbox: parkView,
         note: 'That hike has changed since the link was made. Here are the hikes in the park.',
       },
     });
@@ -212,7 +213,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     facts: [`${e.type} · ${stats}`, `In ${area.name}, ${r.state!.name}`],
     reports,
     dest,
-    initial: { crumbs: hikeTrail, focus: { id: area.id, name: area.name, at: 0, route: e.id }, bbox: routeBox(e.id) ?? parkBox },
+    initial: { crumbs: hikeTrail, focus: { id: area.id, name: area.name, at: 0, route: e.id }, bbox: routeBox(e.id) ?? parkView },
   });
 };
 

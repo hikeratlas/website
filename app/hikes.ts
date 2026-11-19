@@ -98,7 +98,28 @@ export interface PointToPoint {
 
 // The park (hikeratlas/routes' park): website and operator only when it has
 // them (#72).
-export interface Park { id: string; name: string; website?: string; operator?: string }
+export interface Park {
+  id: string; name: string; website?: string; operator?: string;
+  // Its shape (hikeratlas/routes, cut to at most ~80 points): rings of [lon, lat].
+  outline?: [number, number][][];
+}
+
+// Room around a park's box, a share of its size on each side, so its
+// outline shows in context (#193), not touching the map's edges.
+const PARK_MARGIN = 0.12;
+
+// What to show of a park (#193): its outline's box, with its hikes' (from
+// regions.json) if any lie outside it, and a margin. Without an outline,
+// the hikes' box as it is.
+export function parkBox(park: Park | undefined, hikes: Bbox | null | undefined): Bbox | null {
+  const pts = (park?.outline ?? []).flat();
+  if (!pts.length) return hikes ?? null;
+  let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of pts) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+  if (hikes) { w = Math.min(w, hikes[0]); s = Math.min(s, hikes[1]); e = Math.max(e, hikes[2]); n = Math.max(n, hikes[3]); }
+  const dx = (e - w) * PARK_MARGIN, dy = (n - s) * PARK_MARGIN;
+  return [w - dx, s - dy, e + dx, n + dy];
+}
 
 // A multi-day trip of a smaller park inside a park, which the park lists
 // too (hikeratlas/routes' see_also): id is the trip's in its own park.

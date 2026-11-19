@@ -53,11 +53,11 @@ const parkFilter = (ids: string[]): FilterSpecification => ['in', ['to-string', 
 
 // The open park (#193), so it stands out among its neighbours (Yoho between
 // Banff and Kootenay), under the routes, as the homepage's MiniMap draws
-// its park: a light tint, and from z9 (where the tiles have park_outline) an
-// outline darker and wider than the style's. Not an outline drawn from the
-// park's polygons below z9: their rings show the tile edges. Made afresh for
-// each park: a setFilter on a layer whose tiles had loaded didn't always
-// redraw them.
+// its park: a light tint, and an outline darker and wider than the style's,
+// from park_outline (in the tiles from z5 since hikeratlas/basemap#372, z9
+// before; not drawn from the park's polygons, whose rings show the tile
+// edges). Made afresh for each park: a setFilter on a layer whose tiles had
+// loaded didn't always redraw them.
 const OUTLINE_LAYERS = ['curated-park-tint', 'curated-park-outline'];
 function showParkOutline(map: MaplibreMap, ids: string[]) {
   for (const id of OUTLINE_LAYERS) if (map.getLayer(id)) map.removeLayer(id);
@@ -69,7 +69,7 @@ function showParkOutline(map: MaplibreMap, ids: string[]) {
   const layout: LineLayerSpecification['layout'] = { 'line-join': 'round', 'line-cap': 'round' };
   const filter = parkFilter(ids);
   map.addLayer({ id: OUTLINE_LAYERS[0], type: 'fill', source: 'tiles1', 'source-layer': 'park', filter, paint: { 'fill-color': '#15803d', 'fill-opacity': 0.12 } }, 'curated-park-casing');
-  map.addLayer({ id: OUTLINE_LAYERS[1], type: 'line', source: 'tiles1', 'source-layer': 'park_outline', minzoom: 9, filter, layout, paint }, 'curated-park-casing');
+  map.addLayer({ id: OUTLINE_LAYERS[1], type: 'line', source: 'tiles1', 'source-layer': 'park_outline', minzoom: 5, filter, layout, paint }, 'curated-park-casing');
 }
 
 // A build's index of the parks' routes in its bundle.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sortParks, type RegionItem } from './hikes';
+import { parkBox, sortParks, type RegionItem } from './hikes';
 
 const park = (name: string, hikes: number, rank?: number): RegionItem => ({ name, path: `/${name}`, id: name, hikes, rank });
 const names = (xs: RegionItem[]) => xs.map((x) => x.name);
@@ -33,5 +33,20 @@ describe('sortParks (#168)', () => {
     const before = names(parks);
     sortParks(parks, 'name');
     expect(names(parks)).toEqual(before);
+  });
+});
+
+describe('parkBox (#193)', () => {
+  const park = { id: '1', name: 'P', outline: [[[0, 0], [10, 0], [10, 5], [0, 5], [0, 0]] as [number, number][]] };
+  it('is the outline, with a margin', () => {
+    const [w, s, e, n] = parkBox(park, null)!;
+    expect([w, s, e, n].map((v) => +v.toFixed(2))).toEqual([-1.2, -0.6, 11.2, 5.6]);
+  });
+  it('takes in hikes outside the outline', () => {
+    expect(parkBox(park, [-10, 1, 2, 2])![0]).toBeCloseTo(-10 - 20 * 0.12);
+  });
+  it('is the hikes\' box without an outline', () => {
+    expect(parkBox({ id: '1', name: 'P' }, [1, 2, 3, 4])).toEqual([1, 2, 3, 4]);
+    expect(parkBox(undefined, null)).toBeNull();
   });
 });
