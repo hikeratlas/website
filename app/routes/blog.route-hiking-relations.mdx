@@ -1,0 +1,54 @@
+---
+meta:
+  - title: Using route=hiking relations to discover pre-canned trips
+  - date: 2026-11-18 12:00:00 -0500
+  - name: description
+    content: Do OSM's hiking route relations already describe the trips a hiking app should suggest? Mostly not.
+headers:
+  Cache-Control: no-cache
+
+handle:
+  scripts:
+    - src: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+      async: false
+      defer: false
+---
+
+import HighlightBlocks from '~/components/HighlightBlocks';
+
+export const links = () => [
+  { rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" },
+];
+
+
+<div className="frame">
+# Using `route=hiking` relations to discover pre-canned trips (Nov 18, 2026)
+
+
+One thing I want from a hiking app is for it to suggest "pre-canned" trips.
+
+It's not essential. I'm comfortable planning trips on my own from a topographic map. Still, it's nice to get a quick overview of what's available in an area.
+
+So... is that easy? Maybe they already exist in OSM as [route=hiking](https://wiki.openstreetmap.org/wiki/Tag:route%3Dhiking) relations?
+
+I did a quick sanity check, using Killarney Provincial Park, as I'm somewhat familiar with it.
+
+It has two very famous hikes, the multi-day [La Cloche Silhouette trail](https://en.wikipedia.org/wiki/La_Cloche_Silhouette_Trail) and the day-trip to [the Crack](https://blog.ontarioparks.ca/hike-the-crack-killarney/). The park's website also lists [four other hikes along named trails](https://www.ontarioparks.ca/park/killarney/activities).
+
+The results weren't encouraging:
+
+- ✅ La Cloche had a `route=hiking` relation.
+- ❌ The Crack had a `route=hiking` relation, but it was wrong -- it only included the first of several ways.
+- ❌ None of Chikanishing Trail, Cranberry Bog Trail, Granite Ridge Trail or Lake of the Woods Trail had relations.
+
+I submitted a fix for the Crack, but this suggested that relying on `route=hiking` would be disappointing.
+
+I spotchecked ~100 other hikes in Canadian parks and the pattern held up: almost all had named trails in OSM, but only ~12% had a relation that followed them.
+
+So maybe you can use the presence of a `route=hiking` relation to suggest a route, but you can't rely on it.
+
+So... what to do? That's a topic for another time.
+
+</div>
+
+<HighlightBlocks/>
