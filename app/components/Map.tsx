@@ -92,7 +92,17 @@ export interface Props {
   // reliable: tile-smush records 0 as the max longitude for areas west of
   // Greenwich.)
   centerOnPmtiles?: string;
+  // If set, and the URL has no #zoom/lat/lng position, open showing this box
+  // (website#189), rather than at lng/lat/zoom and moving there once the
+  // page has loaded. padding gets the map's width and height.
+  view?: OpeningView | null;
   onInitialized: (map: maplibregl.Map) => void;
+}
+
+export interface OpeningView {
+  bbox: [number, number, number, number];
+  maxZoom: number;
+  padding: (width: number, height: number) => maplibregl.PaddingOptions;
 }
 
 
@@ -136,12 +146,18 @@ export default function Map(props: Props) {
     // nl-dem's over Newfoundland (see nlDem.ts).
     maplibregl.addProtocol("nldem", nlDemProtocol);
 
+    const view = !hasHashPosition && props.view ? props.view : null;
+    const box = mapContainer.current!;
     const m = new maplibregl.Map({
-      container: mapContainer.current!,
+      container: box,
       hash: true,
       style: props.style,
       transformRequest: demTransformRequest,
       center: [lng, lat],
+      ...(view ? {
+        bounds: [[view.bbox[0], view.bbox[1]], [view.bbox[2], view.bbox[3]]] as [[number, number], [number, number]],
+        fitBoundsOptions: { padding: view.padding(box.clientWidth, box.clientHeight), maxZoom: view.maxZoom },
+      } : {}),
       maxBounds:  props.maxBounds,
       zoom: zoom,
       minZoom: props.minZoom,
@@ -196,7 +212,7 @@ export default function Map(props: Props) {
     // Aerial imagery on and off (hikeratlas/basemap#172; see imagery.ts).
     m.addControl(new ImageryControl(), 'top-right');
 
-    if (props.centerOnPmtiles && !hasHashPosition) {
+    if (props.centerOnPmtiles && !hasHashPosition && !view) {
       protocol.tiles.get(props.centerOnPmtiles)!.getHeader().then((h) => {
         m.jumpTo({ center: [h.centerLon, h.centerLat], zoom: h.centerZoom });
       }).catch((e) => console.error(`Unable to read center from ${props.centerOnPmtiles}`, e));

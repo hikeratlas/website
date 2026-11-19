@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Map as MaplibreMap, JumpToOptions } from 'maplibre-gl';
-import Map from '~/components/Map';
+import Map, { type OpeningView } from '~/components/Map';
 import RoutePlanner from '~/components/RoutePlanner';
-import CuratedRoutes, { bundleIndex, parkRoutes, prefetchRoute, refreshBundle, type Crumb, type FocusPark, type FocusTrail, type RegionList, type Showing } from '~/components/CuratedRoutes';
+import CuratedRoutes, { ROUTE_MAX_ZOOM, routePadding, bundleIndex, parkRoutes, prefetchRoute, refreshBundle, type Crumb, type FocusPark, type FocusTrail, type RegionList, type Showing } from '~/components/CuratedRoutes';
 import OsmLink, { GoogleMapsLink } from '~/components/OsmLink';
 import Search, { Item } from '~/components/Search';
 import { styleUrl, tilesUrl } from '~/build';
@@ -39,10 +39,26 @@ interface Props {
 // on desktop, the lower half on phones.
 function besideSheet(map: MaplibreMap) {
   const { clientWidth: w, clientHeight: h } = map.getContainer();
+  return besideSheetPadding(w, h);
+}
+
+function besideSheetPadding(w: number, h: number) {
   const panel = Math.min(480, w - 24) + 32;
   return w <= 640 ? { top: 40, left: 30, right: 30, bottom: Math.round(h / 2) + 20 }
     : { top: 60, bottom: 60, left: 60, right: w - panel - 60 >= 240 ? panel + 20 : 60 };
 }
+
+// A region's or park's box is fitted to at most this zoom.
+const AREA_MAX_ZOOM = 13;
+// /map and /hikes: North America where its hikes are (website#189), the
+// US and southern Canada (Mercator would give the Arctic most of the map).
+// Not beside the panel on desktop: the map's maxBounds can't leave room for
+// it at this zoom, and /hikes's panel is a short card, low down.
+const NORTH_AMERICA: OpeningView = {
+  bbox: [-150, 24, -55, 62],
+  maxZoom: AREA_MAX_ZOOM,
+  padding: (w, h) => (w <= 640 ? besideSheetPadding(w, h) : { top: 20, bottom: 20, left: 20, right: 20 }),
+};
 
 function shortPark(x: string): string {
   return x.replaceAll('National Park', 'NP').replaceAll('State Park', 'SP')
@@ -81,7 +97,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
   };
   const fit = (bbox: Bbox | null | undefined) => {
     if (!map || !bbox) return;
-    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: besideSheet(map), maxZoom: 13, duration: 0 });
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: besideSheet(map), maxZoom: AREA_MAX_ZOOM, duration: 0 });
   };
 
   const onInitialized = (m: MaplibreMap) => setMap(m);
@@ -105,7 +121,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
       setRegion(initial.region ?? null);
       // With a #zoom/lat/lng hash, the map stays where the URL says.
       if (initial.focus) setFocusPark({ ...initial.focus, at: Date.now(), fit: !hadHash });
-      if (!hadHash) fit(initial.bbox);
+      // Without a hash, the map opened on initial.bbox already (view, below).
     };
     if (map.isStyleLoaded()) apply();
     else map.once('load', apply);
@@ -252,7 +268,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     setFocusPark({ id, name, at: Date.now() });
     loadRegions(routesBuild).then((regions) => {
       const area = regions?.countries.flatMap((c) => c.states.flatMap((s) => s.areas)).find((a) => a.id === id || a.ids?.includes(id));
-      if (area?.bbox && map) map.fitBounds([[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]], { padding: besideSheet(map), maxZoom: 13 });
+      if (area?.bbox && map) map.fitBounds([[area.bbox[0], area.bbox[1]], [area.bbox[2], area.bbox[3]]], { padding: besideSheet(map), maxZoom: AREA_MAX_ZOOM });
     });
   }, [map, routesBuild]);
 
@@ -335,6 +351,15 @@ export default function MapPage({ build, search, initial, summary }: Props) {
     });
   }, []);
 
+  // Where the map opens (website#189): the hike's route as picking it would
+  // fit it, else the park's or region's box, else North America; a preview
+  // build's own centre (Map's centerOnPmtiles). A #zoom/lat/lng hash wins.
+  const [view] = useState<OpeningView | null>(() => {
+    if (initial?.focus?.route && initial.bbox) return { bbox: initial.bbox, maxZoom: ROUTE_MAX_ZOOM, padding: (w) => routePadding(w) };
+    if (initial?.bbox) return { bbox: initial.bbox, maxZoom: AREA_MAX_ZOOM, padding: besideSheetPadding };
+    return build ? null : NORTH_AMERICA;
+  });
+
   return <>
       {/* One row: the site (logo and name, home), search, and links. On
           phones the row goes and search floats on the map, with a menu for
@@ -356,6 +381,7 @@ export default function MapPage({ build, search, initial, summary }: Props) {
         {/* A build only covers its own area, so don't constrain it to North
             America; start at its tiles' center instead. */}
         <Map
+          view={view}
           style={styleUrl(build)}
           lng={-118.245}
           lat={51.537}
