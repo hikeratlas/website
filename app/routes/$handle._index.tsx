@@ -48,7 +48,10 @@ export default function Overview() {
     revalidator.revalidate();
   };
 
-  const hikeTitle = (key?: string) => {
+  // A post's title: its curated hike's; without one, its track's own title
+  // (a review's, its track's), as the track was named when posted.
+  const hikeTitle = (key?: string, own?: string) => {
+    if (!key && own?.trim()) return <span className='font-display text-lg font-bold'>{own}</span>;
     const h = key ? found?.get(key) : undefined;
     if (h) return h.href
       ? <a href={h.href} className='font-display text-lg font-bold text-stone-900 hover:underline'>{h.title}</a>
@@ -58,8 +61,8 @@ export default function Overview() {
     </span>;
   };
 
-  const heading = (key: string | undefined, at: string) => <div>
-    {hikeTitle(key)}
+  const heading = (key: string | undefined, at: string, own?: string) => <div>
+    {hikeTitle(key, own)}
     <div className='text-sm text-stone-600'>{[key ? found?.get(key)?.park : undefined, day(at)].filter(Boolean).join(' · ')}</div>
   </div>;
 
@@ -83,7 +86,7 @@ export default function Overview() {
           {lists.reviews.map(({ at, review, track }) => {
             const r = review.value;
             return <li key={review.uri} className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
-              {heading(r.routeKey ?? track?.value.routeKey, at)}
+              {heading(r.routeKey ?? track?.value.routeKey, at, track?.value.title)}
               {r.tags?.length ? <div className='flex flex-wrap gap-1.5'>
                 {r.tags.slice(0, 10).map((g) => <span key={g} className='rounded-full bg-green-50 px-2.5 py-0.5 text-[13px] text-green-900'>{tagLabel(g)}</span>)}
               </div> : null}
@@ -102,7 +105,7 @@ export default function Overview() {
           {lists.tracks.map(({ at, track }) => {
             const t = track.value;
             return <li key={track.uri} className='flex flex-col gap-2 rounded-xl border border-stone-200 bg-white p-3'>
-              {heading(t.routeKey, at)}
+              {heading(t.routeKey, at, t.title)}
               {pds && did && <TrackView track={t} pds={pds} did={did} />}
               {t.photos?.length && pds && did ? <Photos photos={t.photos} pds={pds} did={did} credit={{ did, handle, license: t.license }} /> : null}
               {footer(t.license, { track })}
