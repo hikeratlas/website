@@ -4,7 +4,7 @@ import Blog from '~/content/blog.mdx';
 import { posts } from '~/blog.server';
 
 export const meta: MetaFunction = () => [
-  { title: 'Blog · Hiker Atlas' },
+  { title: 'Development blog · Hiker Atlas' },
   { name: 'description', content: 'Notes about the development of Hiker Atlas and open-source cartography in general.' },
 ];
 
