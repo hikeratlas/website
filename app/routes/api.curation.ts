@@ -19,7 +19,13 @@ export const loader = async ({ request, context }: LoaderFunctionArgs) => {
   const env = context.get(envContext);
   if (!env.CURATION) return fail(503, 'no curation database bound (CURATION)');
   const curator = curatorFor(request.headers.get('authorization'), env.CURATOR_KEYS);
-  return Response.json({ ...(await readAll(env.CURATION)), curator }, { headers: NO_STORE });
+  try {
+    return Response.json({ ...(await readAll(env.CURATION)), curator }, { headers: NO_STORE });
+  } catch (e) {
+    // A new database without its tables: curation/README.md, step 4.
+    if (/no such table/i.test(String(e))) return fail(503, 'the curation database has no tables yet: apply curation/migrations/ (curation/sql.mjs --file)');
+    throw e;
+  }
 };
 
 export const action = async ({ request, context }: ActionFunctionArgs) => {

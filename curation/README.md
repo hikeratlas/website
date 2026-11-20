@@ -19,18 +19,21 @@ nightly in routes, as a pull request (`.github/workflows/curation-export.yml`).
 
 1. Cloudflare dashboard, Storage & Databases → D1 → Create: `curation`
    (or `npx wrangler d1 create curation`).
-2. Its tables: paste `migrations/0001_init.sql` into the database's console
-   (or `npx wrangler d1 migrations apply curation --remote` with a
-   `wrangler.toml` naming it).
-3. Workers & Pages → the site's Pages project → Settings:
+2. Workers & Pages → the site's Pages project → Settings:
    - Bindings → Add → D1 database: variable name `CURATION`, the `curation`
      database;
    - Variables and Secrets → Add → Secret: `CURATOR_KEYS`, `name:key` pairs,
      comma-separated, e.g. `chris:` and the output of `openssl rand -hex 24`.
      A curator puts their key in the regressions page's Settings; their name
      goes on each save.
+   - Variables and Secrets → Add → Text: `CURATION_ADMINS`, the curators
+     (names in `CURATOR_KEYS`) who may run raw SQL, e.g. `chris`.
 
    For Production, and Preview if wanted; then redeploy.
+3. Its tables, once deployed:
+   `CURATOR_KEY=<key> node curation/sql.mjs --file curation/migrations/0001_init.sql`
+   (the D1 console drops newlines, so a migration's first comment swallows
+   it there).
 4. Import routes' regressions, once:
    `CURATOR_KEY=<key> node curation/import.mjs ../routes`. A park already in
    the database is skipped, so it can be run again if cut short.
@@ -52,3 +55,17 @@ overwrites them there.
   null), each from the rev it was read at (`base`). A row changed since is
   refused (409), and nothing is saved. At most 40 rows a save: a query a row
   keeps a save within D1's Free plan's 50 queries a request.
+
+## SQL
+
+`/api/curation/sql` (`app/routes/api.curation.sql.ts`), for admins (curators
+named in `CURATION_ADMINS`, with their key): migrations, fixes, and
+questions the page can't answer.
+
+- `POST { sql, params? }`: one statement, with `?` parameters.
+- `POST { script }`: a script, such as a migration file, comments and all,
+  split into its statements and run as one batch (all or none), at most 45.
+
+From a terminal: `CURATOR_KEY=<key> node curation/sql.mjs "SELECT …" [params]`
+or `--file FILE`. Each call is logged (the site's Workers logs) with who ran
+it.

@@ -9,6 +9,9 @@ export interface Env {
   CURATION?: D1Database;
   // Curators' keys, a secret: "name:key" pairs, comma-separated.
   CURATOR_KEYS?: string;
+  // Curators (names in CURATOR_KEYS), comma-separated, who may also run raw
+  // SQL on the curation database (routes/api.curation.sql.ts). Not secret.
+  CURATION_ADMINS?: string;
 }
 
 export const envContext = createContext<Env>({});
