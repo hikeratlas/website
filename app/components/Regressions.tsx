@@ -11,8 +11,10 @@
 // routes' expect.py). A trail routes doesn't offer: add it (Add a trail),
 // drawn on the map, as a trail entry with that trace. Any park the site's
 // search finds can be opened here, files or not.
-// Changes are kept in this browser until committed: one commit to a working
-// branch in routes, and a pull request from it, so routes' CI checks them.
+// Changes are kept in this browser until saved, with a curator key, to the
+// site's curation database (routes#252), which keeps every version; routes
+// gets them by its export (fixtures/curation-export.py), as a pull request
+// its CI checks.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MaplibreMap, GeoJSONSource, MapLayerMouseEvent } from 'maplibre-gl';
@@ -28,7 +30,7 @@ import { CoalescingSource, type Source } from '~/routing/source';
 import { withZstd, type Decompress } from '~/zstd';
 import type { LngLat } from '~/routing/graph';
 import type { ParkDoc, Route } from '~/hikes';
-import { GitHub, REPO } from '~/regressions/github';
+import { Curation, CurationError, type Snapshot } from '~/curation/client';
 import {
   blessedEntry, entryFor, entryKey, entryTraces, fixtureFor, hikeTitle, key, norm, parseJsonl, passes, simplify, slug, toJsonl, walks, withFields,
   type Decision, type Entry, type EntryEdit, type ParkFile, type Proposal,
@@ -44,14 +46,15 @@ declare const pmtiles: {
 
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const C = { trail: '#f59e0b', cand: '#2563eb', sel: '#dc2626', draw: '#7c3aed', trace: '#111827' };
-const TOKEN_KEY = 'regressions:github-token';
-const SETTINGS_KEY = 'regressions:settings';
+// routes, whose fixtures these are; they're kept in the site's curation
+// database (routes#252) and exported to routes' fixtures/.
+const REPO = 'hikeratlas/routes';
+const KEY_KEY = 'regressions:curator-key';
 const DECISIONS_KEY = 'regressions:decisions';
 const EDITS_KEY = 'regressions:entry-edits';
 const BLESS_KEY = 'regressions:blessings';
 const ADD_KEY = 'regressions:added';
 
-interface Settings { branch: string; base: string }
 type Box = [number, number, number, number];
 // A park: its proposals and its entries (either may be empty), by the file
 // stem both directories name it by.
@@ -107,16 +110,13 @@ const mergeEdits = <T,>(all: Record<string, Record<string, T>>, stem: string, k:
 export default function Regressions({ build }: { build: string | null }) {
   const routesBuild = build ?? 'north-america';
   const [map, setMap] = useState<MaplibreMap | null>(null);
-  const [token, setToken] = useState<string>('');
-  const [login, setLogin] = useState<string | null>(null);
-  const [settings, setSettings] = useState<Settings>({ branch: 'regressions', base: 'main' });
+  const [curatorKey, setCuratorKey] = useState<string>('');
+  const [curator, setCurator] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   // Phones: the map takes 70% of the screen instead of half (to drag points).
   const [bigMap, setBigMap] = useState(false);
   useEffect(() => { map?.resize(); }, [map, bigMap]);
   const [parks, setParks] = useState<Park[]>([]);
-  const [readFrom, setReadFrom] = useState<string>('');
-  const [pull, setPull] = useState<{ number: number; html_url: string } | null>(null);
   const [loadMsg, setLoadMsg] = useState<string>('Loading…');
   const [stem, setStem] = useState<string>('');
   const [tab, setTab] = useState<Tab>('proposals');
@@ -157,38 +157,29 @@ export default function Regressions({ build }: { build: string | null }) {
   const archive = useRef<InstanceType<typeof pmtiles.PMTiles> | null>(null);
 
   useEffect(() => {
-    setToken(stored(TOKEN_KEY, ''));
-    setSettings(stored(SETTINGS_KEY, { branch: 'regressions', base: 'main' }));
+    setCuratorKey(stored(KEY_KEY, ''));
     setDecisions(stored(DECISIONS_KEY, {}));
     setEdits(stored(EDITS_KEY, {}));
     setBlessings(stored(BLESS_KEY, {}));
     setAdded(stored(ADD_KEY, {}));
   }, []);
-  const gh = useMemo(() => new GitHub(token || null), [token]);
-  useEffect(() => { gh.user().then(setLogin).catch(() => setLogin(null)); }, [gh]);
+  const cur = useMemo(() => new Curation(curatorKey || null), [curatorKey]);
 
-  // Proposals and entries: from the working branch while its pull request is
-  // open (so committed changes show), else from the base branch.
+  // Proposals and entries: every file in the curation database, at once.
   const load = useCallback(async () => {
     setLoadMsg('Loading…');
     try {
-      const open = await gh.openPull(settings.branch).catch(() => null);
-      setPull(open);
-      const branch = open ? settings.branch : settings.base;
-      // The branch's latest commit, and every file read at it: a commit's
-      // files never change, so GitHub's file CDN (which caches a branch's
-      // files for 5 minutes) can't serve them stale, and a reload right after
-      // a merge shows it. Not a branch (a commit given in Settings): read as is.
-      const ref = (await gh.head(branch)) ?? branch;
-      const [pNames, eNames, fixturesText] = await Promise.all([
-        gh.list('fixtures/proposals', ref).catch((): string[] => []), gh.list('fixtures/expect', ref), gh.read('fixtures/parks.json', ref),
-      ]);
+      const snap = await cur.load();
+      setCurator(snap.curator);
+      const read = (path: string) => snap.files.get(path)?.content || null;
+      const names = (dir: string) => [...snap.files.keys()].filter((k) => k.startsWith(`${dir}/`) && snap.files.get(k)!.content).map((k) => k.slice(dir.length + 1));
+      const [pNames, eNames, fixturesText] = [names('fixtures/proposals'), names('fixtures/expect'), read('fixtures/parks.json')];
       const fixtures = JSON.parse(fixturesText ?? '[]') as { id?: string; park: string; bbox: Box }[];
       const stems = [...new Set([...pNames, ...eNames].filter((n) => n.endsWith('.jsonl')).map((n) => n.replace(/\.jsonl$/, '')))];
       const files = await Promise.all(stems.map(async (st): Promise<Park> => {
         const [ps, es] = await Promise.all([
-          pNames.includes(`${st}.jsonl`) ? gh.read(`fixtures/proposals/${st}.jsonl`, ref).then((t) => parseJsonl<Proposal>(t)) : [],
-          eNames.includes(`${st}.jsonl`) ? gh.read(`fixtures/expect/${st}.jsonl`, ref).then((t) => parseJsonl<Entry>(t)) : [],
+          pNames.includes(`${st}.jsonl`) ? parseJsonl<Proposal>(read(`fixtures/proposals/${st}.jsonl`)) : [],
+          eNames.includes(`${st}.jsonl`) ? parseJsonl<Entry>(read(`fixtures/expect/${st}.jsonl`)) : [],
         ]);
         const any = (ps[0] ?? es[0]) as { park: string; park_id: string } | undefined;
         const park = any?.park ?? st, park_id = String(any?.park_id ?? '');
@@ -213,14 +204,13 @@ export default function Regressions({ build }: { build: string | null }) {
       }
       files.sort((a, b) => a.park.localeCompare(b.park));
       setParks(files);
-      setReadFrom(ref === branch ? branch : `${branch} @ ${ref.slice(0, 7)}`);
       const want = linked.current?.park;
       setStem((s) => s || (want && files.some((f) => f.stem === want) ? want : files[0]?.stem) || '');
       setLoadMsg('');
     } catch (e) {
-      setLoadMsg(`Couldn’t load: ${(e as Error).message}. Without a token GitHub allows 60 reads an hour; add one in Settings.`);
+      setLoadMsg(`Couldn’t load: ${(e as Error).message}.`);
     }
-  }, [gh, settings.branch, settings.base, routesBuild]);
+  }, [cur, routesBuild]);
   useEffect(() => { load(); }, [load]);
 
   const park = parks.find((p) => p.stem === stem) ?? null;
@@ -390,7 +380,7 @@ export default function Regressions({ build }: { build: string | null }) {
       setOffered(ranked);
     })();
     return () => { live = false; };
-  }, [map, park?.stem, subject, readFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, park?.stem, subject, parks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A hike to bless: it alone, picked, and the trace of its blessed entry if
   // it has one.
@@ -490,26 +480,26 @@ export default function Regressions({ build }: { build: string | null }) {
 
   const nChanges = [decisions, edits, blessings, added].reduce((n, all) => n + Object.values(all).reduce((s, d) => s + Object.keys(d).length, 0), 0);
 
-  // Commit every change: proposals' statuses, the entries accepted ones
+  // Save every change: proposals' statuses, the entries accepted ones
   // become, edited and deleted entries, and a fixture for each park that
-  // gets its first entries.
+  // gets its first entries. Applied to the files as they are now (read
+  // again first), each saved from the rev read: one changed by someone else
+  // in between is refused, and nothing is saved.
   const commit = async () => {
-    if (!token) { setShowSettings(true); return; }
-    setCommitting('Committing…');
+    if (!curatorKey) { setShowSettings(true); return; }
+    setCommitting('Saving…');
     try {
-      const open = await gh.openPull(settings.branch);
-      // A merged or closed pull request's branch is restarted from the base.
-      const base = (open && await gh.head(settings.branch)) || (await gh.head(settings.base));
-      if (!base) throw new Error(`no branch ${settings.base}`);
+      const snap: Snapshot = await cur.load();
+      const read = (path: string) => snap.files.get(path)?.content || null;
       const files: Record<string, string> = {};
-      const fixtures = JSON.parse(await gh.read('fixtures/parks.json', base) ?? '[]') as { key: string; id?: string; park: string; bbox: number[] }[];
+      const fixtures = JSON.parse(read('fixtures/parks.json') ?? '[]') as { key: string; id?: string; park: string; bbox: number[] }[];
       let addedFixtures = 0, accepted = 0, rejected = 0, updated = 0, deleted = 0, blessed = 0;
       const stems = [...new Set([...Object.keys(decisions), ...Object.keys(edits), ...Object.keys(blessings), ...Object.keys(added)])];
       let nAdded = 0;
       for (const st of stems) {
-        const pText = await gh.read(`fixtures/proposals/${st}.jsonl`, base);
+        const pText = read(`fixtures/proposals/${st}.jsonl`);
         const pf = parseJsonl<Proposal>(pText);
-        let entries = parseJsonl<Entry>(await gh.read(`fixtures/expect/${st}.jsonl`, base));
+        let entries = parseJsonl<Entry>(read(`fixtures/expect/${st}.jsonl`));
         const before = toJsonl(entries);
         for (let pi = 0; pi < pf.length; pi++) {
           const d = decisions[st]?.[key(pf[pi])];
@@ -569,20 +559,19 @@ export default function Regressions({ build }: { build: string | null }) {
       if (addedFixtures) files['fixtures/parks.json'] = JSON.stringify(fixtures, null, 2) + '\n';
       const parkNames = stems.map((st) => parks.find((x) => x.stem === st)?.park ?? st);
       const what = [accepted && `${accepted} accepted`, rejected && `${rejected} rejected`, updated && `${updated} entr${updated === 1 ? 'y' : 'ies'} edited`, deleted && `${deleted} deleted`, blessed && `${blessed} blessed`, nAdded && `${nAdded} added`].filter(Boolean).join(', ');
-      const msg = `Named regressions: ${what} (${parkNames.join(', ')})\n\nFrom the website's /dev/regressions page${login ? `, by ${login}` : ''}.` +
+      const msg = `Named regressions: ${what} (${parkNames.join(', ')})\n\nFrom the website's /dev/regressions page${curator ? `, by ${curator}` : ''}.` +
         (addedFixtures ? ` ${addedFixtures} park(s) added to fixtures/parks.json.` : '');
-      await gh.commit(settings.branch, base, files, msg);
-      const pr = open ?? await gh.createPull(settings.branch, 'Named regressions from the regressions page',
-        'Proposals accepted (as trail entries with traces) or rejected, entries edited, and hikes blessed, on the website\'s /dev/regressions page (routes#95). Each commit says what it changed.');
+      if (!Object.keys(files).length) throw new Error('no file changes (already saved?)');
+      await cur.save(snap, files, msg);
       setDecisions({}); store(DECISIONS_KEY, {});
       setBlessings({}); store(BLESS_KEY, {});
       setAdded({}); store(ADD_KEY, {});
       setEdits({}); store(EDITS_KEY, {});
-      setCommitting(`Committed to ${settings.branch}: pull request #${pr.number}.`);
-      setPull(pr);
+      setCommitting(`Saved ${Object.keys(files).length} file${Object.keys(files).length === 1 ? '' : 's'}. Routes gets them with the next export.`);
       await load();
     } catch (e) {
-      setCommitting(`Couldn’t commit: ${(e as Error).message}`);
+      const stale = e instanceof CurationError && e.status === 409;
+      setCommitting(stale ? 'Not saved: someone changed this park since. Reload, check, and save again.' : `Couldn’t save: ${(e as Error).message}`);
     }
   };
 
@@ -643,16 +632,14 @@ export default function Regressions({ build }: { build: string | null }) {
           </div>
         </div>
         {showSettings && <div className='border border-gray-200 rounded p-2 flex flex-col gap-2 text-xs'>
-          <label className='flex flex-col gap-1'>GitHub token (fine-grained: {REPO} only, Contents and Pull requests read and write). Kept in this browser.
-            <input type='password' className='border border-gray-300 rounded px-2 py-1' value={token} onChange={(e) => { setToken(e.target.value.trim()); store(TOKEN_KEY, e.target.value.trim()); }} placeholder='github_pat_…' />
+          <label className='flex flex-col gap-1'>Curator key. Kept in this browser.
+            <input type='password' className='border border-gray-300 rounded px-2 py-1' value={curatorKey} onChange={(e) => { setCuratorKey(e.target.value.trim()); store(KEY_KEY, e.target.value.trim()); }} />
           </label>
-          <div className='text-gray-600'>{token ? (login ? `Signed in as ${login}.` : 'Checking the token…') : 'No token: you can look, but not commit.'}</div>
-          <label className='flex items-center gap-2'>Working branch <input className='border border-gray-300 rounded px-2 py-0.5 flex-1' value={settings.branch} onChange={(e) => { const s = { ...settings, branch: e.target.value.trim() }; setSettings(s); store(SETTINGS_KEY, s); }} /></label>
-          <label className='flex items-center gap-2'>Start from <input className='border border-gray-300 rounded px-2 py-0.5 flex-1' value={settings.base} onChange={(e) => { const s = { ...settings, base: e.target.value.trim() }; setSettings(s); store(SETTINGS_KEY, s); }} /></label>
+          <div className='text-gray-600'>{curatorKey ? (curator ? `Saving as ${curator}.` : 'Not a curator key (or still checking).') : 'No key: you can look, but not save.'}</div>
         </div>}
         {loadMsg && <div className='text-gray-600 text-xs'>{loadMsg}</div>}
         {parks.length > 0 && <>
-          <div className='text-xs text-gray-500'>Reading from <b>{readFrom}</b>{pull && <> · open: <a className='underline' href={pull.html_url} target='_blank' rel='noreferrer'>#{pull.number}</a></>}</div>
+          <div className='text-xs text-gray-500'>From the curation database; routes gets changes with each export.</div>
           <select className='border border-gray-300 rounded px-2 py-1' value={stem} onChange={(e) => setStem(e.target.value)}>
             {parks.map((pf) => <option key={pf.stem} value={pf.stem}>{pf.park} — {counts(pf)}</option>)}
           </select>
@@ -825,8 +812,8 @@ export default function Regressions({ build }: { build: string | null }) {
           <div className='text-xs text-gray-600'>{blessing ? <>To bless: <b>{blessing.name}, {blessing.km} km</b></> : 'Not blessed.'}</div>
         </>}
         <div className='flex items-center gap-2 border-t border-gray-100 pt-1.5'>
-          <button type='button' className={btn} disabled={!nChanges || !!committing?.startsWith('Committing')} onClick={commit}>Commit {nChanges} change{nChanges === 1 ? '' : 's'}</button>
-          <span className='text-xs text-gray-600'>{committing ?? (token ? `to ${settings.branch}, as a pull request` : 'needs a token (Settings)')}</span>
+          <button type='button' className={btn} disabled={!nChanges || !!committing?.startsWith('Saving')} onClick={commit}>Save {nChanges} change{nChanges === 1 ? '' : 's'}</button>
+          <span className='text-xs text-gray-600'>{committing ?? (curator ? `as ${curator}` : 'needs a curator key (Settings)')}</span>
         </div>
       </div>}
     </aside>
