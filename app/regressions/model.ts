@@ -79,7 +79,10 @@ export function withFields<T extends object>(row: T, fields: Record<string, stri
   return next;
 }
 
-export const toJsonl = (rows: unknown[]) => rows.map((r) => (r && typeof r === 'object' && RAW.get(r as object)) || pyJson(r)).join('\n') + '\n';
+// A row's line: as it was read, where it's unchanged (or patched in place by
+// withFields), else written anew.
+export const lineOf = (r: unknown): string => (r && typeof r === 'object' ? RAW.get(r as object) : undefined) ?? pyJson(r);
+export const toJsonl = (rows: unknown[]) => rows.map(lineOf).join('\n') + '\n';
 
 // The entry an accepted proposal becomes: a trail entry with a trace (see
 // routes' expect.py), so it's checked against the hike meant rather than the
@@ -173,14 +176,6 @@ export function offTrace(trace: LngLat[], line: LngLat[], m = 50): number {
 }
 
 export const lineKm = (line: LngLat[]) => line.slice(1).reduce((s, p, i) => s + haversine(line[i], p), 0) / 1000;
-
-// A fixture for routes' fixtures/parks.json, for a park that gets entries
-// (its README: a park with entries should be a fixture too, so CI runs it).
-export function fixtureFor(f: ParkFile, bbox: [number, number, number, number]) {
-  const short = f.park.replace(/ (National|Provincial|Interprovincial|State) Park.*$| Park$/, '');
-  const key = short.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  return { key, id: f.park_id, park: f.park, why: 'quality: park-listed trails as named regressions (routes#95)', bbox };
-}
 
 // An entry in fixtures/expect/ (routes' expectations.py): a trail entry, or
 // a dest entry (a route to `dest` from near `start`).

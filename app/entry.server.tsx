@@ -4,6 +4,9 @@ import { ServerRouter, type EntryContext, type RouterContextProvider } from "rea
 import { isbot } from "isbot";
 import { renderToReadableStream } from "react-dom/server";
 
+// For functions/[[path]].ts, to set the bindings in loaders' context.
+export { envContext } from "./cloudflare";
+
 export default async function handleRequest(
   request: Request,
   responseStatusCode: number,
