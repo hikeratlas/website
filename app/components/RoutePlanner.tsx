@@ -10,6 +10,9 @@ import type { LngLat } from '~/routing/graph';
 import { profile, type Profile } from '~/routing/elevation';
 import { kmPerUnit, useFormat } from '~/units';
 import { useWaypoints } from '~/components/useWaypoints';
+import { PostDialog } from '~/components/PostDialog';
+import { SignInDialog } from '~/components/Account';
+import { useAtSession } from '~/atproto/session';
 
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const COLOR = '#c026d3';
@@ -22,6 +25,9 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
   const route = useWaypoints(map, tiles, { id: 'route', color: COLOR, active });
   const [result, setResult] = useState<Result | null>(null);
   const hoverAdded = useRef(false);
+  // Saving the route as one of your tracks (website#198).
+  const [saving, setSaving] = useState(false);
+  const at = useAtSession();
 
   // The elevation profile of the route so far, redone as it changes.
   useEffect(() => {
@@ -78,6 +84,9 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
       <div className='text-gray-600'>{status}</div>
       <div className='flex items-center gap-1 shrink-0'>
         <button className='tap px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40'
+          disabled={!result || n < 2 || route.busy || at.status === 'loading'} onClick={() => setSaving(true)}
+          title='Save this route as one of your tracks, with a date, a review and photos'>Save as track</button>
+        <button className='tap px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40'
           disabled={!n} onClick={route.undo} title='Remove the last point'>Undo</button>
         <button className='tap px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40'
           disabled={!n} onClick={route.clear} title='Start over'>Clear</button>
@@ -86,6 +95,10 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
       </div>
     </div>
     {result && n > 1 && <RouteSummary r={result} onHover={showHover} />}
+    {saving && result && (at.status === 'in'
+      ? <PostDialog title='My route' drawn={{ coords: result.profile.coords, elevations: result.profile.points.map(([, e]) => e), gain: result.profile.gain }}
+        onClose={() => setSaving(false)} />
+      : <SignInDialog onClose={() => setSaving(false)} why='Sign in to save your route as a track.' />)}
   </div>;
 }
 
