@@ -30,9 +30,10 @@ import { CoalescingSource, type Source } from '~/routing/source';
 import { withZstd, type Decompress } from '~/zstd';
 import type { LngLat } from '~/routing/graph';
 import type { ParkDoc, Route } from '~/hikes';
-import { Curation, CurationError, type Snapshot } from '~/curation/client';
+import { Curation, CurationError, type Change, type ParkRow } from '~/curation/client';
+import { changesFor, newSlot, slotsOf, type Slot } from '~/curation/rows';
 import {
-  blessedEntry, entryFor, entryKey, entryTraces, fixtureFor, hikeTitle, key, norm, parseJsonl, passes, simplify, slug, toJsonl, walks, withFields,
+  blessedEntry, entryFor, entryKey, entryTraces, hikeTitle, key, norm, passes, simplify, slug, walks, withFields,
   type Decision, type Entry, type EntryEdit, type ParkFile, type Proposal,
 } from '~/regressions/model';
 
@@ -50,6 +51,7 @@ const C = { trail: '#f59e0b', cand: '#2563eb', sel: '#dc2626', draw: '#7c3aed', 
 // database (routes#252) and exported to routes' fixtures/.
 const REPO = 'hikeratlas/routes';
 const KEY_KEY = 'regressions:curator-key';
+const FIXTURES_URL = `https://raw.githubusercontent.com/${REPO}/main/fixtures/parks.json`;
 const DECISIONS_KEY = 'regressions:decisions';
 const EDITS_KEY = 'regressions:entry-edits';
 const BLESS_KEY = 'regressions:blessings';
@@ -171,21 +173,15 @@ export default function Regressions({ build }: { build: string | null }) {
     try {
       const snap = await cur.load();
       setCurator(snap.curator);
-      const read = (path: string) => snap.files.get(path)?.content || null;
-      const names = (dir: string) => [...snap.files.keys()].filter((k) => k.startsWith(`${dir}/`) && snap.files.get(k)!.content).map((k) => k.slice(dir.length + 1));
-      const [pNames, eNames, fixturesText] = [names('fixtures/proposals'), names('fixtures/expect'), read('fixtures/parks.json')];
-      const fixtures = JSON.parse(fixturesText ?? '[]') as { id?: string; park: string; bbox: Box }[];
-      const stems = [...new Set([...pNames, ...eNames].filter((n) => n.endsWith('.jsonl')).map((n) => n.replace(/\.jsonl$/, '')))];
-      const files = await Promise.all(stems.map(async (st): Promise<Park> => {
-        const [ps, es] = await Promise.all([
-          pNames.includes(`${st}.jsonl`) ? parseJsonl<Proposal>(read(`fixtures/proposals/${st}.jsonl`)) : [],
-          eNames.includes(`${st}.jsonl`) ? parseJsonl<Entry>(read(`fixtures/expect/${st}.jsonl`)) : [],
-        ]);
-        const any = (ps[0] ?? es[0]) as { park: string; park_id: string } | undefined;
-        const park = any?.park ?? st, park_id = String(any?.park_id ?? '');
-        const fx = fixtures.find((f) => String(f.id ?? '') === park_id || (!f.id && f.park === park));
-        return { stem: st, park, park_id, region: ps[0]?.region ?? '', proposals: ps, entries: es, bbox: ps[0]?.park_bbox ?? fx?.bbox };
-      }));
+      // Routes' fixtures (which parks its CI runs): to offer the ones with
+      // no rows yet, to bless their hikes.
+      const fixtures = await fetch(FIXTURES_URL, { cache: 'no-store' }).then((r) => r.ok ? r.json() as Promise<{ id?: string; park: string; bbox: Box }[]> : []).catch(() => []);
+      const rowsOf = <T,>(rows: typeof snap.listed, id: string) => slotsOf<T>(rows.filter((r) => r.park_id === id)).map((x) => x.row!);
+      const files: Park[] = snap.parks.map((p) => {
+        const ps = rowsOf<Proposal>(snap.listed, p.park_id), es = rowsOf<Entry>(snap.trails, p.park_id);
+        const fx = fixtures.find((f) => String(f.id ?? '') === p.park_id || (!f.id && f.park === p.name));
+        return { stem: p.stem, park: p.name, park_id: p.park_id, region: p.region, proposals: ps, entries: es, bbox: p.bbox ?? ps[0]?.park_bbox ?? fx?.bbox };
+      });
       // Fixtures with no files yet, to bless their hikes: their region (for
       // the file's name) from routes' regions.json.
       const regions = await fetch(regionsUrl(routesBuild)).then((r) => r.json() as Promise<{ countries: { states: { name: string; areas: { id: string; ids?: string[]; name: string }[] }[] }[] }>).catch(() => null);
@@ -481,93 +477,80 @@ export default function Regressions({ build }: { build: string | null }) {
   const nChanges = [decisions, edits, blessings, added].reduce((n, all) => n + Object.values(all).reduce((s, d) => s + Object.keys(d).length, 0), 0);
 
   // Save every change: proposals' statuses, the entries accepted ones
-  // become, edited and deleted entries, and a fixture for each park that
-  // gets its first entries. Applied to the files as they are now (read
-  // again first), each saved from the rev read: one changed by someone else
-  // in between is refused, and nothing is saved.
+  // become, edited and deleted entries, blessed and added ones. Applied to
+  // the rows as they are now (read again first), and only rows that changed
+  // are sent, each from the rev read: one changed by someone else in
+  // between is refused, and nothing is saved. A park saved for the first
+  // time is sent too (routes' export makes it a fixture).
   const commit = async () => {
     if (!curatorKey) { setShowSettings(true); return; }
     setCommitting('Saving…');
     try {
-      const snap: Snapshot = await cur.load();
-      const read = (path: string) => snap.files.get(path)?.content || null;
-      const files: Record<string, string> = {};
-      const fixtures = JSON.parse(read('fixtures/parks.json') ?? '[]') as { key: string; id?: string; park: string; bbox: number[] }[];
-      let addedFixtures = 0, accepted = 0, rejected = 0, updated = 0, deleted = 0, blessed = 0;
+      const snap = await cur.load();
+      const known = new Set(snap.parks.map((p) => p.park_id));
+      const changes: Change[] = [];
+      const newParks: ParkRow[] = [];
+      let accepted = 0, rejected = 0, updated = 0, deleted = 0, blessed = 0, nAdded = 0;
       const stems = [...new Set([...Object.keys(decisions), ...Object.keys(edits), ...Object.keys(blessings), ...Object.keys(added)])];
-      let nAdded = 0;
       for (const st of stems) {
-        const pText = read(`fixtures/proposals/${st}.jsonl`);
-        const pf = parseJsonl<Proposal>(pText);
-        let entries = parseJsonl<Entry>(read(`fixtures/expect/${st}.jsonl`));
-        const before = toJsonl(entries);
+        const pk = parks.find((x) => x.stem === st);
+        if (!pk) continue;
+        const listed = slotsOf<Proposal>(snap.listed.filter((r) => r.park_id === pk.park_id));
+        const pf = listed.map((x) => x.row!);
+        const slots: Slot<Entry>[] = slotsOf<Entry>(snap.trails.filter((r) => r.park_id === pk.park_id));
+        const live = () => slots.filter((x) => x.row);
+        const find = (f: (e: Entry) => boolean) => live().find((x) => f(x.row!));
+        // In place of the entry of the same name (or by `f`), else added.
+        const put = (e: Entry, f: (x: Entry) => boolean = (x) => entryKey(x) === entryKey(e)) => {
+          const at = find(f);
+          if (at) at.row = e; else slots.push(newSlot(e));
+        };
         for (let pi = 0; pi < pf.length; pi++) {
           const d = decisions[st]?.[key(pf[pi])];
           if (!d) continue;
-          // A copy: a changed row is written anew (model.ts' toJsonl).
           const p = pf[pi] = withFields(pf[pi], { status: d.status, ...(d.note ? { note: d.note } : {}) });
-          if (d.status === 'accepted') {
-            accepted++;
-            const e = entryFor(p, d) as Entry;
-            const at = entries.findIndex((x) => entryKey(x) === entryKey(e));
-            if (at >= 0) entries[at] = e; else entries.push(e);
-          } else rejected++;
+          if (d.status === 'accepted') { accepted++; put(entryFor(p, d) as Entry); } else rejected++;
         }
         for (const [k, x] of Object.entries(edits[st] ?? {})) {
-          const at = entries.findIndex((e) => entryKey(e) === k);
-          if (at < 0) continue;  // gone since: nothing to change
+          const at = find((e) => entryKey(e) === k);
+          if (!at) continue;  // gone since: nothing to change
           if (x.action === 'delete') {
             // Its proposal, if it came from one, is open again.
-            pf.forEach((p, pi) => { if (p.name === entries[at].name && p.status === 'accepted') pf[pi] = withFields(p, { status: 'open' }); });
-            entries = entries.filter((_, i) => i !== at);
+            pf.forEach((p, pi) => { if (p.name === at.row!.name && p.status === 'accepted') pf[pi] = withFields(p, { status: 'open' }); });
+            at.row = null;
             deleted++;
             continue;
           }
-          const e = { ...entries[at] };
+          const e = { ...at.row! };
           if (x.name) e.name = x.name;
           if (x.km !== undefined) e.km = x.km;
           if (x.trace && x.addTrace) e.traces = [...(e.traces ?? []), x.trace];
           else if (x.trace) e.trace = x.trace;
           if (x.note) e.trace_note = x.note;
-          entries[at] = e;
+          at.row = e;
           updated++;
         }
         // Blessed: in place of the entry blessing the same route, or of one
         // of the same name, else added.
         for (const e of Object.values(blessings[st] ?? {})) {
-          const at = entries.findIndex((x) => x.blessed?.key === e.blessed!.key || entryKey(x) === entryKey(e));
-          if (at >= 0) entries[at] = e; else entries.push(e);
+          put(e, (x) => x.blessed?.key === e.blessed!.key || entryKey(x) === entryKey(e));
           blessed++;
         }
-        // Added: in place of an entry of the same name, else added.
-        for (const e of Object.values(added[st] ?? {})) {
-          const at = entries.findIndex((x) => entryKey(x) === entryKey(e));
-          if (at >= 0) entries[at] = e; else entries.push(e);
-          nAdded++;
-        }
-        if (pText !== null && toJsonl(pf) !== toJsonl(parseJsonl(pText))) files[`fixtures/proposals/${st}.jsonl`] = toJsonl(pf);
-        if (toJsonl(entries) !== before) files[`fixtures/expect/${st}.jsonl`] = entries.length ? toJsonl(entries) : '';
-        const pk = parks.find((x) => x.stem === st);
-        const bbox = pf[0]?.park_bbox ?? pk?.bbox;
-        // Older fixtures name their park without an id.
-        if (pk && bbox && entries.length && !fixtures.some((f) => String(f.id ?? '') === pk.park_id || (!f.id && f.park === pk.park))) {
-          const fx = fixtureFor(pk, bbox);
-          if (fixtures.some((f) => f.key === fx.key)) fx.key = `${fx.key}-${pk.park_id}`;
-          fixtures.push(fx); addedFixtures++;
-        }
+        for (const e of Object.values(added[st] ?? {})) { put(e); nAdded++; }
+        pf.forEach((p, i) => { listed[i].row = p; });
+        const mine = [...changesFor('listed', pk.park_id, listed), ...changesFor('trail', pk.park_id, slots)];
+        if (mine.length && !known.has(pk.park_id)) newParks.push({ park_id: pk.park_id, name: pk.park, region: pk.region, stem: pk.stem, bbox: pk.bbox ?? null });
+        changes.push(...mine);
       }
-      if (addedFixtures) files['fixtures/parks.json'] = JSON.stringify(fixtures, null, 2) + '\n';
+      if (!changes.length) throw new Error('nothing changed (already saved?)');
       const parkNames = stems.map((st) => parks.find((x) => x.stem === st)?.park ?? st);
       const what = [accepted && `${accepted} accepted`, rejected && `${rejected} rejected`, updated && `${updated} entr${updated === 1 ? 'y' : 'ies'} edited`, deleted && `${deleted} deleted`, blessed && `${blessed} blessed`, nAdded && `${nAdded} added`].filter(Boolean).join(', ');
-      const msg = `Named regressions: ${what} (${parkNames.join(', ')})\n\nFrom the website's /dev/regressions page${curator ? `, by ${curator}` : ''}.` +
-        (addedFixtures ? ` ${addedFixtures} park(s) added to fixtures/parks.json.` : '');
-      if (!Object.keys(files).length) throw new Error('no file changes (already saved?)');
-      await cur.save(snap, files, msg);
+      await cur.save(newParks, changes, `${what} (${parkNames.join(', ')})`);
       setDecisions({}); store(DECISIONS_KEY, {});
       setBlessings({}); store(BLESS_KEY, {});
       setAdded({}); store(ADD_KEY, {});
       setEdits({}); store(EDITS_KEY, {});
-      setCommitting(`Saved ${Object.keys(files).length} file${Object.keys(files).length === 1 ? '' : 's'}. Routes gets them with the next export.`);
+      setCommitting(`Saved ${changes.length} row${changes.length === 1 ? '' : 's'}. Routes gets them with the next export.`);
       await load();
     } catch (e) {
       const stale = e instanceof CurationError && e.status === 409;

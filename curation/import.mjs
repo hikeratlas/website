@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 // node curation/import.mjs ROUTES_DIR [SITE]
 //
-// Copies routes' fixture files the regressions page edits
-// (fixtures/proposals/*.jsonl, fixtures/expect/*.jsonl, fixtures/parks.json)
-// into the curation database (routes#252), through the site's API
-// (routes/api.curation.files.ts), with the curator key in CURATOR_KEY. SITE
-// defaults to https://www.hikeratlas.com. Only files the database doesn't
-// have yet, or has differently, are saved; run it once, when the database is
-// new, after which the database is where these files are edited.
+// Copies routes' named regressions into the curation database (routes#252),
+// a row per line: each park's proposals (fixtures/proposals/<stem>.jsonl)
+// as its official list, and its entries (fixtures/expect/<stem>.jsonl) as
+// its official trails, in their order, each line kept as written. Through
+// the site's API (routes/api.curation.ts), with the curator key in
+// CURATOR_KEY; SITE defaults to https://www.hikeratlas.com.
+//
+// A park already in the database is skipped, so a run cut short can be run
+// again (a park cut short partway is named, to check). Run it once, when the database is new: after that, these are
+// edited on /dev/regressions, and routes gets them by its export.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const [routes, site = 'https://www.hikeratlas.com'] = process.argv.slice(2);
@@ -18,33 +22,60 @@ if (!routes || !key) {
   console.error('usage: CURATOR_KEY=... node curation/import.mjs ROUTES_DIR [SITE]');
   process.exit(2);
 }
-const api = `${site.replace(/\/$/, '')}/api/curation/files`;
+const api = `${site.replace(/\/$/, '')}/api/curation`;
 const auth = { authorization: `Bearer ${key}` };
+const MAX = 40;  // rows a save (store.ts' MAX_CHANGES)
 
-const want = {};
-for (const dir of ['fixtures/proposals', 'fixtures/expect']) {
-  for (const f of readdirSync(join(routes, dir)).filter((f) => f.endsWith('.jsonl')).sort()) want[`${dir}/${f}`] = readFileSync(join(routes, dir, f), 'utf8');
+const lines = (path) => existsSync(path) ? readFileSync(path, 'utf8').split('\n').filter((l) => l.trim()) : [];
+const stems = new Set();
+for (const dir of ['proposals', 'expect']) {
+  for (const f of readdirSync(join(routes, 'fixtures', dir))) if (f.endsWith('.jsonl')) stems.add(f.slice(0, -'.jsonl'.length));
 }
-if (existsSync(join(routes, 'fixtures/parks.json'))) want['fixtures/parks.json'] = readFileSync(join(routes, 'fixtures/parks.json'), 'utf8');
+const fixtures = existsSync(join(routes, 'fixtures/parks.json')) ? JSON.parse(readFileSync(join(routes, 'fixtures/parks.json'), 'utf8')) : [];
 
 const r = await fetch(api, { headers: auth });
 if (!r.ok) throw new Error(`GET ${api}: ${r.status} ${await r.text()}`);
-const { files: have, curator } = await r.json();
-if (!curator) throw new Error('CURATOR_KEY is not a curator key');
-const now = new Map(have.map((f) => [f.path, f]));
-const files = {}, base = {};
-for (const [p, c] of Object.entries(want)) {
-  if (now.get(p)?.content === c) continue;
-  files[p] = c;
-  base[p] = now.get(p)?.rev ?? 0;
-}
-if (!Object.keys(files).length) {
-  console.log('nothing to import: the database has these files as they are');
-  process.exit(0);
-}
+const have = await r.json();
+if (!have.curator) throw new Error('CURATOR_KEY is not a curator key');
+const done = new Set(have.parks.map((p) => p.park_id));
+
 let sha = '';
 try { sha = execFileSync('git', ['-C', routes, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* not a checkout */ }
 const message = `Imported from hikeratlas/routes${sha ? `@${sha}` : ''}`;
-const s = await fetch(api, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ files, base, message }) });
-if (!s.ok) throw new Error(`POST ${api}: ${s.status} ${await s.text()}`);
-console.log(`${message}: ${Object.keys(files).length} files, as ${curator}`);
+
+let parks = 0, rows = 0;
+for (const stem of [...stems].sort()) {
+  const listed = lines(join(routes, 'fixtures/proposals', `${stem}.jsonl`));
+  const trails = lines(join(routes, 'fixtures/expect', `${stem}.jsonl`));
+  const first = JSON.parse(listed[0] ?? trails[0]);
+  const park_id = String(first.park_id ?? '');
+  if (!park_id) { console.error(`skipped ${stem}: no park_id`); continue; }
+  if (done.has(park_id)) {
+    const n = have.listed.filter((x) => x.park_id === park_id).length + have.trails.filter((x) => x.park_id === park_id).length;
+    if (n === listed.length + trails.length) console.log(`skipped ${stem}: already in the database`);
+    else console.error(`skipped ${stem}: in the database with ${n} rows, not ${listed.length + trails.length} (a run cut short?): check it on /dev/regressions`);
+    continue;
+  }
+  const fx = fixtures.find((f) => String(f.id ?? '') === park_id || (!f.id && f.park === first.park));
+  // A park's region: its proposals'. One with only entries has none here,
+  // and keeps its stem: the region is only for naming a new park's stem.
+  const slug = (s) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const region = listed.length ? JSON.parse(listed[0]).region ?? '' : '';
+  const bbox = (listed.length && JSON.parse(listed[0]).park_bbox) || fx?.bbox || null;
+  const park = { park_id, name: first.park, region, stem, bbox };
+  if (stem !== `${slug(region)}-${slug(first.park)}` && region) console.error(`note: ${stem} isn't ${slug(region)}-${slug(first.park)}; kept as ${stem}`);
+  const changes = [
+    ...listed.map((data, pos) => ({ table: 'listed', id: randomUUID(), park_id, base: 0, data, pos })),
+    ...trails.map((data, pos) => ({ table: 'trail', id: randomUUID(), park_id, base: 0, data, pos })),
+  ];
+  for (let i = 0; i < changes.length || i === 0; i += MAX) {
+    const s = await fetch(api, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ parks: [park], changes: changes.slice(i, i + MAX), message }),
+    });
+    if (!s.ok) throw new Error(`POST ${api} (${stem}): ${s.status} ${await s.text()}`);
+  }
+  parks++; rows += changes.length;
+  console.log(`${stem}: ${listed.length} listed, ${trails.length} official`);
+}
+console.log(`${message}: ${parks} parks, ${rows} rows, as ${have.curator}`);
