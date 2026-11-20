@@ -59,8 +59,9 @@ const ADD_KEY = 'regressions:added';
 
 type Box = [number, number, number, number];
 // A park: its proposals and its entries (either may be empty), by the file
-// stem both directories name it by.
-interface Park extends ParkFile { entries: Entry[]; bbox?: Box }
+// stem both directories name it by. A park in the curation database is
+// listed with its counts, and its rows read when it's opened (loaded).
+interface Park extends ParkFile { entries: Entry[]; bbox?: Box; loaded: boolean; n?: { listed: number; open: number; entries: number } }
 interface Offered { label: string; name: string | null; title: string; key: string | null; km: number; line: LngLat[]; share: number; check?: ReturnType<typeof passes> }
 type Decisions = Record<string, Record<string, Decision>>;   // stem -> proposal key -> decision
 type Edits = Record<string, Record<string, EntryEdit>>;      // stem -> entry key -> edit
@@ -167,20 +168,18 @@ export default function Regressions({ build }: { build: string | null }) {
   }, []);
   const cur = useMemo(() => new Curation(curatorKey || null), [curatorKey]);
 
-  // Proposals and entries: every file in the curation database, at once.
+  // The parks: those in the curation database, with their counts (their
+  // rows are read when one is opened: openRows), and routes' fixtures with
+  // none yet, to bless their hikes.
   const load = useCallback(async () => {
     setLoadMsg('Loading…');
     try {
-      const snap = await cur.load();
-      setCurator(snap.curator);
-      // Routes' fixtures (which parks its CI runs): to offer the ones with
-      // no rows yet, to bless their hikes.
+      const list = await cur.parks();
+      setCurator(list.curator);
       const fixtures = await fetch(FIXTURES_URL, { cache: 'no-store' }).then((r) => r.ok ? r.json() as Promise<{ id?: string; park: string; bbox: Box }[]> : []).catch(() => []);
-      const rowsOf = <T,>(rows: typeof snap.listed, id: string) => slotsOf<T>(rows.filter((r) => r.park_id === id)).map((x) => x.row!);
-      const files: Park[] = snap.parks.map((p) => {
-        const ps = rowsOf<Proposal>(snap.listed, p.park_id), es = rowsOf<Entry>(snap.trails, p.park_id);
+      const files: Park[] = list.parks.map((p) => {
         const fx = fixtures.find((f) => String(f.id ?? '') === p.park_id || (!f.id && f.park === p.name));
-        return { stem: p.stem, park: p.name, park_id: p.park_id, region: p.region, proposals: ps, entries: es, bbox: p.bbox ?? ps[0]?.park_bbox ?? fx?.bbox };
+        return { stem: p.stem, park: p.name, park_id: p.park_id, region: p.region, proposals: [], entries: [], bbox: p.bbox ?? fx?.bbox, loaded: false, n: { listed: p.listed_n, open: p.open_n, entries: p.trail_n } };
       });
       // Fixtures with no files yet, to bless their hikes: their region (for
       // the file's name) from routes' regions.json.
@@ -196,7 +195,7 @@ export default function Regressions({ build }: { build: string | null }) {
         const id = String(f.id ?? (byName[f.park]?.length === 1 ? byName[f.park][0] : ''));
         if (!id || !stateOf[id] || files.some((x) => x.park_id === id)) continue;
         const st = `${slug(stateOf[id])}-${slug(f.park)}`;
-        if (!files.some((x) => x.stem === st)) files.push({ stem: st, park: f.park, park_id: id, region: stateOf[id], proposals: [], entries: [], bbox: f.bbox });
+        if (!files.some((x) => x.stem === st)) files.push({ stem: st, park: f.park, park_id: id, region: stateOf[id], proposals: [], entries: [], bbox: f.bbox, loaded: true });
       }
       files.sort((a, b) => a.park.localeCompare(b.park));
       setParks(files);
@@ -210,6 +209,17 @@ export default function Regressions({ build }: { build: string | null }) {
   useEffect(() => { load(); }, [load]);
 
   const park = parks.find((p) => p.stem === stem) ?? null;
+  // The park open: its rows, read once (again after a save).
+  useEffect(() => {
+    if (!park || park.loaded) return;
+    let live = true;
+    cur.park(park.park_id).then((r) => {
+      if (!live) return;
+      const ps = slotsOf<Proposal>(r.listed).map((x) => x.row!), es = slotsOf<Entry>(r.trails).map((x) => x.row!);
+      setParks((all) => all.map((x) => x.park_id === park.park_id ? { ...x, proposals: ps, entries: es, bbox: x.bbox ?? ps[0]?.park_bbox, loaded: true } : x));
+    }).catch((e) => { if (live) setLoadMsg(`Couldn’t load ${park.park}: ${(e as Error).message}.`); });
+    return () => { live = false; };
+  }, [cur, park]);
   const proposals = useMemo(() => (park?.proposals ?? []).map((p, i) => ({ p, i })).filter(({ p }) => filter === 'all' || p.status === 'open'), [park, filter]);
   const prop = park && subject?.type === 'proposal' ? park.proposals[subject.i] ?? null : null;
   const entry = park && subject?.type === 'entry' ? park.entries[subject.i] ?? null : null;
@@ -486,8 +496,6 @@ export default function Regressions({ build }: { build: string | null }) {
     if (!curatorKey) { setShowSettings(true); return; }
     setCommitting('Saving…');
     try {
-      const snap = await cur.load();
-      const known = new Set(snap.parks.map((p) => p.park_id));
       const changes: Change[] = [];
       const newParks: ParkRow[] = [];
       let accepted = 0, rejected = 0, updated = 0, deleted = 0, blessed = 0, nAdded = 0;
@@ -495,9 +503,11 @@ export default function Regressions({ build }: { build: string | null }) {
       for (const st of stems) {
         const pk = parks.find((x) => x.stem === st);
         if (!pk) continue;
-        const listed = slotsOf<Proposal>(snap.listed.filter((r) => r.park_id === pk.park_id));
+        // The park as it is now, read again.
+        const now = await cur.park(pk.park_id);
+        const listed = slotsOf<Proposal>(now.listed);
         const pf = listed.map((x) => x.row!);
-        const slots: Slot<Entry>[] = slotsOf<Entry>(snap.trails.filter((r) => r.park_id === pk.park_id));
+        const slots: Slot<Entry>[] = slotsOf<Entry>(now.trails);
         const live = () => slots.filter((x) => x.row);
         const find = (f: (e: Entry) => boolean) => live().find((x) => f(x.row!));
         // In place of the entry of the same name (or by `f`), else added.
@@ -539,7 +549,7 @@ export default function Regressions({ build }: { build: string | null }) {
         for (const e of Object.values(added[st] ?? {})) { put(e); nAdded++; }
         pf.forEach((p, i) => { listed[i].row = p; });
         const mine = [...changesFor('listed', pk.park_id, listed), ...changesFor('trail', pk.park_id, slots)];
-        if (mine.length && !known.has(pk.park_id)) newParks.push({ park_id: pk.park_id, name: pk.park, region: pk.region, stem: pk.stem, bbox: pk.bbox ?? null });
+        if (mine.length && !now.parks.length) newParks.push({ park_id: pk.park_id, name: pk.park, region: pk.region, stem: pk.stem, bbox: pk.bbox ?? null });
         changes.push(...mine);
       }
       if (!changes.length) throw new Error('nothing changed (already saved?)');
@@ -561,9 +571,12 @@ export default function Regressions({ build }: { build: string | null }) {
   const btn = 'tap px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-40';
   const chip = (on: boolean) => `tap px-2.5 py-0.5 rounded-full border text-xs ${on ? 'bg-emerald-800 border-emerald-800 text-white' : 'border-gray-300 bg-white text-gray-800'}`;
   const counts = (pf: Park) => {
-    const open = pf.proposals.filter((p) => p.status === 'open').length;
+    // Its counts as listed, until it's opened.
+    const listedN = pf.loaded ? pf.proposals.length : pf.n?.listed ?? 0;
+    const open = pf.loaded ? pf.proposals.filter((p) => p.status === 'open').length : pf.n?.open ?? 0;
+    const entriesN = pf.loaded ? pf.entries.length : pf.n?.entries ?? 0;
     const changed = Object.keys(decisions[pf.stem] ?? {}).length + Object.keys(edits[pf.stem] ?? {}).length + Object.keys(blessings[pf.stem] ?? {}).length + Object.keys(added[pf.stem] ?? {}).length;
-    return [pf.proposals.length && `${open} open`, pf.entries.length && `${pf.entries.length} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'no entries yet';
+    return [listedN && `${open} open`, entriesN && `${entriesN} entries`, changed && `${changed} changed`].filter(Boolean).join(', ') || 'no entries yet';
   };
   const t = newTrace();
   const editSummary = (x: EntryEdit) => x.action === 'delete' ? 'delete' : [x.name && `renamed ${x.name}`, x.trace && `${x.addTrace ? 'another' : 'new'} trace (${x.how})`, x.km !== undefined && `${x.km} km`].filter(Boolean).join(', ') || 'note only';
@@ -593,7 +606,7 @@ export default function Regressions({ build }: { build: string | null }) {
     if (have) { setStem(have.stem); setSearchPark(null); return; }
     const box: Box | undefined = item.min_lon != null && item.min_lat != null && item.max_lon != null && item.max_lat != null
       ? [item.min_lon, item.min_lat, item.max_lon, item.max_lat] : undefined;
-    const pk: Park = { stem: `${slug(item.state!)}-${slug(item.name)}`, park: item.name, park_id: id, region: item.state!, proposals: [], entries: [], bbox: box };
+    const pk: Park = { stem: `${slug(item.state!)}-${slug(item.name)}`, park: item.name, park_id: id, region: item.state!, proposals: [], entries: [], bbox: box, loaded: true };
     setParks((ps) => [...ps.filter((x) => x.stem !== pk.stem), pk].sort((a, b) => a.park.localeCompare(b.park)));
     setStem(pk.stem);
     setSearchPark(null);
@@ -626,6 +639,7 @@ export default function Regressions({ build }: { build: string | null }) {
           <select className='border border-gray-300 rounded px-2 py-1' value={stem} onChange={(e) => setStem(e.target.value)}>
             {parks.map((pf) => <option key={pf.stem} value={pf.stem}>{pf.park} — {counts(pf)}</option>)}
           </select>
+          {park && !park.loaded && <div className='text-xs text-gray-500'>Loading {park.park}…</div>}
           <div className='flex gap-1.5 text-xs items-center'>
             <button type='button' className={chip(tab === 'proposals')} disabled={!park?.proposals.length} onClick={() => setTab('proposals')}>Proposals ({park?.proposals.length ?? 0})</button>
             <button type='button' className={chip(tab === 'entries')} disabled={!park?.entries.length} onClick={() => setTab('entries')}>Entries ({park?.entries.length ?? 0})</button>

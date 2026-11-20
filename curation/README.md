@@ -30,8 +30,9 @@ nightly in routes, as a pull request (`.github/workflows/curation-export.yml`).
      (names in `CURATOR_KEYS`) who may run raw SQL, e.g. `chris`.
 
    For Production, and Preview if wanted; then redeploy.
-3. Its tables, once deployed:
+3. Its tables, once deployed, each migration in turn:
    `CURATOR_KEY=<key> node curation/sql.mjs --file curation/migrations/0001_init.sql`
+   (then `0002_park_counts.sql`, …)
    (the D1 console drops newlines, so a migration's first comment swallows
    it there).
 4. Import routes' regressions, once:
@@ -45,10 +46,19 @@ overwrites them there.
 
 `/api/curation` (`app/routes/api.curation.ts`, `app/curation/store.ts`):
 
-- `GET`: `{ parks, listed, trails, curator }`, every park and every live row
-  (`{ id, park_id, pos, rev, data }`). Public, as routes' fixtures are.
-  `curator` is the name for the request's key (`Authorization: Bearer
-  <key>`), or null.
+Each read asks only for what it needs, to spare D1's rows read:
+
+- `GET`: the parks, with their counts (`listed_n`, `open_n`, `trail_n`,
+  kept by triggers) but not their rows: `{ head, parks }`.
+- `GET ?park=<id>`: one park, whole: `{ head, parks, listed, trails }`, its
+  live rows `{ id, park_id, pos, rev, data }`.
+- `GET ?since=<revision>`: the parks with a row saved after that revision,
+  whole (`0`: all): routes' export, which keeps its place in
+  `fixtures/curation.json`.
+
+Each also gives `curator`, the name for the request's key
+(`Authorization: Bearer <key>`), or null; `head` is the newest revision.
+Public, as routes' fixtures are.
 - `POST { parks, changes, message }` with a curator key: `changes` are rows
   (`{ table: 'listed' | 'trail', id, park_id, base, data, pos? }`): new
   (`base` 0, with an id the caller makes), changed, or removed (`data`

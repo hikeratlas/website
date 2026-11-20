@@ -1,10 +1,9 @@
 // The curation database from the browser (routes/api.curation.ts), for the
-// regressions page: read everything, and save changed rows with a curator's
-// key, each from the rev it was read at.
-import type { Change, Everything, ParkRow } from './store';
+// regressions page: the list of parks (with counts), one park whole, and
+// saving changed rows with a curator's key, each from the rev it was read at.
+import type { Change, ParkRow, ParkSummary, Parks } from './store';
 
-export type { Change, ParkRow, Row } from './store';
-export interface Snapshot extends Everything { curator: string | null }
+export type { Change, ParkRow, ParkSummary, Row } from './store';
 
 export class CurationError extends Error {
   constructor(public status: number, message: string, public stale?: string[]) { super(message); }
@@ -19,12 +18,15 @@ export class Curation {
     return this.key ? { authorization: `Bearer ${this.key}` } : {};
   }
 
-  async load(): Promise<Snapshot> {
-    const r = await fetch(API, { cache: 'no-store', headers: this.headers() });
-    const body = await r.json().catch(() => ({})) as Partial<Snapshot> & { error?: string };
-    if (!r.ok || !body.parks || !body.listed || !body.trails) throw new CurationError(r.status, body.error ?? `${r.status} ${r.statusText}`);
-    return { parks: body.parks, listed: body.listed, trails: body.trails, curator: body.curator ?? null };
+  private async get<T>(q: string): Promise<T & { curator: string | null }> {
+    const r = await fetch(`${API}${q}`, { cache: 'no-store', headers: this.headers() });
+    const body = await r.json().catch(() => ({})) as T & { curator?: string | null; error?: string };
+    if (!r.ok || body.error) throw new CurationError(r.status, body.error ?? `${r.status} ${r.statusText}`);
+    return { ...body, curator: body.curator ?? null };
   }
+
+  parks() { return this.get<{ head: number; parks: ParkSummary[] }>(''); }
+  park(id: string) { return this.get<Parks>(`?park=${encodeURIComponent(id)}`); }
 
   async save(parks: ParkRow[], changes: Change[], message: string): Promise<Record<string, number>> {
     const r = await fetch(API, {
