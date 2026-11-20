@@ -22,5 +22,8 @@ describe('splitStatements', () => {
     for (const s of ss) db.exec(s);
     expect(db.prepare("SELECT type, count(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' GROUP BY type ORDER BY type").all())
       .toEqual([{ type: 'index', n: 2 }, { type: 'table', n: 4 }, { type: 'trigger', n: 4 }]);
+    // And the second after it.
+    for (const s of splitStatements(readFileSync(new URL('../../curation/migrations/0002_park_counts.sql', import.meta.url), 'utf8'))) db.exec(s);
+    expect(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'trigger'").get()).toEqual({ n: 8 });
   });
 });

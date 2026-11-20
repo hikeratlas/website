@@ -8,21 +8,55 @@ const TABLE: Record<Table, 'listed_trail' | 'trail'> = { listed: 'listed_trail',
 
 export type Box = [number, number, number, number];
 export interface ParkRow { park_id: string; name: string; region: string; stem: string; bbox: Box | null }
+// A park in the list: its counts, kept by triggers (0002_park_counts.sql).
+export interface ParkSummary extends ParkRow { listed_n: number; open_n: number; trail_n: number }
 // A live row: data is the row as routes' files spell it.
 export interface Row { id: string; park_id: string; pos: number; rev: number; data: string }
-export interface Everything { parks: ParkRow[]; listed: Row[]; trails: Row[] }
+// Some parks, whole. `head`: the newest revision when read, for routes'
+// export to ask for what changed since.
+export interface Parks { head: number; parks: ParkRow[]; listed: Row[]; trails: Row[] }
 
-export async function readAll(db: D1Database): Promise<Everything> {
-  const [parks, listed, trails] = await db.batch([
-    db.prepare('SELECT park_id, name, region, stem, bbox FROM park ORDER BY name'),
-    db.prepare('SELECT id, park_id, pos, rev, data FROM listed_trail WHERE data IS NOT NULL ORDER BY park_id, pos'),
-    db.prepare('SELECT id, park_id, pos, rev, data FROM trail WHERE data IS NOT NULL ORDER BY park_id, pos'),
+const parkOf = (p: Omit<ParkRow, 'bbox'> & { bbox: string | null }) => ({ ...p, bbox: p.bbox ? JSON.parse(p.bbox) as Box : null });
+const HEAD = 'SELECT COALESCE(MAX(id), 0) AS head FROM revision';
+
+// Every park, with its counts but not its rows: a row read a park.
+export async function readParks(db: D1Database): Promise<{ head: number; parks: ParkSummary[] }> {
+  const [h, ps] = await db.batch([
+    db.prepare(HEAD),
+    db.prepare('SELECT park_id, name, region, stem, bbox, listed_n, open_n, trail_n FROM park ORDER BY name'),
+  ]);
+  return { head: (h.results[0] as { head: number }).head, parks: (ps.results as Parameters<typeof parkOf>[0][]).map(parkOf) as ParkSummary[] };
+}
+
+// The parks given, whole (their rows by the park index).
+async function readWhole(db: D1Database, ids: string[]): Promise<Parks> {
+  const q = JSON.stringify(ids);
+  const [h, ps, listed, trails] = await db.batch([
+    db.prepare(HEAD),
+    db.prepare('SELECT park_id, name, region, stem, bbox FROM park WHERE park_id IN (SELECT value FROM json_each(?)) ORDER BY name').bind(q),
+    db.prepare('SELECT id, park_id, pos, rev, data FROM listed_trail WHERE park_id IN (SELECT value FROM json_each(?)) AND data IS NOT NULL ORDER BY park_id, pos').bind(q),
+    db.prepare('SELECT id, park_id, pos, rev, data FROM trail WHERE park_id IN (SELECT value FROM json_each(?)) AND data IS NOT NULL ORDER BY park_id, pos').bind(q),
   ]);
   return {
-    parks: (parks.results as (Omit<ParkRow, 'bbox'> & { bbox: string | null })[]).map((p) => ({ ...p, bbox: p.bbox ? JSON.parse(p.bbox) as Box : null })),
+    head: (h.results[0] as { head: number }).head,
+    parks: (ps.results as Parameters<typeof parkOf>[0][]).map(parkOf),
     listed: listed.results as unknown as Row[],
     trails: trails.results as unknown as Row[],
   };
+}
+
+// One park, whole (it may not be saved yet: no parks).
+export const readPark = (db: D1Database, id: string) => readWhole(db, [id]);
+
+// The parks with a row saved after revision `since`, whole: routes' export
+// asks for what changed since its last (0: everything). Found from the
+// revisions after `since`, by their key, so a night without changes reads
+// next to nothing.
+export async function readChanged(db: D1Database, since: number): Promise<Parks> {
+  const r = await db.prepare(`SELECT DISTINCT park_id FROM (
+      SELECT l.park_id FROM revision r JOIN listed_trail l ON l.id = r.item_id WHERE r.id > ?1 AND r.tbl = 'listed_trail'
+      UNION SELECT t.park_id FROM revision r JOIN trail t ON t.id = r.item_id WHERE r.id > ?1 AND r.tbl = 'trail')`).bind(since).all<{ park_id: string }>();
+  return readWhole(db, r.results.map((x) => x.park_id));
 }
 
 // The curator a request's key belongs to ("Authorization: Bearer <key>"),

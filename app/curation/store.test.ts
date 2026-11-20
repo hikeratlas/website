@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { MAX_CHANGES, curatorFor, readAll, saveRows, type Change, type ParkRow } from './store';
+import { MAX_CHANGES, curatorFor, readChanged, readPark, readParks, saveRows, type Change, type ParkRow } from './store';
+
+const readAll = (db: D1Database) => readChanged(db, 0);
 
 // Enough of D1 for store.ts, on SQLite: a batch is one transaction.
 function d1(): { db: D1Database; raw: DatabaseSync } {
   const raw = new DatabaseSync(':memory:');
-  raw.exec(readFileSync(new URL('../../curation/migrations/0001_init.sql', import.meta.url), 'utf8'));
+  for (const m of ['0001_init.sql', '0002_park_counts.sql']) raw.exec(readFileSync(new URL(`../../curation/migrations/${m}`, import.meta.url), 'utf8'));
   const stmt = (sql: string, args: unknown[] = []) => ({
     bind: (...a: unknown[]) => stmt(sql, a),
     all: async () => ({ results: raw.prepare(sql).all(...(args as never[])) }),
@@ -92,6 +94,44 @@ describe('saveRows', () => {
     expect(await saveRows(db, { ...ok, message: ' ', changes: [listed('a', 0, P('A'))] }, 'c')).toMatchObject({ status: 400 });
     expect(await saveRows(db, { ...ok, changes: Array.from({ length: MAX_CHANGES + 1 }, (_, i) => listed(`r${i}`, 0, P(`R${i}`))) }, 'c')).toMatchObject({ status: 400 });
     expect(await saveRows(db, { parks: [{ ...BANFF, stem: '../x' }], changes: [], message: 'm' }, 'c')).toMatchObject({ status: 400 });
+  });
+});
+
+describe('reading', () => {
+  let db: D1Database;
+  const JASPER: ParkRow = { park_id: '7', name: 'Jasper National Park', region: 'Alberta', stem: 'alberta-jasper-national-park', bbox: null };
+  const J = (name: string, status = 'open') => ({ park: JASPER.name, park_id: JASPER.park_id, name, km: 2, status });
+  beforeEach(async () => {
+    ({ db } = d1());
+    await saveRows(db, { parks: [BANFF], changes: [listed('a', 0, P('A')), listed('b', 0, P('B', 'rejected')), trail('t', 0, { kind: 'trail', name: 'A', park_id: BANFF.park_id })], message: 'import' }, 'chris');
+    await saveRows(db, { parks: [JASPER], changes: [{ table: 'listed', id: 'j', park_id: '7', base: 0, data: line(J('J')) }], message: 'import' }, 'chris');
+  });
+
+  it('lists the parks with their counts, kept as rows are saved', async () => {
+    const counts = async () => (await readParks(db)).parks.map((p) => [p.name, p.listed_n, p.open_n, p.trail_n]);
+    expect(await counts()).toEqual([['Banff National Park', 2, 1, 1], ['Jasper National Park', 1, 1, 0]]);
+    await saveRows(db, { changes: [listed('a', 1, P('A', 'accepted')), trail('t', 1, null)], message: 'm' }, 'chris');
+    expect(await counts()).toEqual([['Banff National Park', 2, 0, 0], ['Jasper National Park', 1, 1, 0]]);
+    expect((await readParks(db)).head).toBe(6);
+  });
+
+  it('reads one park whole, or nothing for a park not saved yet', async () => {
+    const b = await readPark(db, BANFF.park_id);
+    expect([b.parks.map((p) => p.name), b.listed.map((x) => x.id), b.trails.map((x) => x.id)]).toEqual([['Banff National Park'], ['a', 'b'], ['t']]);
+    expect(await readPark(db, '99')).toMatchObject({ parks: [], listed: [], trails: [] });
+  });
+
+  it('reads only the parks changed since a revision, for the export', async () => {
+    const { head } = await readParks(db);
+    expect((await readChanged(db, head)).parks).toEqual([]);
+    await saveRows(db, { changes: [{ table: 'listed', id: 'j', park_id: '7', base: 1, data: line(J('J', 'rejected')) }], message: 'm' }, 'chris');
+    const c = await readChanged(db, head);
+    expect([c.head, c.parks.map((p) => p.name), c.listed.map((x) => x.id)]).toEqual([head + 1, ['Jasper National Park'], ['j']]);
+    // A row removed: its park is still changed, now without it.
+    await saveRows(db, { changes: [trail('t', 1, null)], message: 'm' }, 'chris');
+    const d = await readChanged(db, head + 1);
+    expect([d.parks.map((p) => p.name), d.trails]).toEqual([['Banff National Park'], []]);
+    expect((await readChanged(db, 0)).parks.map((p) => p.name)).toEqual(['Banff National Park', 'Jasper National Park']);
   });
 });
 
