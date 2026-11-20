@@ -6,6 +6,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { describeDid, profilePath } from '~/atproto/identity';
 import { combine, locate, stats, type GpxStats } from '~/atproto/gpx';
+import { drawnGpx } from '~/atproto/drawn';
+import type { LngLat } from '~/routing/graph';
 import { preparePhoto, type PreparedPhoto } from '~/atproto/photos';
 import { DEFAULT_LICENSE, getSettings, publishReview, publishTrack, TAGS, type StrongRef } from '~/atproto/posts';
 import { routeKey, shapeFor } from '~/atproto/routeKey';
@@ -14,6 +16,8 @@ import { distance, elevation, METRIC, useUnits, type Units } from '~/units';
 import { SignInDialog } from '~/components/Account';
 
 export const MAX_TEXT = 3000;
+// A track's title, at most (the lexicon's maxGraphemes; close enough in UTF-16).
+const MAX_TITLE = 200;
 const MAX_PHOTOS = 10;
 
 export const LICENSE_LABEL: Record<string, string> = {
@@ -70,7 +74,17 @@ function whereText(p: Picked, track: string | null): string {
 
 interface Picked { file: File; url: string; prepared: Promise<PreparedPhoto>; alt: string; info?: PreparedPhoto | 'failed' }
 
-function PostDialog({ title, line, shape, onClose }: { title: string; line: [number, number][]; shape: string; onClose: () => void }) {
+// A route drawn on the map (RoutePlanner), posted as a track of its own
+// (website#198): its points, and their elevations from the DEM.
+// Its climb as the planner showed it (its DEM profile's), so the track says the same.
+export interface Drawn { coords: LngLat[]; elevations: (number | null)[]; gain: number }
+
+// For a curated hike: its title, line and shape (for its route key). Or for
+// a drawn route ([drawn]): no hike, and the track is the route itself,
+// titled as they like ([title] is the suggestion).
+export function PostDialog({ title, line, shape, drawn, onClose }: {
+  title: string; line?: [number, number][]; shape?: string; drawn?: Drawn; onClose: () => void;
+}) {
   const units = useUnits();
   const at = useAtSession();
   const session = at.status === 'in' ? at.session : null;
@@ -81,6 +95,7 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
   const [pds, setPds] = useState<string | null>(null);
   const [license, setLicense] = useState<string>(DEFAULT_LICENSE);
   useEffect(() => {
+    if (!line || !shape) return;
     let live = true;
     routeKey(line, shapeFor(shape)).then((k) => { if (live) setKey(k); }).catch(() => {});
     return () => { live = false; };
@@ -100,7 +115,13 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
   const [day, setDay] = useState(today());
   const [text, setText] = useState('');
   const [tags, setTags] = useState<string[]>([]);
-  const [gpx, setGpx] = useState<{ names: string[]; text: string; stats: GpxStats } | null>(null);
+  const [trackTitle, setTrackTitle] = useState(title);
+  // A drawn route's GPX: no times, so its day is the one chosen here.
+  const [gpx, setGpx] = useState<{ names: string[]; text: string; stats: GpxStats } | null>(() => {
+    if (!drawn) return null;
+    const text = drawnGpx(title, drawn.coords, drawn.elevations);
+    return { names: [], text, stats: { ...stats(text), gain: Math.round(drawn.gain) } };
+  });
   const [gpxError, setGpxError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Picked[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -134,9 +155,10 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
     }
   };
 
-  const canPost = !!session && !!pds && !!key && (text.trim().length > 0 || !!gpx) && !busy && text.length <= MAX_TEXT;
+  const titled = trackTitle.trim().slice(0, MAX_TITLE);
+  const canPost = !!session && !!pds && (drawn ? !!titled : !!key) && (text.trim().length > 0 || !!gpx) && !busy && text.length <= MAX_TEXT;
   const post = async () => {
-    if (!session || !pds || !key) return;
+    if (!session || !pds || (!drawn && !key)) return;
     setError(null);
     try {
       setBusy(photos.length ? 'Preparing photos…' : 'Posting…');
@@ -150,15 +172,19 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
       let track: StrongRef | undefined;
       if (gpx) {
         setBusy('Uploading your track…');
-        track = await publishTrack(session, pds, {
-          gpx: gpx.text, stats: gpx.stats, routeKey: key, title,
-          photos: review ? [] : ready,
-        });
+        track = await publishTrack(session, pds, drawn
+          ? {
+            // Its name in the GPX as titled, and the day chosen as its start.
+            gpx: drawnGpx(titled, drawn.coords, drawn.elevations),
+            stats: { ...gpx.stats, startedAt: noonOf(day) }, title: titled,
+            photos: review ? [] : ready,
+          }
+          : { gpx: gpx.text, stats: gpx.stats, routeKey: key ?? undefined, title, photos: review ? [] : ready });
       }
       if (review) {
         setBusy('Posting your review…');
         await publishReview(session, pds, {
-          text: text.trim(), hikedAt: noonOf(day), routeKey: key, track, tags, photos: ready,
+          text: text.trim(), hikedAt: noonOf(day), routeKey: key ?? undefined, track, tags, photos: ready,
         });
       }
       setDone(true);
@@ -185,9 +211,17 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
         {/* The fields scroll; the buttons stay below them. */}
         <div className='flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5'>
         <div>
-          <h2 className='font-display text-xl font-extrabold'>{title}</h2>
-          <p className='text-sm text-stone-600'>A review, photos, your GPX track, or all three.</p>
+          <h2 className='font-display text-xl font-extrabold'>{drawn ? 'Save as a track' : title}</h2>
+          <p className='text-sm text-stone-600'>{drawn
+            ? 'The route you drew, as one of your tracks: with a review and photos if you like.'
+            : 'A review, photos, your GPX track, or all three.'}</p>
         </div>
+
+        {drawn && <label className='flex flex-col gap-1'>
+          <span className={label}>Title</span>
+          <input value={trackTitle} onChange={(e) => setTrackTitle(e.target.value)} maxLength={MAX_TITLE + 50}
+            className='h-11 rounded-xl border border-stone-300 px-3 text-base' />
+        </label>}
 
         <label className='flex flex-col gap-1'>
           <span className={label}>When you hiked it</span>
@@ -225,7 +259,7 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
                 <input value={p.alt} placeholder='Describe it (for people who can’t see it)' aria-label={`Description of photo ${i + 1}`}
                   onChange={(e) => setPhotos(photos.map((q, j) => (j === i ? { ...q, alt: e.target.value } : q)))}
                   className='h-10 min-w-0 rounded-lg border border-stone-300 px-2 text-sm' />
-                <span className={`text-xs ${p.info === 'failed' ? 'text-red-700' : 'text-stone-500'}`}>{whereText(p, gpx?.text ?? null)}</span>
+                <span className={`text-xs ${p.info === 'failed' ? 'text-red-700' : 'text-stone-500'}`}>{whereText(p, drawn ? null : gpx?.text ?? null)}</span>
               </div>
               <button type='button' aria-label={`Remove photo ${i + 1}`} onClick={() => setPhotos(photos.filter((_, j) => j !== i))}
                 className='h-10 w-10 shrink-0 rounded-lg text-stone-500 hover:bg-stone-100'>×</button>
@@ -233,21 +267,25 @@ function PostDialog({ title, line, shape, onClose }: { title: string; line: [num
           </ul>}
           {photos.length < MAX_PHOTOS && <input type='file' accept='image/*' multiple onChange={(e) => { pickPhotos(e.target.files); e.target.value = ''; }}
             className='text-sm file:mr-3 file:h-10 file:rounded-lg file:border file:border-stone-300 file:bg-white file:px-3 file:text-sm file:font-semibold' />}
-          <span className='text-xs text-stone-500'>Photos keep where and when they were taken (their EXIF), so others can see the place. Photos without a location are placed by their time on your GPX track.</span>
+          <span className='text-xs text-stone-500'>Photos keep where and when they were taken (their EXIF), so others can see the place.{drawn ? '' : ' Photos without a location are placed by their time on your GPX track.'}</span>
         </div>
 
         <div className='flex flex-col gap-1'>
-          <span className={label}>GPX track</span>
-          <input type='file' accept='.gpx,application/gpx+xml' multiple onChange={(e) => pickGpx(e.target.files)}
-            className='text-sm file:mr-3 file:h-10 file:rounded-lg file:border file:border-stone-300 file:bg-white file:px-3 file:text-sm file:font-semibold' />
-          <span className='text-xs text-stone-500'>For a trip over several days, pick each day’s file: they’re joined into one track.</span>
+          <span className={label}>{drawn ? 'Your route' : 'GPX track'}</span>
+          {!drawn && <>
+            <input type='file' accept='.gpx,application/gpx+xml' multiple onChange={(e) => pickGpx(e.target.files)}
+              className='text-sm file:mr-3 file:h-10 file:rounded-lg file:border file:border-stone-300 file:bg-white file:px-3 file:text-sm file:font-semibold' />
+            <span className='text-xs text-stone-500'>For a trip over several days, pick each day’s file: they’re joined into one track.</span>
+          </>}
           {gpx && <span className='text-sm text-stone-700'>
             {[kmText(gpx.stats.distance, units), gpx.stats.gain !== null && `↑ ${elevation(gpx.stats.gain, units)}`,
               gpx.stats.duration !== null && durationText(gpx.stats.duration)].filter(Boolean).join(' · ')}
             {gpx.names.length > 1 && ` (${gpx.names.length} files)`}
           </span>}
           {gpxError && <span role='alert' className='text-sm text-red-700'>{gpxError}</span>}
-          {gpx && <span className='text-xs text-stone-500'>Your track shows where you went, and when, to anyone.</span>}
+          {gpx && <span className='text-xs text-stone-500'>{drawn
+            ? 'Posted as drawn on the map (no times). It shows where you went, and the day, to anyone.'
+            : 'Your track shows where you went, and when, to anyone.'}</span>}
         </div>
 
         <p className='text-xs text-stone-600'>
