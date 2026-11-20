@@ -15,6 +15,29 @@ import { SignInDialog } from '~/components/Account';
 import { useAtSession } from '~/atproto/session';
 
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+// Signing in leaves the page (OAuth), and the route drawn would go with it:
+// its points are kept here meanwhile, and on coming back the route is
+// redrawn and the save form opened again. An hour old, it's dropped.
+const PENDING = 'routePlanner.pendingSave';
+const PENDING_MS = 60 * 60 * 1000;
+function keepPending(points: LngLat[]) {
+  try { localStorage.setItem(PENDING, JSON.stringify({ points, at: Date.now() })); } catch { /* no storage: lost, as before */ }
+}
+function dropPending() {
+  try { localStorage.removeItem(PENDING); } catch { /* nothing kept */ }
+}
+function takePending(): LngLat[] | null {
+  try {
+    const raw = localStorage.getItem(PENDING);
+    if (!raw) return null;
+    localStorage.removeItem(PENDING);
+    const p = JSON.parse(raw) as { points?: unknown; at?: unknown };
+    if (typeof p.at !== 'number' || Date.now() - p.at > PENDING_MS || !Array.isArray(p.points)) return null;
+    const pts = p.points.filter((q): q is LngLat => Array.isArray(q) && q.length === 2 && q.every((n) => typeof n === 'number' && Number.isFinite(n)));
+    return pts.length >= 2 ? pts : null;
+  } catch { return null; }
+}
 const COLOR = '#c026d3';
 
 interface Result { metres: number; profile: Profile }
@@ -28,6 +51,17 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
   // Saving the route as one of your tracks (website#198).
   const [saving, setSaving] = useState(false);
   const at = useAtSession();
+
+  // Back from signing in to save a route: drawn again, and saved if signed in.
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!map || restored.current || at.status === 'loading') return;
+    restored.current = true;
+    const pts = takePending();
+    if (!pts) return;
+    setActive(true);
+    route.set(pts).then(() => { if (at.status === 'in') setSaving(true); }).catch(() => {});
+  }, [map, at.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The elevation profile of the route so far, redone as it changes.
   useEffect(() => {
@@ -84,7 +118,8 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
       <div className='text-gray-600'>{status}</div>
       <div className='flex items-center gap-1 shrink-0'>
         <button className='tap px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40'
-          disabled={!result || n < 2 || route.busy || at.status === 'loading'} onClick={() => setSaving(true)}
+          disabled={!result || n < 2 || route.busy || at.status === 'loading'}
+          onClick={() => { if (at.status !== 'in') keepPending(route.points); setSaving(true); }}
           title='Save this route as one of your tracks, with a date, a review and photos'>Save as track</button>
         <button className='tap px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40'
           disabled={!n} onClick={route.undo} title='Remove the last point'>Undo</button>
@@ -98,7 +133,7 @@ export default function RoutePlanner(props: { map: MaplibreMap | null; tiles: st
     {saving && result && (at.status === 'in'
       ? <PostDialog title='My route' drawn={{ coords: result.profile.coords, elevations: result.profile.points.map(([, e]) => e), gain: result.profile.gain }}
         onClose={() => setSaving(false)} />
-      : <SignInDialog onClose={() => setSaving(false)} why='Sign in to save your route as a track.' />)}
+      : <SignInDialog onClose={() => { dropPending(); setSaving(false); }} why='Sign in to save your route as a track.' />)}
   </div>;
 }
 
